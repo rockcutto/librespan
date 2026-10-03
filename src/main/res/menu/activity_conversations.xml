@@ -1,0 +1,26 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_search"
+        android:icon="@drawable/ic_search_24dp"
+        android:orderInCategory="5"
+        android:title="@string/search_conversations_hint"
+        app:actionLayout="@layout/actionview_conversation_search"
+        app:showAsAction="collapseActionView|always" />
+
+    <item
+        android:id="@+id/action_settings"
+        android:icon="@drawable/ic_settings_24dp"
+        android:orderInCategory="10"
+        android:title="@string/action_settings"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/action_profile"
+        android:icon="@drawable/ic_person_24dp"
+        android:orderInCategory="15"
+        android:title="@string/profile_navigation_title"
+        app:actionLayout="@layout/actionview_profile_status"
+        app:showAsAction="always" />
+</menu>

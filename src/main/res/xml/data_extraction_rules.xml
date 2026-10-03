@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <include domain="sharedpref" />
+        <include domain="database" />
+        <exclude domain="database" path="history" />
+        <exclude domain="database" path="history-wal" />
+        <exclude domain="database" path="history-shm" />
+        <exclude domain="sharedpref" path="secure_content_key_material_v1.xml" />
+        <exclude domain="sharedpref" path="secure_content_metadata_v1.xml" />
+        <exclude domain="sharedpref" path="inactive_device_activation_v1.xml" />
+        <exclude domain="sharedpref" path="inactive_device_privacy_v1.xml" />
+        <exclude domain="sharedpref" path="inactive_device_deactivation_v1.xml" />
+        <exclude domain="sharedpref" path="inactive_device_recovery_attempts_v1.xml" />
+        <exclude domain="sharedpref" path="account_secret_vault_v1.xml" />
+        <exclude domain="sharedpref" path="account_secret_migration_v1.xml" />
+        <exclude domain="sharedpref" path="database_master_key_v1.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" />
+        <include domain="database" />
+        <exclude domain="database" path="history" />
+        <exclude domain="database" path="history-wal" />
+        <exclude domain="database" path="history-shm" />
+        <exclude domain="sharedpref" path="secure_content_key_material_v1.xml" />
+        <exclude domain="sharedpref" path="secure_content_metadata_v1.xml" />
+        <exclude domain="sharedpref" path="inactive_device_activation_v1.xml" />
+        <exclude domain="sharedpref" path="inactive_device_privacy_v1.xml" />
+        <exclude domain="sharedpref" path="inactive_device_deactivation_v1.xml" />
+        <exclude domain="sharedpref" path="inactive_device_recovery_attempts_v1.xml" />
+        <exclude domain="sharedpref" path="account_secret_vault_v1.xml" />
+        <exclude domain="sharedpref" path="account_secret_migration_v1.xml" />
+        <exclude domain="sharedpref" path="database_master_key_v1.xml" />
+    </device-transfer>
+</data-extraction-rules>

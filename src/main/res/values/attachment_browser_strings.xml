@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="attachments_title">Attachments</string>
+    <string name="attachments_media">Media</string>
+    <string name="attachments_files">Files</string>
+    <string name="attachments_audio">Audio</string>
+    <string name="attachments_empty">No attachments</string>
+    <string name="attachments_audio_playback_error">Unable to play audio</string>
+    <string name="attachments_action_show_in_chat">Show in chat</string>
+    <string name="attachments_action_delete">Delete</string>
+</resources>

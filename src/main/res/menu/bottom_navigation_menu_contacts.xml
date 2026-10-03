@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/chats"
+        android:icon="@drawable/outline_chat_24"
+        android:title="@string/chats"/>
+    <item
+        android:id="@+id/contactslist"
+        android:icon="@drawable/ic_group_selected_24"
+        android:title="@string/contacts"/>
+    <item
+        android:id="@+id/manageaccounts"
+        android:icon="@drawable/ic_account_24dp"
+        android:title="@string/profile_navigation_title"/>
+</menu>

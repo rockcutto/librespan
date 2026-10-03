@@ -1,0 +1,26 @@
+BIP-0039 English recovery word list
+=================================
+
+Vendored file:
+  src/main/kotlin/eu/siacs/conversations/security/recovery/RecoveryPhraseEnglishWordListV1.kt
+
+Upstream source:
+  https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt
+
+Specification:
+  https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
+
+Upstream BIP-0039 authors:
+  Marek Palatinus
+  Pavol Rusnak
+  Aaron Voisine
+  Sean Bowe
+
+Upstream BIP-0039 metadata declares:
+
+  License: MIT
+
+and its Copyright section states that BIP-0039 falls under the MIT License.
+
+LibreSpan vendors the English word list verbatim and preserves the MIT SPDX
+identifier in the source file.

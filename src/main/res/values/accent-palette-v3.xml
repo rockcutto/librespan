@@ -1,0 +1,820 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+        LibreSpan Accent Palette V3.
+        Goals: clean chroma, calm large surfaces, no legacy Material seed colors.
+        Existing V1/V2 persisted accent values are migrated by index in AppearanceRepository.
+    -->
+
+    <style name="OverlayAccentV3_1_Light">
+        <item name="colorPrimary">#C24F77</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorPrimaryContainer">#F3DCE4</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#A05A72</item>
+        <item name="colorOnSecondary">#F2F5F7</item>
+        <item name="colorSecondaryContainer">#F0E5E8</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#A65D59</item>
+        <item name="colorOnTertiary">#FFFFFF</item>
+        <item name="colorTertiaryContainer">#F1E5E4</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_1_Dark">
+        <item name="colorPrimary">#D992AB</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#432531</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C89FAD</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#36262E</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#CBA19F</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#382727</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_1_OLED">
+        <item name="colorPrimary">#D687A3</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#271018</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C295A5</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1D1015</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C69795</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1E1110</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_2_Light">
+        <item name="colorPrimary">#A6509A</item>
+        <item name="colorOnPrimary">#F2F5F7</item>
+        <item name="colorPrimaryContainer">#EDDCEB</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#A05A96</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#F0E5EE</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#A6597C</item>
+        <item name="colorOnTertiary">#FFFFFF</item>
+        <item name="colorTertiaryContainer">#F1E4EA</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_2_Dark">
+        <item name="colorPrimary">#C893C0</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#3B253B</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C89FC2</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#362637</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#CB9FB3</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#382631</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_2_OLED">
+        <item name="colorPrimary">#C288BA</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#21101F</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C295BC</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1D101B</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C695AB</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1E1016</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_3_Light">
+        <item name="colorPrimary">#775BC0</item>
+        <item name="colorOnPrimary">#F2F5F7</item>
+        <item name="colorPrimaryContainer">#E4DEF2</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#6D5AA0</item>
+        <item name="colorOnSecondary">#F2F5F7</item>
+        <item name="colorSecondaryContainer">#E8E5F0</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#8D59A6</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#EDE4F1</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_3_Dark">
+        <item name="colorPrimary">#AB99D8</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#2E2846</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#AA9FC8</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#29263A</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#BD9FCB</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#31263B</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_3_OLED">
+        <item name="colorPrimary">#A38FD4</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#181226</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#A295C2</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#14101D</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#B695C6</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#19101E</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_4_Light">
+        <item name="colorPrimary">#596CC4</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#DEE2F3</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#5A66A0</item>
+        <item name="colorOnSecondary">#F2F5F7</item>
+        <item name="colorSecondaryContainer">#E5E7F0</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#6A59A6</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#E7E4F1</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_4_Dark">
+        <item name="colorPrimary">#98A4DA</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#252D47</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#9FA6C8</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#24293A</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#A99FCB</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#28263B</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_4_OLED">
+        <item name="colorPrimary">#8E9BD7</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#121627</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#959DC2</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#10121D</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#A095C6</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#13101E</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_5_Light">
+        <item name="colorPrimary">#3F7FC4</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorPrimaryContainer">#D9E5F3</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#577CA3</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSecondaryContainer">#E4EAF0</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#565CA9</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#E4E5F1</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_5_Dark">
+        <item name="colorPrimary">#88B0DA</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#1E3247</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#9EB3CA</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#232F3B</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#9DA0CD</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#23273C</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_5_OLED">
+        <item name="colorPrimary">#7CA8D7</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#0D1927</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#93ABC4</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#10161D</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#9397C8</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#0F111E</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_6_Light">
+        <item name="colorPrimary">#2F8BC0</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#D5E8F2</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#5087A7</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSecondaryContainer">#E3ECF1</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#4E5AAB</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#E3E5F2</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_6_Dark">
+        <item name="colorPrimary">#7EB7D8</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#193546</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#9AB9CC</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#21323C</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#989FCE</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#21263D</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_6_OLED">
+        <item name="colorPrimary">#72B0D4</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#091C26</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#8FB2C7</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#0E181E</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#8E95C9</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#0E101F</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_7_Light">
+        <item name="colorPrimary">#2693A2</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#D4E9EC</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#42848D</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSecondaryContainer">#E1EBED</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#415F92</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#E1E5EE</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_7_Dark">
+        <item name="colorPrimary">#78BCC5</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#17383D</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#91B8BD</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1E3135</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#91A2C0</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1D2836</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_7_OLED">
+        <item name="colorPrimary">#6BB6C0</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#081D20</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#86B0B6</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#0C1819</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#8599B9</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#0C111A</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_8_Light">
+        <item name="colorPrimary">#2F867A</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorPrimaryContainer">#D5E7E4</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#49837B</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSecondaryContainer">#E2EBEA</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#476E85</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#E2E8EB</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_8_Dark">
+        <item name="colorPrimary">#7EB4AD</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#193432</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#95B7B2</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#203130</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#94ABB8</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1F2B33</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_8_OLED">
+        <item name="colorPrimary">#72ADA5</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#091B18</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#8BB0AB</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#0D1816</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#89A2B1</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#0D1418</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_9_Light">
+        <item name="colorPrimary">#4D9165</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#DBE9E0</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#539369</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#E3EEE7</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#51978D</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#E3EEED</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_9_Dark">
+        <item name="colorPrimary">#91BBA0</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#22372C</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#9BC0A8</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#22352C</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#9AC3BD</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#223635</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_9_OLED">
+        <item name="colorPrimary">#86B496</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#0F1D14</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#91BA9F</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#0F1A13</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#90BCB6</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#0F1B19</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_10_Light">
+        <item name="colorPrimary">#709658</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#E2EADE</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#739D58</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#E9EFE4</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#57A15F</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#E4F0E5</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_10_Dark">
+        <item name="colorPrimary">#A6BE97</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#2C3828</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#AEC69E</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#2A3827</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#9EC8A2</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#233929</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_10_OLED">
+        <item name="colorPrimary">#9EB88D</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#161E12</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#A5C094</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#151C10</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#93C399</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#101D11</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_11_Light">
+        <item name="colorPrimary">#8D9350</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#E8E9DC</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#909654</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#EDEEE4</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#9A7F53</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#EFEBE3</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_11_Dark">
+        <item name="colorPrimary">#B8BC93</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#343826</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#BFC29C</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#323626</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C4B59B</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#353026</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_11_OLED">
+        <item name="colorPrimary">#B1B688</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#1C1D10</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#B8BC92</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1A1B0F</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#BEAD91</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1C170F</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_12_Light">
+        <item name="colorPrimary">#AB8C3B</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#EEE8D8</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#988655</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#EFECE4</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#9C6654</item>
+        <item name="colorOnTertiary">#FFFFFF</item>
+        <item name="colorTertiaryContainer">#EFE7E4</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_12_Dark">
+        <item name="colorPrimary">#CBB885</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#3C3620</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C3B99C</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#343226</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C6A69C</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#352926</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_12_OLED">
+        <item name="colorPrimary">#C6B17A</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#221C0C</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#BDB292</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1B180F</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C09D92</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1C120F</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_13_Light">
+        <item name="colorPrimary">#B67B35</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#F0E5D7</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#A07D53</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#F0EAE3</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#A45751</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#F0E4E3</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_13_Dark">
+        <item name="colorPrimary">#D2AD82</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#3F311F</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C8B49B</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#362F26</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#CA9E9A</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#372525</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_13_OLED">
+        <item name="colorPrimary">#CDA576</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#24190B</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C2AC91</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1D170F</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C59390</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1E100F</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_14_Light">
+        <item name="colorPrimary">#BB6738</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorPrimaryContainer">#F1E1D7</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#A47256</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSecondaryContainer">#F0E8E4</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#A9545D</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#F1E4E5</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_14_Dark">
+        <item name="colorPrimary">#D5A184</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#412B20</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#CAAD9D</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#372C27</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#CD9CA1</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#392528</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_14_OLED">
+        <item name="colorPrimary">#D19878</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#25150B</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C5A593</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1E150F</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C89297</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1E0F11</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_15_Light">
+        <item name="colorPrimary">#BC5A4C</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorPrimaryContainer">#F2DEDB</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#A0635A</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">#F0E6E5</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#A65973</item>
+        <item name="colorOnTertiary">#FFFFFF</item>
+        <item name="colorTertiaryContainer">#F1E4E9</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_15_Dark">
+        <item name="colorPrimary">#D59990</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#412825</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C8A59F</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#362928</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#CB9FAE</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#38262E</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_15_OLED">
+        <item name="colorPrimary">#D18F85</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#26120F</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C29B95</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1D1210</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C695A5</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1E1015</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_16_Light">
+        <item name="colorPrimary">#98675A</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#EAE1DE</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#A0695A</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSecondaryContainer">#F0E7E5</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#A48458</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#F0EBE4</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_16_Dark">
+        <item name="colorPrimary">#BFA199</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#372B29</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C8A89F</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#362A28</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#CAB89E</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#373127</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_16_OLED">
+        <item name="colorPrimary">#B9988F</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#1E1512</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#C29F95</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#1D1310</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#C5B094</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#1E1810</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_17_Light">
+        <item name="colorPrimary">#68747B</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#E1E3E5</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#547E96</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSecondaryContainer">#E4EAEE</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#53669A</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#E3E7EF</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_17_Dark">
+        <item name="colorPrimary">#A1A9AD</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#292F32</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#9CB4C2</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#223037</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#9BA6C4</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#222938</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_17_OLED">
+        <item name="colorPrimary">#98A0A5</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#151719</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#92ACBC</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#0F171B</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#919DBE</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#0F121C</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_18_Light">
+        <item name="colorPrimary">#56788A</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#DDE4E8</item>
+        <item name="colorOnPrimaryContainer">#151A1D</item>
+        <item name="colorSecondary">#537E94</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="colorSecondaryContainer">#E3EAEE</item>
+        <item name="colorOnSecondaryContainer">#151A1D</item>
+        <item name="colorTertiary">#526698</item>
+        <item name="colorOnTertiary">#F2F5F7</item>
+        <item name="colorTertiaryContainer">#E3E7EF</item>
+        <item name="colorOnTertiaryContainer">#151A1D</item>
+    </style>
+
+    <style name="OverlayAccentV3_18_Dark">
+        <item name="colorPrimary">#96ABB6</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#243036</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#9BB4C1</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#223037</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#9BA6C3</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#222938</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+    <style name="OverlayAccentV3_18_OLED">
+        <item name="colorPrimary">#8CA3AF</item>
+        <item name="colorOnPrimary">#151A1D</item>
+        <item name="colorPrimaryContainer">#11181C</item>
+        <item name="colorOnPrimaryContainer">#F2F5F7</item>
+        <item name="colorSecondary">#91ACBB</item>
+        <item name="colorOnSecondary">#151A1D</item>
+        <item name="colorSecondaryContainer">#0F171B</item>
+        <item name="colorOnSecondaryContainer">#F2F5F7</item>
+        <item name="colorTertiary">#909DBD</item>
+        <item name="colorOnTertiary">#151A1D</item>
+        <item name="colorTertiaryContainer">#0F121B</item>
+        <item name="colorOnTertiaryContainer">#F2F5F7</item>
+    </style>
+
+</resources>

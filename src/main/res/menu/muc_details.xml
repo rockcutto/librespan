@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <group android:id="@+id/group_menu_edit">
+        <item
+            android:id="@+id/action_edit_muc_details"
+            android:orderInCategory="0"
+            android:title="@string/edit"
+            app:showAsAction="never" />
+    </group>
+
+    <group android:id="@+id/group_menu_membership">
+        <item
+            android:id="@+id/action_leave_muc"
+            android:orderInCategory="1"
+            android:title="@string/conversation_menu_leave_conference"
+            app:showAsAction="never" />
+    </group>
+
+    <group android:id="@+id/group_menu_saved">
+        <item
+            android:id="@+id/action_save_as_bookmark"
+            android:orderInCategory="10"
+            android:title="@string/group_menu_save_group"
+            app:showAsAction="never" />
+
+        <item
+            android:id="@+id/action_delete_bookmark"
+            android:orderInCategory="11"
+            android:title="@string/group_menu_remove_saved"
+            app:showAsAction="never" />
+    </group>
+
+
+    <group android:id="@+id/group_menu_admin">
+        <item
+            android:id="@+id/action_destroy_room"
+            android:orderInCategory="100"
+            android:title="@string/group_menu_delete_group_for_all"
+            app:showAsAction="never" />
+    </group>
+
+</menu>

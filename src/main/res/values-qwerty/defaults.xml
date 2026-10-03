@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="enter_is_send">true</bool>
+    <bool name="display_enter_key">true</bool>
+</resources>

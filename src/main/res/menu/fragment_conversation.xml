@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_ongoing_call"
+        android:icon="@drawable/ic_phone_in_talk_24dp"
+        android:orderInCategory="9"
+        android:title="@string/return_to_ongoing_call"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/action_audio_call"
+        android:icon="@drawable/ic_header_call"
+        android:orderInCategory="10"
+        android:title="@string/audio_call"
+        app:showAsAction="always" />
+
+    <!-- Video starts from the audio-call surface in NeoCont and can be enabled in-call. -->
+    <item
+        android:id="@+id/action_video_call"
+        android:icon="@drawable/ic_videocam_24dp"
+        android:orderInCategory="11"
+        android:title="@string/video_call"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_muc_participants"
+        android:icon="@drawable/ic_group_24dp"
+        android:orderInCategory="12"
+        android:title="@string/action_muc_details"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/action_mute"
+        android:icon="@drawable/ic_notifications_off_24dp"
+        android:orderInCategory="20"
+        android:title="@string/disable_notifications"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_unmute"
+        android:icon="@drawable/ic_notifications_24dp"
+        android:orderInCategory="20"
+        android:title="@string/enable_notifications"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_security"
+        android:icon="@drawable/ic_lock_open_outline_24dp"
+        android:orderInCategory="30"
+        android:title="@string/encryption"
+        app:showAsAction="never">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item
+                    android:id="@+id/encryption_choice_none"
+                    android:icon="@drawable/ic_lock_open_outline_24dp"
+                    android:title="@string/encryption_choice_unencrypted" />
+                <item
+                    android:id="@+id/encryption_choice_axolotl"
+                    android:icon="@drawable/ic_security_24dp"
+                    android:title="@string/conversation_menu_omemo" />
+            </group>
+        </menu>
+    </item>
+
+    <item
+        android:id="@+id/action_toggle_pinned"
+        android:icon="@drawable/ic_bookmark_24dp"
+        android:orderInCategory="40"
+        android:title="@string/conversation_menu_pin"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_set_custom_bg"
+        android:icon="@drawable/ic_image_24dp"
+        android:orderInCategory="50"
+        android:title="@string/conversation_menu_background"
+        app:showAsAction="never" />
+
+    <!-- A separate group gives the lifecycle/data actions a visual divider. -->
+    <group android:id="@+id/conversation_menu_lifecycle">
+        <item
+            android:id="@+id/action_archive"
+            android:icon="@drawable/ic_archive_24dp"
+            android:orderInCategory="70"
+            android:title="@string/conversation_menu_archive"
+            app:showAsAction="never" />
+        <item
+            android:id="@+id/action_clear_history"
+            android:icon="@drawable/ic_delete_24dp"
+            android:orderInCategory="80"
+            android:title="@string/action_clear_history"
+            app:showAsAction="never" />
+        <item
+            android:id="@+id/action_delete_muc_local"
+            android:icon="@drawable/ic_delete_24dp"
+            android:orderInCategory="90"
+            android:title="@string/conversation_menu_delete_channel_from_device"
+            android:visible="false"
+            app:showAsAction="never" />
+    </group>
+
+    <!-- Conditional MUC detail entry. The participants shortcut remains in the header. -->
+    <item
+        android:id="@+id/action_muc_details"
+        android:icon="@drawable/ic_group_24dp"
+        android:orderInCategory="85"
+        android:title="@string/action_muc_details"
+        app:showAsAction="never" />
+
+    <!-- Legacy/internal actions remain addressable but are intentionally not user-visible. -->
+    <item
+        android:id="@+id/action_attach_file"
+        android:icon="@drawable/ic_attach_file_24dp"
+        android:orderInCategory="900"
+        android:title="@string/attach_file"
+        android:visible="false"
+        app:showAsAction="never">
+        <menu>
+            <item
+                android:id="@+id/attach_choose_file"
+                android:icon="@drawable/ic_description_24dp"
+                android:title="@string/choose_file" />
+            <item
+                android:id="@+id/attach_choose_picture"
+                android:icon="@drawable/ic_image_24dp"
+                android:title="@string/attach_choose_picture" />
+            <item
+                android:id="@+id/attach_take_picture"
+                android:icon="@drawable/ic_camera_alt_24dp"
+                android:title="@string/attach_take_picture" />
+            <item
+                android:id="@+id/attach_record_video"
+                android:icon="@drawable/ic_videocam_24dp"
+                android:title="@string/attach_record_video" />
+            <item
+                android:id="@+id/attach_record_voice"
+                android:visible="false"
+                android:icon="@drawable/ic_mic_24dp"
+                android:title="@string/attach_record_voice" />
+            <item
+                android:id="@+id/attach_location"
+                android:icon="@drawable/ic_location_pin_24dp"
+                android:title="@string/send_location" />
+        </menu>
+    </item>
+
+    <item
+        android:id="@+id/action_contact_details"
+        android:icon="@drawable/ic_person_24dp"
+        android:orderInCategory="901"
+        android:title="@string/action_contact_details"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_invite"
+        android:icon="@drawable/ic_person_add_24dp"
+        android:orderInCategory="902"
+        android:title="@string/invite_contact"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_open_calendar"
+        android:icon="@drawable/ic_calendar_month_24dp"
+        android:orderInCategory="903"
+        android:title="@string/action_open_calendar"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_start_secret_chat"
+        android:icon="@drawable/ic_security_24dp"
+        android:orderInCategory="904"
+        android:title="@string/action_start_secret_chat"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_destroy_secret_chat"
+        android:icon="@drawable/ic_security_off_24dp"
+        android:orderInCategory="905"
+        android:title="@string/action_destroy_secret_chat"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_throttle"
+        android:icon="@drawable/ic_notifications_paused_24dp"
+        android:orderInCategory="906"
+        android:title="@string/pref_noisy_notifications_throttling"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_refresh_feature_discovery"
+        android:icon="@drawable/ic_refresh_24dp"
+        android:orderInCategory="907"
+        android:title="@string/refresh_feature_discovery"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_message_action_preview"
+        android:icon="@drawable/ic_visibility_24dp"
+        android:orderInCategory="999"
+        android:title="Action UX Preview"
+        android:visible="false"
+        app:showAsAction="never" />
+
+</menu>

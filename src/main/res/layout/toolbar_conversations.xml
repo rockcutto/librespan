@@ -1,0 +1,25 @@
+<com.google.android.material.appbar.AppBarLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/app_bar_layout"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@android:color/transparent"
+    android:elevation="0dp"
+    app:elevation="0dp">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/conversation_toolbar_height"
+        android:minHeight="@dimen/conversation_toolbar_height"
+        android:background="@android:color/transparent"
+        app:contentInsetStart="0dp"
+        app:contentInsetStartWithNavigation="0dp"
+        app:contentInsetEnd="4dp"
+        app:titleMarginStart="12dp"
+        app:titleMarginEnd="4dp"
+        app:titleTextAppearance="@style/TextAppearance.App.Toolbar.Overview.Title"
+        app:subtitleTextAppearance="@style/TextAppearance.App.Toolbar.Overview.Subtitle" />
+
+</com.google.android.material.appbar.AppBarLayout>

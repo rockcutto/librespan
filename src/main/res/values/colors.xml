@@ -1,0 +1,336 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<color name="black">#ff000000</color>
+	<color name="black87">#de000000</color>
+	<color name="black54">#8a000000</color>
+	<color name="black26">#42000000</color>
+	<color name="black12">#1f000000</color>
+	<color name="white">#ffffffff</color>
+	<color name="white87">#deffffff</color>
+	<color name="white70">#b2ffffff</color>
+	<color name="white12">#1fffffff</color>
+	<color name="grey50">#fffafafa</color>
+	<color name="grey200">#ffeeeeee</color>
+	<color name="grey300">#ffe0e0e0</color>
+	<color name="grey300_40">#66e0e0e0</color>
+	<color name="grey500">#ff9e9e9e</color>
+	<color name="grey700">#ff616161</color>
+	<color name="grey700_40">#66616161</color>
+	<color name="grey700_25">#40616161</color>
+	<color name="grey800">#ff424242</color>
+	<color name="grey900">#ff282828</color>
+	<color name="red500">#fff44336</color>
+	<color name="red700">#ffD32F2F</color>
+	<color name="red_a700">#ffd50000</color>
+	<color name="red_a100">#ffff8a80</color>
+	<color name="red800">#ffc62828</color>
+	<color name="orange500">#ffff9800</color>
+	<color name="blue_a100">#ff82B1FF</color>
+	<color name="blue_a200">#ff448AFF</color>
+	<color name="blue_a400">#ff2979FF</color>
+	<color name="blue_a700">#ff2962FF</color>
+	<color name="green500">#ff4CAF50</color>
+	<color name="green600">#ff43A047</color>
+	<color name="green700">#ff388E3C</color>
+	<color name="green800">#ff2E7D32</color>
+	<color name="green900">#ff1B5E20</color>
+
+    <color name="light_green_500">#ff8BC34A</color>
+    <color name="light_green_600">#ff7CB342</color>
+
+    <color name="green_100">#ffC8E6C9</color>
+    <color name="green_200">#ffA5D6A7</color>
+    <color name="green_300">#ff81C784</color>
+    <color name="green_500">#ff4CAF50</color>
+    <color name="green_600">#ff43A047</color>
+    <color name="green_700">#ff388E3C</color>
+    <color name="green_800">#ff2E7D32</color>
+
+    <color name="amber_100">#ffFFECB3</color>
+    <color name="amber_200">#ffFFE082</color>
+    <color name="amber_300">#ffFFD54F</color>
+    <color name="amber_700">#ffFFA000</color>
+    <color name="amber_800">#ffFF8F00</color>
+
+    <color name="orange_100">#ffFFE0B2</color>
+    <color name="orange_200">#ffFFCC80</color>
+    <color name="orange_300">#ffFFB74D</color>
+    <color name="orange_500">#ffff9800</color>
+    <color name="orange_700">#ffF57C00</color>
+    <color name="orange_800">#ffEF6C00</color>
+
+    <color name="red_100">#ffFFCDD2</color>
+    <color name="red_200">#ffEF9A9A</color>
+    <color name="red_300">#ffE57373</color>
+    <color name="red_500">#ffF44336</color>
+    <color name="red_700">#ffD32F2F</color>
+    <color name="red_800">#ffC62828</color>
+
+
+    <color name="gray_500">#ff9e9e9e</color>
+    <color name="gray_600">#ff757575</color>
+    <color name="gray_700">#ff616161</color>
+    <color name="gray_800">#ff424242</color>
+    <color name="gray_900">#ff212121</color>
+
+	<color name="green700_desaturated">#ff4d8e50</color> <!-- desaturated by 15 -->
+	<color name="green900_desaturated">#ff295e2d</color> <!-- desaturated by 15 -->
+
+	<!-- scanner -->
+	<color name="scan_result_dots">#c04CAF50</color>
+
+	<color name="splash_screen_background">#52617a</color> <!-- gray50 -->
+	<color name="splash_screen_status_bar">#52617a</color> <!-- gray300 -->
+
+	<color name="blue500">#ff2196f3</color>
+
+	<color name="blue_alpha">#aa82B1FF</color>
+
+	<color name="crop_image_view_background">#BB000000</color>
+	<color name="editor_draw_default_color">#000000</color>
+	<color name="editor_palette_white">@color/white</color>
+	<color name="editor_palette_dark">@color/gray_700</color>
+	<color name="editor_palette_red">@color/red_300</color>
+	<color name="editor_palette_green">@color/secondary_override_9</color>
+	<color name="editor_palette_purple">@color/secondary_override_2</color>
+
+
+	<color name="primary_default">#3E7087</color>
+	<color name="primary_default_dark">#214555</color>
+
+	<color name="primary_override_1">#e91e63</color>
+	<color name="primary_override_1_dark">#b41249</color>
+	<color name="primary_override_2">#9c27b0</color>
+	<color name="primary_override_2_dark">#751d84</color>
+	<color name="primary_override_3">#673ab7</color>
+	<color name="primary_override_3_dark">#4d2c89</color>
+	<color name="primary_override_4">#3f51b5</color>
+	<color name="primary_override_4_dark">#2f3d88</color>
+	<color name="primary_override_5">#2196f3</color>
+	<color name="primary_override_5_dark">#0b72c4</color>
+	<color name="primary_override_6">#03a9f4</color>
+	<color name="primary_override_6_dark">#027fb7</color>
+	<color name="primary_override_7">#00bcd4</color>
+	<color name="primary_override_7_dark">#008d9f</color>
+	<color name="primary_override_8">#009688</color>
+	<color name="primary_override_8_dark">#007066</color>
+	<color name="primary_override_9">#43a047</color>
+	<color name="primary_override_9_dark">#327835</color>
+	<color name="primary_override_10">#8bc34a</color>
+	<color name="primary_override_10_dark">#699732</color>
+	<color name="primary_override_11">#cddc39</color>
+	<color name="primary_override_11_dark">#a3b11f</color>
+	<color name="primary_override_12">#ffeb3b</color>
+	<color name="primary_override_12_dark">#ebd300</color>
+	<color name="primary_override_13">#ffc107</color>
+	<color name="primary_override_13_dark">#c49300</color>
+	<color name="primary_override_14">#ff9800</color>
+	<color name="primary_override_14_dark">#bf7200</color>
+	<color name="primary_override_15">#ff5722</color>
+	<color name="primary_override_15_dark">#d93400</color>
+	<color name="primary_override_16">#795548</color>
+	<color name="primary_override_16_dark">#5b4036</color>
+	<color name="primary_override_17">#9e9e9e</color>
+	<color name="primary_override_17_dark">#767676</color>
+	<color name="primary_override_18">#607d8b</color>
+	<color name="primary_override_18_dark">#485e68</color>
+
+	<color name="oled_primary_override_1">#D31A5A</color>
+	<color name="oled_primary_override_1_dark">#A01042</color>
+	<color name="oled_primary_override_2">#8B249C</color>
+	<color name="oled_primary_override_2_dark">#6A1A78</color>
+	<color name="oled_primary_override_3">#5D30A7</color>
+	<color name="oled_primary_override_3_dark">#452480</color>
+	<color name="oled_primary_override_4">#3A49A4</color>
+	<color name="oled_primary_override_4_dark">#2B377C</color>
+	<color name="oled_primary_override_5">#1E88E5</color>
+	<color name="oled_primary_override_5_dark">#1565C0</color>
+	<color name="oled_primary_override_6">#0298DE</color>
+	<color name="oled_primary_override_6_dark">#0177AD</color>
+	<color name="oled_primary_override_7">#00AABF</color>
+	<color name="oled_primary_override_7_dark">#008391</color>
+	<color name="oled_primary_override_8">#00887A</color>
+	<color name="oled_primary_override_8_dark">#00685E</color>
+	<color name="oled_primary_override_9">#3E9141</color>
+	<color name="oled_primary_override_9_dark">#2D6C30</color>
+	<color name="oled_primary_override_10">#7CB342</color>
+	<color name="oled_primary_override_10_dark">#5F8C2F</color>
+	<color name="oled_primary_override_11">#B9C835</color>
+	<color name="oled_primary_override_11_dark">#91A028</color>
+	<color name="oled_primary_override_12">#E6D936</color>
+	<color name="oled_primary_override_12_dark">#C4B52C</color>
+	<color name="oled_primary_override_13">#E6B006</color>
+	<color name="oled_primary_override_13_dark">#B08700</color>
+	<color name="oled_primary_override_14">#E68A00</color>
+	<color name="oled_primary_override_14_dark">#AD6800</color>
+	<color name="oled_primary_override_15">#E64F1E</color>
+	<color name="oled_primary_override_15_dark">#C43000</color>
+	<color name="oled_primary_override_16">#6D4C41</color>
+	<color name="oled_primary_override_16_dark">#51382F</color>
+	<color name="oled_primary_override_17">#8E8E8E</color>
+	<color name="oled_primary_override_17_dark">#6A6A6A</color>
+	<color name="oled_primary_override_18">#546E7A</color>
+	<color name="oled_primary_override_18_dark">#3F525B</color>
+
+	<color name="secondary_override_1">#C77E95</color>
+	<color name="secondary_override_1_dark">#915266</color>
+	<color name="tertiary_override_1">#DE185B</color>
+	<color name="tertiary_override_1_dark">#B00C44</color>
+	<color name="oled_secondary_override_1">#B56D84</color>
+	<color name="oled_secondary_override_1_dark">#804659</color>
+	<color name="oled_tertiary_override_1">#C71452</color>
+	<color name="oled_tertiary_override_1_dark">#990D3D</color>
+
+	<color name="secondary_override_2">#9779A1</color>
+	<color name="secondary_override_2_dark">#6B5075</color>
+	<color name="tertiary_override_2">#9220A6</color>
+	<color name="tertiary_override_2_dark">#701682</color>
+	<color name="oled_secondary_override_2">#896B91</color>
+	<color name="oled_secondary_override_2_dark">#5C4363</color>
+	<color name="oled_tertiary_override_2">#821E94</color>
+	<color name="oled_tertiary_override_2_dark">#601370</color>
+
+	<color name="secondary_override_3">#786896</color>
+	<color name="secondary_override_3_dark">#52446E</color>
+	<color name="tertiary_override_3">#5E32AB</color>
+	<color name="tertiary_override_3_dark">#452382</color>
+	<color name="oled_secondary_override_3">#6D5D8A</color>
+	<color name="oled_secondary_override_3_dark">#483A61</color>
+	<color name="oled_tertiary_override_3">#552A9E</color>
+	<color name="oled_tertiary_override_3_dark">#3D1E75</color>
+
+	<color name="secondary_override_4">#6B739E</color>
+	<color name="secondary_override_4_dark">#474D73</color>
+	<color name="tertiary_override_4">#3948A8</color>
+	<color name="tertiary_override_4_dark">#283480</color>
+	<color name="oled_secondary_override_4">#5E668F</color>
+	<color name="oled_secondary_override_4_dark">#404666</color>
+	<color name="oled_tertiary_override_4">#334299</color>
+	<color name="oled_tertiary_override_4_dark">#242F73</color>
+
+	<color name="secondary_override_5">#6787A3</color>
+	<color name="secondary_override_5_dark">#435D75</color>
+	<color name="tertiary_override_5">#1C8BE6</color>
+	<color name="tertiary_override_5_dark">#0E6BB8</color>
+	<color name="oled_secondary_override_5">#5C7C96</color>
+	<color name="oled_secondary_override_5_dark">#3A5369</color>
+	<color name="oled_tertiary_override_5">#197DD1</color>
+	<color name="oled_tertiary_override_5_dark">#105CA1</color>
+
+	<color name="secondary_override_6">#6699B3</color>
+	<color name="secondary_override_6_dark">#426E85</color>
+	<color name="tertiary_override_6">#009DE6</color>
+	<color name="tertiary_override_6_dark">#0074AD</color>
+	<color name="oled_secondary_override_6">#5A8BA3</color>
+	<color name="oled_secondary_override_6_dark">#3A6278</color>
+	<color name="oled_tertiary_override_6">#008ED1</color>
+	<color name="oled_tertiary_override_6_dark">#00699E</color>
+
+	<color name="secondary_override_7">#66AAB3</color>
+	<color name="secondary_override_7_dark">#437982</color>
+	<color name="tertiary_override_7">#00AFCA</color>
+	<color name="tertiary_override_7_dark">#008399</color>
+	<color name="oled_secondary_override_7">#599BA3</color>
+	<color name="oled_secondary_override_7_dark">#3A6B73</color>
+	<color name="oled_tertiary_override_7">#009EB5</color>
+	<color name="oled_tertiary_override_7_dark">#00778A</color>
+
+	<color name="secondary_override_8">#679C96</color>
+	<color name="secondary_override_8_dark">#446E69</color>
+	<color name="tertiary_override_8">#008C7E</color>
+	<color name="tertiary_override_8_dark">#00665B</color>
+	<color name="oled_secondary_override_8">#5B8F89</color>
+	<color name="oled_secondary_override_8_dark">#39615D</color>
+	<color name="oled_tertiary_override_8">#007D70</color>
+	<color name="oled_tertiary_override_8_dark">#005E54</color>
+
+	<color name="secondary_override_9">#789E7A</color>
+	<color name="secondary_override_9_dark">#517053</color>
+	<color name="tertiary_override_9">#3D9641</color>
+	<color name="tertiary_override_9_dark">#2B6E2E</color>
+	<color name="oled_secondary_override_9">#6B8F6D</color>
+	<color name="oled_secondary_override_9_dark">#466348</color>
+	<color name="oled_tertiary_override_9">#37873A</color>
+	<color name="oled_tertiary_override_9_dark">#276329</color>
+
+	<color name="secondary_override_10">#9CB384</color>
+	<color name="secondary_override_10_dark">#6E825A</color>
+	<color name="tertiary_override_10">#82B842</color>
+	<color name="tertiary_override_10_dark">#618C2D</color>
+	<color name="oled_secondary_override_10">#8EA676</color>
+	<color name="oled_secondary_override_10_dark">#62754E</color>
+	<color name="oled_tertiary_override_10">#75A83B</color>
+	<color name="oled_tertiary_override_10_dark">#588226</color>
+
+	<color name="secondary_override_11">#BAC282</color>
+	<color name="secondary_override_11_dark">#868C58</color>
+	<color name="tertiary_override_11">#C4D132</color>
+	<color name="tertiary_override_11_dark">#9BA619</color>
+	<color name="oled_secondary_override_11">#AAB373</color>
+	<color name="oled_secondary_override_11_dark">#787D4D</color>
+	<color name="oled_tertiary_override_11">#B0BD2B</color>
+	<color name="oled_tertiary_override_11_dark">#899420</color>
+
+	<color name="secondary_override_12">#CFC686</color>
+	<color name="secondary_override_12_dark">#9C945E</color>
+	<color name="tertiary_override_12">#F2E033</color>
+	<color name="tertiary_override_12_dark">#E0C800</color>
+	<color name="oled_secondary_override_12">#BAB276</color>
+	<color name="oled_secondary_override_12_dark">#8A8250</color>
+	<color name="oled_tertiary_override_12">#DBCD2E</color>
+	<color name="oled_tertiary_override_12_dark">#B8AA23</color>
+
+	<color name="secondary_override_13">#CFAEA3</color>
+	<color name="secondary_override_13_dark">#9C8074</color>
+	<color name="tertiary_override_13">#F2B500</color>
+	<color name="tertiary_override_13_dark">#B88A00</color>
+	<color name="oled_secondary_override_13">#B8998D</color>
+	<color name="oled_secondary_override_13_dark">#8A7064</color>
+	<color name="oled_tertiary_override_13">#D9A500</color>
+	<color name="oled_tertiary_override_13_dark">#A67E00</color>
+
+	<color name="secondary_override_14">#C79A63</color>
+	<color name="secondary_override_14_dark">#946E41</color>
+	<color name="tertiary_override_14">#F28F00</color>
+	<color name="tertiary_override_14_dark">#B36A00</color>
+	<color name="oled_secondary_override_14">#B38956</color>
+	<color name="oled_secondary_override_14_dark">#825F37</color>
+	<color name="oled_tertiary_override_14">#D98200</color>
+	<color name="oled_tertiary_override_14_dark">#A16100</color>
+
+	<color name="secondary_override_15">#C27E69</color>
+	<color name="secondary_override_15_dark">#8F5745</color>
+	<color name="tertiary_override_15">#F04F18</color>
+	<color name="tertiary_override_15_dark">#CC3000</color>
+	<color name="oled_secondary_override_15">#AD6F5B</color>
+	<color name="oled_secondary_override_15_dark">#7D4A39</color>
+	<color name="oled_tertiary_override_15">#D64713</color>
+	<color name="oled_tertiary_override_15_dark">#B82C00</color>
+
+	<color name="secondary_override_16">#87756F</color>
+	<color name="secondary_override_16_dark">#61524D</color>
+	<color name="tertiary_override_16">#704E42</color>
+	<color name="tertiary_override_16_dark">#523930</color>
+	<color name="oled_secondary_override_16">#7A6A64</color>
+	<color name="oled_secondary_override_16_dark">#544540</color>
+	<color name="oled_tertiary_override_16">#63453B</color>
+	<color name="oled_tertiary_override_16_dark">#4A322A</color>
+
+	<color name="secondary_override_17">#949494</color>
+	<color name="secondary_override_17_dark">#6E6E6E</color>
+	<color name="tertiary_override_17">#919191</color>
+	<color name="tertiary_override_17_dark">#6B6B6B</color>
+	<color name="oled_secondary_override_17">#858585</color>
+	<color name="oled_secondary_override_17_dark">#616161</color>
+	<color name="oled_tertiary_override_17">#828282</color>
+	<color name="oled_tertiary_override_17_dark">#5C5C5C</color>
+
+	<color name="secondary_override_18">#7C8A91</color>
+	<color name="secondary_override_18_dark">#5A666B</color>
+	<color name="tertiary_override_18">#597482</color>
+	<color name="tertiary_override_18_dark">#415661</color>
+	<color name="oled_secondary_override_18">#6F7D85</color>
+	<color name="oled_secondary_override_18_dark">#4D585E</color>
+	<color name="oled_tertiary_override_18">#4D6573</color>
+	<color name="oled_tertiary_override_18_dark">#384A54</color>
+</resources>

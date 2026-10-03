@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <files-path
+        name="pictures"
+        path="Images/"/>
+    <files-path
+        name="videos"
+        path="Videos"/>
+    <files-path
+        name="files"
+        path="Files/"/>
+    <files-path
+        name="recordings"
+        path="Recordings/"/>
+    <files-path
+        name="media"
+        path="Media/"/>
+    <cache-path
+        name="camera"
+        path="Camera/"/>
+    <cache-path
+        name="logs"
+        path="logs"/>
+    <cache-path
+        name="voice_recordings"
+        path="VoiceRecordings/"/>
+    <cache-path
+        name="secure_outgoing_images"
+        path="SecureOutgoingImages/"/>
+    <cache-path
+        name="secure_outgoing_videos"
+        path="SecureOutgoingVideos/"/>
+    <cache-path
+        name="secure_content_exports"
+        path="SecureContentExports/"/>
+    <cache-path
+        name="secure_media_read_cache"
+        path="SecureMediaReadCache/"/>
+</paths>

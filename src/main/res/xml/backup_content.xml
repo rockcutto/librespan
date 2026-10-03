@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include
+        domain="sharedpref"
+        path="."
+        requireFlags="clientSideEncryption" />
+    <include
+        domain="database"
+        path="."
+        requireFlags="clientSideEncryption" />
+    <!-- Installation-bound DMK is not portable; raw history DB is never a backup format. -->
+    <exclude domain="database" path="history" />
+    <exclude domain="database" path="history-wal" />
+    <exclude domain="database" path="history-shm" />
+
+    <!-- S6.0 key records and protected metadata are installation-local, never a backup format. -->
+    <exclude domain="sharedpref" path="secure_content_key_material_v1.xml" />
+    <exclude domain="sharedpref" path="secure_content_metadata_v1.xml" />
+    <exclude domain="sharedpref" path="inactive_device_activation_v1.xml" />
+    <exclude domain="sharedpref" path="inactive_device_privacy_v1.xml" />
+    <exclude domain="sharedpref" path="inactive_device_deactivation_v1.xml" />
+    <exclude domain="sharedpref" path="inactive_device_recovery_attempts_v1.xml" />
+    <exclude domain="sharedpref" path="account_secret_vault_v1.xml" />
+    <exclude domain="sharedpref" path="account_secret_migration_v1.xml" />
+    <exclude domain="sharedpref" path="database_master_key_v1.xml" />
+</full-backup-content>

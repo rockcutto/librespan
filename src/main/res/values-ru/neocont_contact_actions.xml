@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="contact_action_chat">Чат</string>
+    <string name="contact_action_call">Звонок</string>
+    <string name="contact_action_video">Видео</string>
+    <string name="contact_action_sound">Звук</string>
+    <string name="contact_action_sound_enabled">Звук включён</string>
+    <string name="contact_action_sound_disabled">Звук выключен</string>
+</resources>

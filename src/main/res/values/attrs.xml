@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="neoColorComposerSurface" format="reference|color" />
+    <attr name="neoColorMessageIncomingSurface" format="reference|color" />
+    <attr name="neoColorMessageIncomingElevatedSurface" format="reference|color" />
+    <attr name="neoColorChatWallpaperScrim" format="reference|color" />
+
+    <declare-styleable name="UnreadCountCustomView">
+        <attr name="backgroundColor" format="reference|color" />
+        <attr name="textColor" format="reference|color" />
+    </declare-styleable>
+</resources>

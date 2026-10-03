@@ -1,0 +1,240 @@
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?colorSecondaryContainer"
+        android:descendantFocusability="blocksDescendants">
+
+        <FrameLayout
+            android:id="@+id/frame"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?colorSurface">
+
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?android:selectableItemBackground"
+                android:clipToPadding="false"
+                android:minHeight="76dp"
+                android:paddingStart="8dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="8dp">
+
+                <eu.siacs.conversations.ui.widget.AccountIndicator
+                    android:id="@+id/account_indicator"
+                    android:layout_width="@dimen/account_indicator_width"
+                    android:layout_height="@dimen/avatar_on_conversation_overview"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true" />
+
+                <eu.siacs.conversations.ui.widget.AvatarView
+                    android:id="@+id/conversation_image"
+                    android:layout_width="@dimen/avatar_on_conversation_overview"
+                    android:layout_height="@dimen/avatar_on_conversation_overview"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:layout_marginStart="8dp"
+                    android:scaleType="centerCrop" />
+
+                <eu.siacs.conversations.ui.widget.PresenceIndicator
+                    android:id="@+id/presence_indicator"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_alignBottom="@id/conversation_image"
+                    android:layout_alignEnd="@id/conversation_image"
+                    android:layout_marginEnd="2dp"
+                    android:layout_marginBottom="2dp" />
+
+                <!-- Entity-type badge shares the contact-presence slot. For MUCs this replaces
+                     the legacy group glyph next to the title while keeping the avatar pattern. -->
+                <ImageView
+                    android:id="@+id/conversation_type_indicator"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_alignBottom="@id/conversation_image"
+                    android:layout_alignEnd="@id/conversation_image"
+                    android:background="@drawable/bg_conversation_type_badge"
+                    android:importantForAccessibility="no"
+                    android:padding="3dp"
+                    android:src="@drawable/ic_group_selected_16"
+                    android:visibility="gone"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_centerVertical="true"
+                    android:layout_toEndOf="@id/conversation_image"
+                    android:paddingStart="12dp">
+
+                    <LinearLayout
+                        android:id="@+id/conversation_right_meta"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:gravity="end"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/conversation_lastupdate"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="end"
+                            android:maxLines="1"
+                            android:textAppearance="@style/TextAppearance.App.Conversation.Meta"
+                            android:textColor="?colorOnSurfaceVariant"
+                            tools:text="18:42" />
+
+                        <ImageView
+                            android:id="@+id/message_status"
+                            android:layout_width="16dp"
+                            android:layout_height="16dp"
+                            android:layout_gravity="end"
+                            android:layout_marginTop="1dp"
+                            android:src="@drawable/ic_done_all_24dp"
+                            android:visibility="gone"
+                            app:tint="?colorPrimary" />
+                    </LinearLayout>
+
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:id="@+id/conversation_name_wrapper"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentStart="true"
+                        android:layout_toStartOf="@id/conversation_right_meta"
+                        android:paddingEnd="8dp">
+
+                        <LinearLayout
+                            android:id="@+id/conversation_title_content"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toStartOf="@id/pinned_on_top"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent">
+
+                            <TextView
+                                android:id="@+id/conversation_name"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:drawablePadding="4dp"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:textAppearance="@style/TextAppearance.App.Conversation.Title"
+                                tools:text="Алексей" />
+
+                            <TextView
+                                android:id="@+id/contact_status_message"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="8dp"
+                                android:layout_weight="1"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:textAppearance="@style/TextAppearance.App.Conversation.Meta"
+                                android:textColor="?colorOnSurfaceVariant"
+                                android:visibility="gone"
+                                tools:text="на встрече до 18:00"
+                                tools:visibility="visible" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:id="@+id/pinned_on_top"
+                            android:layout_width="15dp"
+                            android:layout_height="15dp"
+                            android:layout_marginStart="4dp"
+                            android:alpha="0.72"
+                            android:contentDescription="@string/add_to_favorites"
+                            android:src="@drawable/ic_pin_black"
+                            android:visibility="gone"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:tint="?colorOnSurfaceVariant" />
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    <RelativeLayout
+                        android:id="@+id/conversation_lastwrapper"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_below="@id/conversation_name_wrapper"
+                        android:layout_toStartOf="@id/conversation_right_meta"
+                        android:layout_marginTop="4dp">
+
+                        <TextView
+                            android:id="@+id/sender_name"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_centerVertical="true"
+                            android:layout_marginEnd="4dp"
+                            android:layout_alignParentStart="true"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/me"
+                            android:textAppearance="@style/TextAppearance.App.Conversation.Preview"
+                            android:textColor="?colorOnSurfaceVariant" />
+
+                        <eu.siacs.conversations.ui.widget.UnreadCountCustomView
+                            android:id="@+id/unread_count"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_alignParentEnd="true"
+                            android:layout_centerVertical="true"
+                            android:visibility="gone"
+                            app:backgroundColor="?colorPrimaryContainer"
+                            app:textColor="?colorOnPrimaryContainer" />
+
+                        <ImageView
+                            android:id="@+id/notification_status"
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:layout_centerVertical="true"
+                            android:layout_marginEnd="6dp"
+                            android:layout_toStartOf="@id/unread_count"
+                            android:src="@drawable/ic_notifications_24dp"
+                            android:visibility="gone"
+                            app:tint="?colorOnSurfaceVariant" />
+
+                        <LinearLayout
+                            android:id="@+id/txt_img_wrapper"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_centerVertical="true"
+                            android:layout_toEndOf="@id/sender_name"
+                            android:layout_toStartOf="@id/notification_status"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:id="@+id/conversation_lastmsg_img"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginEnd="6dp"
+                                android:visibility="gone"
+                                android:scaleType="centerCrop"
+                                android:background="@drawable/bg_conversation_thumbnail" />
+
+                            <TextView
+                                android:id="@+id/conversation_lastmsg"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:textAppearance="@style/TextAppearance.App.Conversation.Preview"
+                                android:textColor="?colorOnSurfaceVariant"
+                                tools:text="Привет, ты сегодня будешь?" />
+                        </LinearLayout>
+                    </RelativeLayout>
+                </RelativeLayout>
+            </RelativeLayout>
+        </FrameLayout>
+    </FrameLayout>
+</layout>

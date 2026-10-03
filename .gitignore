@@ -1,0 +1,32 @@
+.gradle/
+.idea/
+*.iml
+
+build/
+*/build/
+
+local.properties
+
+.externalNativeBuild/
+.cxx/
+
+captures/
+
+*.apk
+*.aab
+
+release/
+
+# Signing / local secrets
+signing.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+.env
+.env.*
+
+# Build outputs in nested modules
+**/build/
+

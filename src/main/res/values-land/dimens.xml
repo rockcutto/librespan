@@ -1,0 +1,16 @@
+<resources>
+    <dimen name="local_video_preview_height">96dp</dimen>
+    <dimen name="local_video_preview_width">128dp</dimen>
+    <dimen name="rtp_session_duration_top_margin">16dp</dimen>
+    <dimen name="call_avatar_size">104dp</dimen>
+    <dimen name="call_local_video_margin_top">72dp</dimen>
+    <dimen name="call_local_video_margin_end">12dp</dimen>
+    <dimen name="call_controls_margin_horizontal">8dp</dimen>
+    <dimen name="call_controls_margin_bottom">8dp</dimen>
+    <dimen name="call_control_label_size">9sp</dimen>
+    <dimen name="call_end_fab_size">56dp</dimen>
+    <dimen name="call_end_icon_size">28dp</dimen>
+    <dimen name="call_incoming_actions_width">240dp</dimen>
+    <dimen name="call_incoming_fab_size">60dp</dimen>
+    <dimen name="call_incoming_icon_size">30dp</dimen>
+</resources>

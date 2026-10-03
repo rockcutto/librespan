@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:key="main_screen">
+
+    <PreferenceScreen
+        android:key="userinterface"
+        android:title="@string/pref_ui_options">
+
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra
+                android:name="page"
+                android:value="userinterface" />
+        </intent>
+
+        <PreferenceCategory android:title="@string/pref_appearance">
+            <SwitchPreference
+                android:defaultValue="@bool/use_green_background"
+                android:key="use_green_background"
+                android:summary="@string/pref_use_green_background_summary"
+                android:title="@string/pref_use_green_background"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <ListPreference
+                android:defaultValue="@string/avatar_shape"
+                android:key="avatar_shape"
+                android:entries="@array/avatars_shape"
+                android:entryValues="@array/avatars_shape_values"
+                android:summary="@string/pref_avatar_shape_summary"
+                android:title="@string/pref_avatars_shape" />
+            <SwitchPreference
+                android:defaultValue="@bool/use_green_background"
+                android:key="show_account_indicator"
+                android:summary="@string/pref_show_account_indicator_details"
+                android:title="@string/pref_show_account_indicator"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+
+        <PreferenceCategory android:title="@string/pref_navigation">
+            <SwitchPreference
+                android:defaultValue="@bool/show_nav_bar"
+                android:key="show_nav_bar"
+                android:summary="@string/pref_show_navigation_bar_summary"
+                android:title="@string/pref_show_navigation_bar"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/show_dynamic_tags"
+                android:key="show_dynamic_tags"
+                android:summary="@string/pref_show_dynamic_tags_summary"
+                android:title="@string/pref_show_dynamic_tags"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/group_by_tags"
+                android:key="groupByTags"
+                android:summary="@string/pref_group_by_tags_summary"
+                android:title="@string/pref_group_by_tags"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/conversations_group_by_tags"
+                android:key="conversationsGroupByTags"
+                android:summary="@string/pref_group_conversations_by_tags_summary"
+                android:title="@string/pref_group_conversations_by_tags"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="notification_category"
+        android:title="@string/pref_notification_settings">
+
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra
+                android:name="page"
+                android:value="notification_category" />
+        </intent>
+
+        <PreferenceScreen
+            android:key="huawei"
+            android:summary="@string/huawei_protected_apps_summary"
+            android:title="@string/huawei_protected_apps">
+            <intent
+                android:targetClass="com.huawei.systemmanager.optimize.process.ProtectActivity"
+                android:targetPackage="com.huawei.systemmanager" />
+        </PreferenceScreen>
+
+        <SwitchPreference
+            android:defaultValue="@bool/led"
+            android:key="led"
+            android:summary="@string/pref_led_summary"
+            android:title="@string/pref_led"
+            android:widgetLayout="@layout/preference_app_switch" />
+        <ListPreference
+            android:defaultValue="@integer/grace_period"
+            android:entries="@array/grace_periods"
+            android:entryValues="@array/grace_periods_values"
+            android:key="grace_period_length"
+            android:summary="@string/pref_notification_grace_period_summary"
+            android:title="@string/pref_notification_grace_period" />
+        <ListPreference
+            android:defaultValue="@integer/default_notification_throttling_period"
+            android:entries="@array/notification_throttling_periods"
+            android:entryValues="@array/notification_throttling_periods_values"
+            android:key="notification_throttling_period"
+            android:summary="@string/pref_noisy_notifications_throttling_summary"
+            android:title="@string/pref_noisy_notifications_throttling" />
+        <Preference
+            android:key="call_ringtone"
+            android:summary="@string/pref_call_ringtone_summary"
+            android:title="@string/pref_ringtone"  />
+        <Preference
+            android:key="fullscreen_notification"
+            android:summary="@string/pref_fullscreen_notification_summary"
+            android:title="@string/pref_fullscreen_notification" />
+        <SwitchPreference
+            android:defaultValue="@bool/call_integration"
+            android:key="call_integration"
+            android:summary="@string/pref_call_integration_summary"
+            android:title="@string/pref_call_integration"
+            android:widgetLayout="@layout/preference_app_switch" />
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="attachments"
+        android:title="@string/pref_attachments">
+
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra
+                android:name="page"
+                android:value="attachments" />
+        </intent>
+
+        <SwitchPreference
+            android:defaultValue="@bool/use_share_location_plugin"
+            android:key="use_share_location_plugin"
+            android:summary="@string/pref_use_share_location_plugin_summary"
+            android:title="@string/pref_use_share_location_plugin"
+            android:widgetLayout="@layout/preference_app_switch" />
+        <SwitchPreference
+            android:defaultValue="@bool/skip_image_editor_screen"
+            android:key="skip_image_editor_screen"
+            android:summary="@string/pref_skip_image_editor_screen_summary"
+            android:title="@string/pref_skip_image_editor_screen"
+            android:widgetLayout="@layout/preference_app_switch" />
+    </PreferenceScreen>
+
+    <PreferenceScreen android:title="@string/pref_privacy"
+        android:key="privacy">
+
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra
+                android:name="page"
+                android:value="privacy" />
+        </intent>
+
+
+
+
+        <ListPreference
+            android:defaultValue="@string/omemo_setting_default"
+            android:entries="@array/omemo_setting_entries"
+            android:entryValues="@array/omemo_setting_entry_values"
+            android:key="omemo"
+            android:summary="@string/pref_omemo_setting_summary_default_off"
+            android:title="@string/pref_omemo_setting" />
+
+        <SwitchPreference
+            android:defaultValue="@bool/accept_invites_from_strangers"
+            android:key="accept_invites_from_strangers"
+            android:summary="@string/pref_accept_invites_from_strangers_summary"
+            android:title="@string/pref_accept_invites_from_strangers"
+            android:widgetLayout="@layout/preference_app_switch" />
+
+
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="expert"
+        android:title="@string/pref_expert_options">
+        <SwitchPreference
+            android:defaultValue="@bool/enable_foreground_service"
+            android:key="enable_foreground_service"
+            android:summary="@string/pref_keep_foreground_service_summary"
+            android:title="@string/pref_keep_foreground_service"
+            android:widgetLayout="@layout/preference_app_switch" />
+
+        <PreferenceCategory
+            android:key="security_options"
+            android:title="@string/pref_security_settings">
+
+            <SwitchPreference
+                android:defaultValue="@bool/btbv"
+                android:key="btbv"
+                android:summary="@string/pref_blind_trust_before_verification_summary"
+                android:title="@string/pref_blind_trust_before_verification"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/dont_trust_system_cas"
+                android:key="dont_trust_system_cas"
+                android:summary="@string/pref_dont_trust_system_cas_summary"
+                android:title="@string/pref_dont_trust_system_cas_title"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/validate_hostname"
+                android:key="validate_hostname"
+                android:summary="@string/pref_validate_hostname_summary"
+                android:title="@string/pref_validate_hostname"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/allow_message_correction"
+                android:key="allow_message_correction"
+                android:summary="@string/pref_allow_message_correction_summary"
+                android:title="@string/pref_allow_message_correction"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <ListPreference
+                android:defaultValue="@integer/automatic_message_deletion"
+                android:key="automatic_message_deletion"
+                android:summary="@string/pref_automatically_delete_messages_description"
+                android:title="@string/pref_automatically_delete_messages" />
+            <Preference
+                android:key="remove_trusted_certificates"
+                android:summary="@string/pref_remove_trusted_certificates_summary"
+                android:title="@string/pref_remove_trusted_certificates_title" />
+            <SwitchPreference
+                android:defaultValue="@bool/trust_system_ca_store"
+                android:key="trust_system_ca_store"
+                android:summary="@string/pref_title_trust_system_ca_store_summary"
+                android:title="@string/pref_title_trust_system_ca_store"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/require_channel_binding"
+                android:key="channel_binding_required"
+                android:summary="@string/detect_mim_summary"
+                android:title="@string/detect_mim"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <Preference
+                android:key="delete_omemo_identities"
+                android:summary="@string/pref_delete_omemo_identities_summary"
+                android:title="@string/pref_delete_omemo_identities" />
+        </PreferenceCategory>
+        <PreferenceCategory
+            android:key="connection_options"
+            android:title="@string/pref_connection_options">
+            <SwitchPreference
+                android:defaultValue="@bool/use_tor"
+                android:key="use_tor"
+                android:summary="@string/pref_use_tor_summary"
+                android:title="@string/pref_use_tor"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/show_connection_options"
+                android:key="show_connection_options"
+                android:summary="@string/pref_show_connection_options_summary"
+                android:title="@string/pref_show_connection_options"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+        <PreferenceCategory
+            android:key="group_chats"
+            android:title="@string/group_chats_and_channels">
+            <SwitchPreference
+                android:defaultValue="@bool/autojoin"
+                android:key="autojoin"
+                android:summary="@string/pref_autojoin_summary"
+                android:title="@string/pref_autojoin"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <ListPreference
+                android:defaultValue="@string/default_channel_discovery"
+                android:entries="@array/channel_discovery_entries"
+                android:entryValues="@array/channel_discover_values"
+                android:key="channel_discovery_method"
+                android:summary="@string/pref_channel_discovery_summary"
+                android:title="@string/pref_channel_discovery" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:key="unified_push"
+            android:title="@string/unified_push_distributor">
+            <ListPreference
+                android:defaultValue="@string/default_push_account"
+                android:key="up_push_account"
+                android:summary="@string/pref_up_push_account_summary"
+                android:title="@string/pref_up_push_account_title" />
+            <EditTextPreference
+                android:defaultValue="@string/default_push_server"
+                android:key="up_push_server"
+                android:summary="@string/pref_up_push_server_summary"
+                android:title="@string/pref_up_push_server_title" />
+
+        </PreferenceCategory>
+
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra
+                android:name="page"
+                android:value="expert" />
+        </intent>
+    </PreferenceScreen>
+
+
+</PreferenceScreen>

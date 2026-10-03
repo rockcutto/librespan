@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="92dp"
+        android:background="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="10dp">
+
+        <FrameLayout
+            android:id="@+id/color_touch_target"
+            android:layout_width="28dp"
+            android:layout_height="52dp"
+            android:foreground="?attr/selectableItemBackgroundBorderless">
+
+            <View
+                android:id="@+id/color_view"
+                android:layout_width="8dp"
+                android:layout_height="28dp"
+                android:layout_gravity="center"
+                android:background="?attr/colorOutlineVariant" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="62dp"
+            android:layout_height="58dp"
+            android:layout_marginStart="2dp"
+            android:clipChildren="false"
+            android:clipToPadding="false">
+
+            <View
+                android:id="@+id/account_color_circle"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_gravity="start|top"
+                android:translationX="8dp"
+                android:translationY="3dp" />
+
+            <eu.siacs.conversations.ui.widget.AvatarView
+                android:id="@+id/account_image"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_gravity="start|top"
+                android:contentDescription="@string/account_image_description" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/account_display_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/account_jid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:id="@+id/account_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/account_status_unknown"
+                android:textAppearance="@style/TextAppearance.Material3.LabelLarge" />
+        </LinearLayout>
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/tgl_account_status"
+            style="@style/Widget.App.Switch"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp" />
+
+        <ImageButton
+            android:id="@+id/account_more"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/more_options"
+            android:focusable="false"
+            android:padding="8dp"
+            android:src="@drawable/ic_more_horiz_24dp"
+            app:tint="?attr/colorOnSurfaceVariant" />
+
+    </LinearLayout>
+</layout>

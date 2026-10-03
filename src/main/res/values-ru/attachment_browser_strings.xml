@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="attachments_title">Вложения</string>
+    <string name="attachments_media">Медиа</string>
+    <string name="attachments_files">Файлы</string>
+    <string name="attachments_audio">Аудио</string>
+    <string name="attachments_empty">Нет вложений</string>
+    <string name="attachments_audio_playback_error">Не удалось воспроизвести аудио</string>
+    <string name="attachments_action_show_in_chat">Показать в чате</string>
+    <string name="attachments_action_delete">Удалить</string>
+</resources>

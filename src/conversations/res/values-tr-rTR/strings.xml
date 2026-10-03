@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pick_a_server">XMPP sağlayıcınızı seçin</string>
+    <string name="create_new_account">Yeni hesap oluştur</string>
+    <string name="magic_create_text_on_x">%1$s sağlayıcısına davet edildiniz. Sizi hesap oluşturulması konusunda yönlendireceğiz.\n%1$s bir sağlayıcı olark seçildiğinde, başka sağlayıcılar kullanan kullanıcılarla, onlara tam XMPP adresinizi vererek iletişim kurabileceksiniz.</string>
+    <string name="magic_create_text_fixed">%1$s sağlayıcısına davet edildiniz. Sizin için zaten bir kullanıcı adı seçildi. Sizi hesap oluşturulması konusunda yönlendireceğiz.\nBaşka sağlayıcılar kullanan kullanıcılarla, onlara tam XMPP adresinizi vererek iletişim kurabileceksiniz.</string>
+    <string name="your_server_invitation">Sunucu davetiyeniz</string>
+    <string name="improperly_formatted_provisioning">Yanlış ayarlanmış düzenleme kodu</string>
+    <string name="tap_share_button_send_invite">Kişinize, %1$s grubuna davet etmek için Paylaş düğmesine basın.</string>
+    <string name="if_contact_is_nearby_use_qr">Kişiniz yakınınızda ise, aşağıdaki kodu tarayak daveti kabul edebilirler.</string>
+    <string name="easy_invite_share_text">%1$s grubuna katıl ve benimle sohbet et: %2$s</string>
+    <string name="share_invite_with">Daveti şununla paylaş…</string>
+</resources>

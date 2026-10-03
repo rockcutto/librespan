@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="theme">light</string>
+    <string-array name="themes">
+        <item>@string/pref_theme_light</item>
+        <item>@string/pref_theme_dark</item>
+        <item>@string/pref_theme_dark_oled</item>
+    </string-array>
+    <string-array name="themes_values">
+		<item>light</item>
+		<item>dark</item>
+        <item>oledblack</item>
+	</string-array>
+
+    <string-array name="themeAccentPickerColorsV2">
+        <item>#B25F7A</item>
+        <item>#845791</item>
+        <item>#716298</item>
+        <item>#5D6897</item>
+        <item>#527EA5</item>
+        <item>#5188A4</item>
+        <item>#458790</item>
+        <item>#3C756D</item>
+        <item>#56825E</item>
+        <item>#728F5C</item>
+        <item>#878C53</item>
+        <item>#A48F49</item>
+        <item>#A88342</item>
+        <item>#A97446</item>
+        <item>#AE6A5B</item>
+        <item>#716059</item>
+        <item>#767A7C</item>
+        <item>#63727B</item>
+    </string-array>
+
+    <string-array name="themeAccentColorsV2">
+        <item>#C64B73</item>
+        <item>#8C4A9E</item>
+        <item>#6C55A5</item>
+        <item>#4F5FA5</item>
+        <item>#3F7FB8</item>
+        <item>#3D8FB8</item>
+        <item>#3395A2</item>
+        <item>#2F8277</item>
+        <item>#4B8D57</item>
+        <item>#719B50</item>
+        <item>#929A45</item>
+        <item>#B99A34</item>
+        <item>#C08A2A</item>
+        <item>#C0732F</item>
+        <item>#C15E48</item>
+        <item>#765D54</item>
+        <item>#747A7E</item>
+        <item>#5E7480</item>
+    </string-array>
+
+    <!-- LibreSpan Accent Palette V3. Keep V2 above for persisted-value migration. -->
+    <string-array name="themeAccentPickerColorsV3">
+        <item>#C24F77</item>
+        <item>#A6509A</item>
+        <item>#775BC0</item>
+        <item>#596CC4</item>
+        <item>#3F7FC4</item>
+        <item>#2F8BC0</item>
+        <item>#2693A2</item>
+        <item>#2F867A</item>
+        <item>#4D9165</item>
+        <item>#709658</item>
+        <item>#8D9350</item>
+        <item>#AB8C3B</item>
+        <item>#B67B35</item>
+        <item>#BB6738</item>
+        <item>#BC5A4C</item>
+        <item>#98675A</item>
+        <item>#68747B</item>
+        <item>#56788A</item>
+    </string-array>
+
+    <string-array name="themeAccentColorsV3">
+        <item>#C24F77</item>
+        <item>#A6509A</item>
+        <item>#775BC0</item>
+        <item>#596CC4</item>
+        <item>#3F7FC4</item>
+        <item>#2F8BC0</item>
+        <item>#2693A2</item>
+        <item>#2F867A</item>
+        <item>#4D9165</item>
+        <item>#709658</item>
+        <item>#8D9350</item>
+        <item>#AB8C3B</item>
+        <item>#B67B35</item>
+        <item>#BB6738</item>
+        <item>#BC5A4C</item>
+        <item>#98675A</item>
+        <item>#68747B</item>
+        <item>#56788A</item>
+    </string-array>
+
+    <string-array name="themeAccentNamesV3">
+        <item>@string/appearance_palette_rose</item>
+        <item>@string/appearance_palette_purple</item>
+        <item>@string/appearance_palette_violet</item>
+        <item>@string/appearance_palette_indigo</item>
+        <item>@string/appearance_palette_blue</item>
+        <item>@string/appearance_palette_azure</item>
+        <item>@string/appearance_palette_cyan</item>
+        <item>@string/appearance_palette_teal</item>
+        <item>@string/appearance_palette_emerald</item>
+        <item>@string/appearance_palette_leaf</item>
+        <item>@string/appearance_palette_olive</item>
+        <item>@string/appearance_palette_gold</item>
+        <item>@string/appearance_palette_amber</item>
+        <item>@string/appearance_palette_orange</item>
+        <item>@string/appearance_palette_coral</item>
+        <item>@string/appearance_palette_brown</item>
+        <item>@string/appearance_palette_graphite</item>
+        <item>@string/appearance_palette_slate</item>
+    </string-array>
+
+    <string-array name="themeColorsOverride">
+        <item>#e91e63</item>
+        <item>#9c27b0</item>
+        <item>#673ab7</item>
+        <item>#3f51b5</item>
+        <item>#2196f3</item>
+        <item>#03a9f4</item>
+        <item>#00bcd4</item>
+        <item>#009688</item>
+        <item>#43a047</item>
+        <item>#8bc34a</item>
+        <item>#cddc39</item>
+        <item>#ffeb3b</item>
+        <item>#ffc107</item>
+        <item>#ff9800</item>
+        <item>#ff5722</item>
+        <item>#795548</item>
+        <item>#9e9e9e</item>
+        <item>#607d8b</item>
+    </string-array>
+
+
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pick_a_server">Одаберите вашег ИксМПП провајдера</string>
+    <string name="create_new_account">Направи нови налог</string>
+    <string name="your_server_invitation">Ваша серверска позивница</string>
+    </resources>

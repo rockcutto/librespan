@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="?dialogPreferredPadding">
+
+        <RadioGroup
+            android:id="@+id/show"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <RadioButton
+                android:id="@+id/online"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/presence_online" />
+
+            <RadioButton
+                android:id="@+id/away"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/presence_away" />
+
+            <RadioButton
+                android:id="@+id/xa"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/presence_xa" />
+
+            <RadioButton
+                android:id="@+id/dnd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/presence_dnd" />
+        </RadioGroup>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <eu.siacs.conversations.ui.widget.ImmediateAutoCompleteTextView
+                android:padding="16dp"
+                android:id="@+id/status_message"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ems="10"
+                android:hint="@string/status_message"
+                android:inputType="textShortMessage" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+    </LinearLayout>
+</layout>

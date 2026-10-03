@@ -1,0 +1,67 @@
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:id="@+id/main_layout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_above="@id/bottom_navigation">
+
+            <FrameLayout
+                android:id="@+id/main_fragment"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1000" />
+
+            <FrameLayout
+                android:id="@+id/secondary_fragment"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1618" />
+
+        </LinearLayout>
+
+        <FrameLayout
+            android:id="@+id/toolbar_matte_zone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:background="@drawable/chat_chrome_fade_top"
+            android:elevation="3dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="0dp">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                app:cardBackgroundColor="@color/chat_chrome_island"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="2dp"
+                app:strokeWidth="0dp">
+
+                <include
+                    android:id="@+id/toolbar_layout"
+                    layout="@layout/toolbar_conversations" />
+            </com.google.android.material.card.MaterialCardView>
+        </FrameLayout>
+
+        <com.google.android.material.bottomnavigation.BottomNavigationView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/nav_bar_height"
+            android:layout_alignParentBottom="true"
+            android:minHeight="0dp"
+            app:itemPaddingTop="4dp"
+            app:itemPaddingBottom="0dp"
+            app:labelVisibilityMode="labeled"
+            app:menu="@menu/bottom_navigation_menu_chat"
+            android:visibility="gone" />
+
+    </RelativeLayout>
+</layout>

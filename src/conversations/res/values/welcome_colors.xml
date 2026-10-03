@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="welcome_mist_top">#101416</color>
+    <color name="welcome_mist_middle">#131A1E</color>
+    <color name="welcome_mist_bottom">#172228</color>
+    <color name="welcome_text_primary">#F1F5F6</color>
+    <color name="welcome_text_secondary">#B6C2C7</color>
+    <color name="welcome_action_fill">#214555</color>
+    <color name="welcome_action_text">#EAF3F6</color>
+    <color name="welcome_outline">#4A626D</color>
+</resources>

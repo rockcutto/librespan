@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="text_scale_entries">
+        <item>Маленький</item>
+        <item>Обычный</item>
+        <item>Большой</item>
+        <item>Очень большой</item>
+    </string-array>
+</resources>

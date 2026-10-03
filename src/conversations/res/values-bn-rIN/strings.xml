@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pick_a_server">XMPP সার্ভার নির্বাচন করুন</string>
+    <string name="create_new_account">নতুন অ্যকাউন্ট তৈরী করা যাক</string>
+    <string name="magic_create_text_on_x">আপনাকে %1$s-এ আমন্ত্রিত করা হয়েছে। অ্যকাউন্ট তৈরী করার সময় আপনাকে সাহায্য করা হবে।\n%1$s ব্যবহার করলেও, অন্য সেবা-প্রদানকারী সংস্থার ব্যবহারকারীদের সাথে আপনি কথা বলতে পারবেন, আপনার সম্পূর্ণ XMPP অ্যড্রেস তাদেরকে বলে দিয়ে।</string>
+    <string name="magic_create_text_fixed">আপনাকে %1$s-এ নিমন্ত্রণ করা হয়েছে। একটি username-ও আপনার জন্যে নির্দিষ্ট করে রাখা হয়েছে। অ্যকাউন্ট তৈরী করার সময় আপনাকে সাহায্য করা হবে।\nঅন্য XMPP সেবা প্রদানকারী সংস্থার ব্যবহারকারীদের সাথে আপনিও কথা বলতে পারবেন, আপনার সম্পূর্ণ XMPP অ্যড্রেস তাদেরকে বলে দিয়ে।</string>
+    <string name="your_server_invitation">আপনার নিমন্ত্রণপত্র, সার্ভার থেকে</string>
+    <string name="improperly_formatted_provisioning">Provisioning code-এ গরমিল আছে</string>
+    <string name="tap_share_button_send_invite">Share বোতামটা টিপে %1$s-কে একটি আমন্ত্রপত্র পাঠান</string>
+    <string name="if_contact_is_nearby_use_qr">পরিচিত ব্যক্তি যদি নিকটেই থাকেন, তাহলে তারা এই কোডটাও স্ক্যান করে নিতে পারেন</string>
+    <string name="easy_invite_share_text">%1$sতে এসো, আর আমার সাথে কথা বলো: %2$s</string>
+    <string name="share_invite_with">একটি আমন্ত্রণপত্র দেওয়া যাক...</string>
+</resources>

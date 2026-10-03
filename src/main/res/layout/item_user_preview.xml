@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android">
+    <eu.siacs.conversations.ui.widget.SquareFrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="2dp"
+        android:background="?selectableItemBackground">
+        <eu.siacs.conversations.ui.widget.AvatarView
+            android:id="@+id/avatar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/black54"
+            android:scaleType="centerInside"/>
+
+        <eu.siacs.conversations.ui.widget.PresenceIndicator
+            android:id="@+id/presence_indicator"
+            android:layout_gravity="bottom|end"
+            android:layout_width="@dimen/presence_indicator_size"
+            android:layout_height="@dimen/presence_indicator_size"
+            android:layout_marginEnd="@dimen/presence_indicator_offset"
+            android:layout_marginBottom="@dimen/presence_indicator_offset" />
+    </eu.siacs.conversations.ui.widget.SquareFrameLayout>
+</layout>

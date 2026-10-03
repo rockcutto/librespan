@@ -1,0 +1,18 @@
+LibreSpan is a modern Android XMPP messenger derived from Conversations through AnotherIM.
+
+It keeps the open, provider-independent XMPP model: sign in with your existing JID and use the services supported by your XMPP server.
+
+Highlights:
+• OMEMO end-to-end encrypted messaging
+• Audio and video calls over Jingle/WebRTC
+• Images, files, voice messages, audio and video
+• Group chats and channels (MUC)
+• Message Archive Management (MAM)
+• HTTP Upload and UnifiedPush support
+• Secure Content Store for protected local message and media data
+• App Lock and optional High Security protection for supported devices
+• Local search and a simplified modern Android interface
+
+LibreSpan does not require a project-specific XMPP provider. Server capabilities are discovered through XMPP.
+
+The project is free and open-source software. LibreSpan is based on the Conversations family and preserves upstream attribution and licensing.

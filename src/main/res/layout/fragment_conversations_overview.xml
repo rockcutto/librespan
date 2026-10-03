@@ -1,0 +1,104 @@
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+
+                <eu.siacs.conversations.ui.widget.BaseRecyclerView
+                    android:id="@+id/list"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingTop="94dp"
+                    android:paddingBottom="88dp"
+                    android:scrollbars="vertical" />
+
+                <LinearLayout
+                    android:id="@+id/empty_state"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="32dp"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <ImageView
+                        android:layout_width="64dp"
+                        android:layout_height="64dp"
+                        android:alpha="0.72"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chat_24dp"
+                        app:tint="?colorOnSurfaceVariant" />
+
+                    <TextView
+                        android:id="@+id/empty_state_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:gravity="center"
+                        android:text="@string/no_conversations_title"
+                        android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+                    <TextView
+                        android:id="@+id/empty_state_text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center"
+                        android:text="@string/no_conversations_text"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?colorOnSurfaceVariant" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/empty_state_action"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="20dp"
+                        android:text="@string/start_chat"
+                        app:cornerRadius="@dimen/app_island_corner_radius"
+                        app:icon="@drawable/ic_chat_24dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/search_messages_action"
+                        style="?attr/materialButtonStyle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/search_messages"
+                        android:textColor="?attr/colorOnSurface"
+                        android:visibility="gone"
+                        app:backgroundTint="?attr/colorSurfaceContainerHigh"
+                        app:cornerRadius="@dimen/app_island_corner_radius"
+                        app:icon="@drawable/ic_search_24dp"
+                        app:iconTint="?attr/colorOnSurfaceVariant"
+                        app:strokeWidth="0dp"
+                        tools:visibility="visible" />
+                </LinearLayout>
+            </FrameLayout>
+        </LinearLayout>
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/fab"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|bottom"
+            android:layout_margin="16dp"
+            android:text="@string/start_chat"
+            app:cornerRadius="@dimen/app_island_corner_radius"
+            app:icon="@drawable/ic_chat_24dp"
+            app:layout_behavior="com.google.android.material.behavior.HideViewOnScrollBehavior" />
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+</layout>

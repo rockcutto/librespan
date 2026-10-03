@@ -1,0 +1,3 @@
+First public LibreSpan release.
+
+Modernized XMPP UI, OMEMO messaging, protected local message and media storage, App Lock and High Security, audio/video calls, group chats and channels, media/file messaging, search, and provider-independent account setup.

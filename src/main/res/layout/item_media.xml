@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <eu.siacs.conversations.ui.widget.SquareFrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/media_card"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_margin="2dp"
+            android:clipToOutline="true"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
+            app:cardCornerRadius="10dp"
+            app:cardElevation="0dp"
+            app:rippleColor="?attr/colorPrimaryContainer"
+            app:strokeWidth="0dp">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <ImageView
+                    android:id="@+id/media"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="?attr/colorSurfaceContainerHighest"
+                    android:contentDescription="@null"
+                    android:scaleType="centerCrop" />
+
+            </FrameLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </eu.siacs.conversations.ui.widget.SquareFrameLayout>
+</layout>

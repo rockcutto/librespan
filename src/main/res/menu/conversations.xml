@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_toggle_pinned"
+        android:icon="@drawable/ic_tabler_pin_24dp"
+        android:orderInCategory="10"
+        android:title="@string/add_to_favorites"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_mute"
+        android:icon="@drawable/ic_tabler_bell_off_24dp"
+        android:orderInCategory="20"
+        android:title="@string/disable_notifications"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_unmute"
+        android:icon="@drawable/ic_tabler_bell_24dp"
+        android:orderInCategory="21"
+        android:title="@string/enable_notifications"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_ongoing_call"
+        android:icon="@drawable/ic_tabler_phone_call_24dp"
+        android:orderInCategory="30"
+        android:title="@string/return_to_ongoing_call"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_contact_details"
+        android:icon="@drawable/ic_tabler_user_24dp"
+        android:orderInCategory="40"
+        android:title="@string/conversation_menu_profile"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_muc_details"
+        android:icon="@drawable/ic_tabler_users_24dp"
+        android:orderInCategory="40"
+        android:title="@string/conversation_menu_group_info"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_archive"
+        android:icon="@drawable/ic_tabler_archive_24dp"
+        android:orderInCategory="60"
+        android:title="@string/conversation_menu_archive"
+        app:showAsAction="never" />
+
+</menu>

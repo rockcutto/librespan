@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <RelativeLayout
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingVertical="4dp">
+
+        <LinearLayout
+            android:id="@+id/message_box"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerHorizontal="true"
+            android:background="@drawable/background_message_separator"
+            android:backgroundTint="?colorSurfaceContainerHigh"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="3dp">
+
+            <TextView
+                android:id="@+id/message_body"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textAppearance="?textAppearanceLabelMedium"
+                android:textColor="?colorOnSurfaceVariant"
+                tools:text="Yesterday" />
+        </LinearLayout>
+    </RelativeLayout>
+</layout>

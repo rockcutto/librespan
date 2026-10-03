@@ -1,0 +1,52 @@
+name: NeoCont CI
+
+on:
+  # Automatic CI is intentionally disabled to avoid consuming GitHub Actions billing.
+  # Local Gradle builds/tests are the required validation path for now.
+  workflow_dispatch:
+
+concurrency:
+  group: neocont-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Debug build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.3.0
+
+      - name: Install Android SDK 34
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        continue-on-error: true
+        run: ./gradlew --no-daemon --stacktrace testConversationsFreeDebugUnitTest
+
+      - name: Build instrumentation test APK
+        run: ./gradlew --no-daemon --stacktrace assembleConversationsFreeDebugAndroidTest
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon --stacktrace assembleConversationsFreeDebug

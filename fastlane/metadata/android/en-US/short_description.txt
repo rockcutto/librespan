@@ -1,0 +1,1 @@
+XMPP messenger with OMEMO, calls and protected local storage.

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+      xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/mgmt_account_edit"
+        android:title="@string/manage_account_reconnect"/>
+
+    <item
+        android:id="@+id/mgmt_account_publish_avatar"
+        android:title="@string/manage_account_change_photo"/>
+
+    <item
+        android:id="@+id/action_change_password_on_server"
+        app:showAsAction="never"
+        android:title="@string/change_password"/>
+
+    <item
+        android:id="@+id/mgmt_account_delete"
+        android:title="@string/manage_account_remove_device"/>
+
+</menu>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="easy_invite_share_text">Aliĝu al %1$s kaj babilu kun mi: %2$s</string>
+    <string name="magic_create_text_on_x">Vi estis invitita al %1$s. Ni gvidos vin tra la procezo de kreado de konto.
+\nElektante %1$s kiel provizanton vi povos komuniki kun uzantoj de aliaj provizantoj donante al ili vian plenan XMPP-adreson.</string>
+    <string name="if_contact_is_nearby_use_qr">Se via kontakto estas proksime, ili ankaŭ povas skani la suban kodon por akcepti vian inviton.</string>
+    <string name="pick_a_server">Elekti vian XMPP-provizanton</string>
+    <string name="share_invite_with">Kunhavigi inviton kun…</string>
+    <string name="magic_create_text_fixed">Vi estis invitita al %1$s. Uzantnomo jam estas elektita por vi. Ni gvidos vin tra la procezo de kreado de konto.
+\nVi povos komuniki kun uzantoj de aliaj provizantoj donante al ili vian plenan XMPP-adreson.</string>
+    <string name="improperly_formatted_provisioning">Nedece formatita provizokodo</string>
+    <string name="tap_share_button_send_invite">Premu la kunhavigi butonon por sendi al via kontakto inviton al %1$s.</string>
+    <string name="your_server_invitation">Via servila invito</string>
+    <string name="create_new_account">Krei novan konton</string>
+</resources>

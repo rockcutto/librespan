@@ -1,0 +1,177 @@
+LibreSpan 0.9.0 — Notices and attribution
+================================================
+
+LibreSpan is a modern Android XMPP messenger.
+
+Application license and lineage
+-------------------------------
+
+The LibreSpan Android application is distributed under the GNU General Public
+License version 3. The complete GPLv3 text is in LICENSE and is also bundled as:
+
+  src/main/assets/licenses/librespan/GPL-3.0.txt
+
+Source lineage:
+
+  Conversations -> Narayana fork line / AnotherIM -> NeoCont (working repository name) -> LibreSpan
+
+Conversations is the principal upstream ancestor. Its original developer and
+principal upstream maintainer is Daniel Gultsch (iNPUTmice):
+  https://codeberg.org/iNPUTmice
+
+The direct baseline used by this repository came through the Narayana fork line,
+including Conversations Classic / AnotherIM. Historical Narayana identifiers are
+therefore retained as provenance where they still occur in source or compatibility
+metadata.
+
+Upstream per-file copyright and license notices are retained in the source tree
+and remain authoritative for those files.
+
+Independently authored LibreSpan security/storage files
+-------------------------------------------------------
+
+Files explicitly marked:
+
+  SPDX-License-Identifier: MPL-2.0
+  Provenance: NATIVE-CORE
+
+or:
+
+  SPDX-License-Identifier: MPL-2.0
+  Provenance: NATIVE-ANDROID
+
+are independently authored LibreSpan files made available at file level under
+Mozilla Public License 2.0. Their presence does not relicense the GPLv3 Android
+application as a whole.
+
+The MPL-2.0 text is bundled as:
+
+  src/main/assets/licenses/librespan/MPL-2.0.txt
+
+BIP-0039 English recovery word list
+-----------------------------------
+
+LibreSpan vendors the BIP-0039 English word list verbatim in:
+
+  src/main/kotlin/eu/siacs/conversations/security/recovery/
+  RecoveryPhraseEnglishWordListV1.kt
+
+Upstream BIP-0039 authors:
+  Marek Palatinus
+  Pavol Rusnak
+  Aaron Voisine
+  Sean Bowe
+
+Upstream source:
+  https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt
+  https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
+
+BIP-0039 declares License: MIT and states that the BIP falls under the MIT
+License. The vendored source file preserves that license identification.
+
+The BIP-0039 MIT attribution and license terms are bundled as:
+
+  src/main/assets/licenses/recovery/BIP39-MIT.txt
+
+Russian recovery dictionary data
+---------------------------------
+
+LibreSpan recovery dictionary ID:
+
+  librespan-ru-pairs-v1
+
+The curated Russian adjective and noun protocol dictionaries are distributed
+under Creative Commons Attribution-ShareAlike 4.0 (CC-BY-SA-4.0).
+
+Frequency basis:
+  Digital Pushkin Lab — Russian-Word-Frequency-Lists-for-Children
+  file: wordlist_detcorpus_50000.csv
+  license: CC0-1.0
+  https://github.com/Digital-Pushkin-Lab/Russian-Word-Frequency-Lists-for-Children
+
+Lexical/POS/proper-name validation source:
+  OpenRussian / Badestrand russian-dictionary
+  license: CC-BY-SA-4.0
+  https://github.com/Badestrand/russian-dictionary
+
+The resulting ordered LibreSpan dictionary files contain selected Russian tokens,
+not OpenRussian translations, examples or inflection tables. The immutable protocol
+lists are the source files themselves:
+
+  src/main/kotlin/eu/siacs/conversations/security/recovery/
+  RecoveryPhraseRussianAdjectiveListV1.kt
+  src/main/kotlin/eu/siacs/conversations/security/recovery/
+  RecoveryPhraseRussianNounListV1.kt
+
+Their source/license provenance is retained in those file headers and in this NOTICE.
+
+License texts are bundled as:
+
+  src/main/assets/licenses/creative-commons/CC0-1.0.txt
+  src/main/assets/licenses/creative-commons/CC-BY-SA-4.0.txt
+
+Fonts, icons and artwork
+------------------------
+
+Onest font:
+  Copyright 2021 The Onest Project Authors
+  SIL Open Font License 1.1
+  https://github.com/googlefonts/onest
+  bundled license: src/main/assets/licenses/onest/OFL.txt
+
+Tabler Icons:
+  Copyright (c) 2020-2026 Paweł Kuna
+  MIT License
+  https://github.com/tabler/tabler-icons
+  bundled license: src/main/assets/licenses/tabler/LICENSE
+
+The repository art/ workspace is covered by its retained CC-BY-SA-4.0 license
+where no more specific file notice applies. The same CC-BY-SA-4.0 legal text is
+bundled under assets/licenses/creative-commons.
+
+Android Open Source Project material
+------------------------------------
+
+A small number of source/layout files retain Android Open Source Project
+Apache-2.0 notices, including Android-derived utility and list-layout code.
+Those per-file notices are retained. The Apache License 2.0 text is bundled as:
+
+  src/main/assets/licenses/aosp/APACHE-2.0.txt
+
+SQLCipher for Android
+---------------------
+
+LibreSpan depends on:
+
+  net.zetetic:sqlcipher-android:4.9.0
+
+SQLCipher for Android is distributed under the BSD 3-Clause license.
+
+Copyright (c) 2008-2023, ZETETIC LLC
+All rights reserved.
+
+Upstream source:
+  https://github.com/sqlcipher/sqlcipher-android
+
+The complete license text for the exact 4.9.0 dependency is bundled as:
+
+  src/main/assets/licenses/sqlcipher/LICENSE.txt
+
+Third-party libraries
+---------------------
+
+LibreSpan also depends on third-party libraries through Gradle. Those components
+remain under their respective upstream licenses and copyright notices. This file
+does not replace license metadata shipped by those projects or dependency
+artifacts.
+
+Release record
+--------------
+
+The detailed source-provenance audit and the exact NATIVE-CORE/NATIVE-ANDROID
+classification are recorded in:
+
+  docs/legal/PROVENANCE_AND_LICENSING.md
+
+This NOTICE is a release attribution record; it does not grant trademark rights
+or replace any referenced license text.

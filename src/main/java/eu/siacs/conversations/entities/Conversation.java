@@ -1,0 +1,4096 @@
+package eu.siacs.conversations.entities;
+
+import static eu.siacs.conversations.entities.Bookmark.printableValue;
+
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.database.Cursor;
+import android.database.DataSetObserver;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Rect;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
+import android.net.Uri;
+import android.os.Build;
+import android.telephony.PhoneNumberUtils;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.StaticLayout;
+import android.text.TextPaint;
+import android.text.TextUtils;
+import android.text.TextWatcher;
+import android.text.util.Linkify;
+import android.util.DisplayMetrics;
+import android.util.Pair;
+import android.util.SparseArray;
+import android.view.Gravity;
+import android.view.LayoutInflater;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebMessage;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.AbsListView;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.CompoundButton;
+import android.widget.GridLayout;
+import android.widget.ListAdapter;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
+import androidx.core.util.Consumer;
+import androidx.databinding.DataBindingUtil;
+import androidx.databinding.ViewDataBinding;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.viewpager.widget.PagerAdapter;
+import androidx.viewpager.widget.ViewPager;
+
+import com.bumptech.glide.Glide;
+import com.caverock.androidsvg.SVG;
+import com.google.android.material.color.MaterialColors;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.tabs.TabLayout;
+import com.google.android.material.textfield.TextInputLayout;
+import com.google.common.base.Optional;
+import com.google.common.base.Strings;
+import com.google.common.collect.ComparisonChain;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.lang.ref.WeakReference;
+import java.security.interfaces.DSAPublicKey;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.FormatStyle;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
+import eu.siacs.conversations.Config;
+import eu.siacs.conversations.R;
+import eu.siacs.conversations.crypto.OmemoSetting;
+import eu.siacs.conversations.databinding.CommandButtonGridFieldBinding;
+import eu.siacs.conversations.databinding.CommandCheckboxFieldBinding;
+import eu.siacs.conversations.databinding.CommandItemCardBinding;
+import eu.siacs.conversations.databinding.CommandNoteBinding;
+import eu.siacs.conversations.databinding.CommandPageBinding;
+import eu.siacs.conversations.databinding.CommandProgressBarBinding;
+import eu.siacs.conversations.databinding.CommandRadioEditFieldBinding;
+import eu.siacs.conversations.databinding.CommandResultCellBinding;
+import eu.siacs.conversations.databinding.CommandResultFieldBinding;
+import eu.siacs.conversations.databinding.CommandSearchListFieldBinding;
+import eu.siacs.conversations.databinding.CommandSpinnerFieldBinding;
+import eu.siacs.conversations.databinding.CommandTextFieldBinding;
+import eu.siacs.conversations.databinding.CommandUnknownBinding;
+import eu.siacs.conversations.databinding.CommandWebviewBinding;
+import eu.siacs.conversations.databinding.DialogQuickeditBinding;
+import eu.siacs.conversations.persistance.DatabaseBackend;
+import eu.siacs.conversations.persistance.FilePathInfo;
+import eu.siacs.conversations.services.AvatarService;
+import eu.siacs.conversations.services.QuickConversationsService;
+import eu.siacs.conversations.services.XmppConnectionService;
+import eu.siacs.conversations.ui.UriHandlerActivity;
+import eu.siacs.conversations.ui.text.FixedURLSpan;
+import eu.siacs.conversations.ui.util.ShareUtil;
+import eu.siacs.conversations.ui.util.SoftKeyboardUtils;
+import eu.siacs.conversations.utils.CryptoHelper;
+import eu.siacs.conversations.utils.JidHelper;
+import eu.siacs.conversations.utils.MessageUtils;
+import eu.siacs.conversations.utils.PhoneNumberUtilWrapper;
+import eu.siacs.conversations.utils.UIHelper;
+import eu.siacs.conversations.xml.Element;
+import eu.siacs.conversations.xml.Namespace;
+import eu.siacs.conversations.xmpp.Jid;
+import eu.siacs.conversations.xmpp.chatstate.ChatState;
+import eu.siacs.conversations.xmpp.forms.Data;
+import eu.siacs.conversations.xmpp.forms.Option;
+import eu.siacs.conversations.xmpp.mam.MamReference;
+import im.conversations.android.xmpp.model.stanza.Iq;
+import io.michaelrocks.libphonenumber.android.NumberParseException;
+import me.saket.bettermovementmethod.BetterLinkMovementMethod;
+
+import net.java.otr4j.OtrException;
+import net.java.otr4j.crypto.OtrCryptoException;
+import net.java.otr4j.session.SessionID;
+import net.java.otr4j.session.SessionImpl;
+import net.java.otr4j.session.SessionStatus;
+
+public class Conversation extends AbstractEntity
+        implements Blockable, Comparable<Conversation>, Conversational, AvatarService.Avatarable {
+    public static final String TABLENAME = "conversations";
+
+    public static final int STATUS_AVAILABLE = 0;
+    public static final int STATUS_ARCHIVED = 1;
+
+    public static final String NAME = "name";
+    public static final String ACCOUNT = "accountUuid";
+    public static final String CONTACT = "contactUuid";
+    public static final String CONTACTJID = "contactJid";
+    public static final String STATUS = "status";
+    public static final String CREATED = "created";
+    public static final String MODE = "mode";
+    public static final String ATTRIBUTES = "attributes";
+    public static final String NEXT_COUNTERPART = "next_counterpart";
+
+    public static final String ATTRIBUTE_MUTED_TILL = "muted_till";
+
+    public static final String ATTRIBUTE_NOTIFICATIONS_THROTTLING_PERIOD = "notifications_throlttling_period";
+    public static final String ATTRIBUTE_ALWAYS_NOTIFY = "always_notify";
+    public static final String ATTRIBUTE_LAST_CLEAR_HISTORY = "last_clear_history";
+    public static final String ATTRIBUTE_FORMERLY_PRIVATE_NON_ANONYMOUS =
+            "formerly_private_non_anonymous";
+    public static final String ATTRIBUTE_PINNED_ON_TOP = "pinned_on_top";
+    public static final String ATTRIBUTE_MUC_EXPLICITLY_LEFT = "muc_explicitly_left";
+    static final String ATTRIBUTE_MUC_PASSWORD = "muc_password";
+    static final String ATTRIBUTE_MEMBERS_ONLY = "members_only";
+    static final String ATTRIBUTE_MODERATED = "moderated";
+    static final String ATTRIBUTE_NON_ANONYMOUS = "non_anonymous";
+    private static final String ATTRIBUTE_NEXT_MESSAGE = "next_message";
+    private static final String ATTRIBUTE_NEXT_MESSAGE_TIMESTAMP = "next_message_timestamp";
+    private static final String ATTRIBUTE_CRYPTO_TARGETS = "crypto_targets";
+    private static final String ATTRIBUTE_NEXT_ENCRYPTION = "next_encryption";
+    public static final String ATTRIBUTE_CORRECTING_MESSAGE = "correcting_message";
+    protected final ArrayList<Message> messages = new ArrayList<>();
+    protected final ArrayList<Message> historyPartMessages = new ArrayList<>();
+    public AtomicBoolean messagesLoaded = new AtomicBoolean(true);
+    public AtomicBoolean historyPartLoadedForward = new AtomicBoolean(true);
+    private final AtomicLong timelineRevision = new AtomicLong();
+    protected Account account = null;
+    private String draftMessage;
+    private String protectedDraftMessage;
+    private long protectedDraftTimestamp;
+    private boolean protectedDraftHydrated = false;
+    private final String name;
+    private final String contactUuid;
+    private final String accountUuid;
+    private Jid contactJid;
+    private int status;
+    private final long created;
+    private int mode;
+    private final JSONObject attributes;
+    private Jid nextCounterpart;
+    private boolean hasPermanentCounterpart;
+    private transient SessionImpl otrSession;
+    private transient String otrFingerprint = null;
+    private Smp mSmp = new Smp();
+    private transient MucOptions mucOptions = null;
+    private byte[] symmetricKey;
+    private boolean messagesLeftOnServer = true;
+    private ChatState mOutgoingChatState = Config.DEFAULT_CHAT_STATE;
+    private ChatState mIncomingChatState = Config.DEFAULT_CHAT_STATE;
+    private String mLastReceivedOtrMessageId = null;
+    private String mFirstMamReference = null;
+    private String displayState = null;
+    protected Message replyTo = null;
+    protected int mCurrentTab = -1;
+    protected ConversationPagerAdapter pagerAdapter = new ConversationPagerAdapter();
+
+    private WeakReference<Conversation> parentConversation = null;
+
+    public Conversation(
+            final String name, final Account account, final Jid contactJid, final int mode, Jid nextCounterpart) {
+        this(
+                java.util.UUID.randomUUID().toString(),
+                name,
+                null,
+                account.getUuid(),
+                contactJid,
+                System.currentTimeMillis(),
+                STATUS_AVAILABLE,
+                mode,
+                "", nextCounterpart);
+        this.account = account;
+    }
+
+    public Conversation(
+            final String uuid,
+            final String name,
+            final String contactUuid,
+            final String accountUuid,
+            final Jid contactJid,
+            final long created,
+            final int status,
+            final int mode,
+            final String attributes,
+            Jid nextCounterpart
+    ) {
+        this.uuid = uuid;
+        this.name = name;
+        this.contactUuid = contactUuid;
+        this.accountUuid = accountUuid;
+        this.contactJid = contactJid;
+        this.created = created;
+        this.status = status;
+        this.mode = mode;
+        this.attributes = parseAttributes(attributes);
+
+        this.nextCounterpart = nextCounterpart;
+        if (nextCounterpart != null) {
+            hasPermanentCounterpart = true;
+        }
+    }
+
+    private static JSONObject parseAttributes(final String attributes) {
+        if (Strings.isNullOrEmpty(attributes)) {
+            return new JSONObject();
+        } else {
+            try {
+                return new JSONObject(attributes);
+            } catch (final JSONException e) {
+                return new JSONObject();
+            }
+        }
+    }
+
+    public String getContactUuid() {
+        return contactUuid;
+    }
+
+    public JSONObject getAttributes() {
+        return attributes;
+    }
+
+    public static Conversation fromCursor(final Cursor cursor) {
+        String counterpart = cursor.getString(cursor.getColumnIndex(NEXT_COUNTERPART));
+        return new Conversation(
+                cursor.getString(cursor.getColumnIndexOrThrow(UUID)),
+                cursor.getString(cursor.getColumnIndexOrThrow(NAME)),
+                cursor.getString(cursor.getColumnIndexOrThrow(CONTACT)),
+                cursor.getString(cursor.getColumnIndexOrThrow(ACCOUNT)),
+                Jid.ofOrInvalid(cursor.getString(cursor.getColumnIndexOrThrow(CONTACTJID))),
+                cursor.getLong(cursor.getColumnIndexOrThrow(CREATED)),
+                cursor.getInt(cursor.getColumnIndexOrThrow(STATUS)),
+                cursor.getInt(cursor.getColumnIndexOrThrow(MODE)),
+                cursor.getString(cursor.getColumnIndexOrThrow(ATTRIBUTES)),
+                counterpart == null ? null : Jid.ofOrInvalid(counterpart)
+                 );
+    }
+
+    public static Message getLatestMarkableMessage(
+            final List<Message> messages, boolean isPrivateAndNonAnonymousMuc) {
+        for (int i = messages.size() - 1; i >= 0; --i) {
+            final Message message = messages.get(i);
+            if (message.getStatus() <= Message.STATUS_RECEIVED
+                    && (message.markable || isPrivateAndNonAnonymousMuc)
+                    && !message.isPrivateMessage()) {
+                return message;
+            }
+        }
+        return null;
+    }
+
+    private static boolean suitableForOmemoByDefault(final Conversation conversation) {
+        if (conversation.getContact().isOwnServer()) {
+            return false;
+        }
+        return conversation.isSingleOrPrivateAndNonAnonymous()
+                || conversation.getBooleanAttribute(
+                        ATTRIBUTE_FORMERLY_PRIVATE_NON_ANONYMOUS, false);
+    }
+
+    public boolean hasMessagesLeftOnServer() {
+        return messagesLeftOnServer;
+    }
+
+    public void setHasMessagesLeftOnServer(boolean value) {
+        if (this.messagesLeftOnServer != value) {
+            markTimelineChanged();
+        }
+        this.messagesLeftOnServer = value;
+    }
+
+    /**
+     * Generation for changes that affect the rendered message timeline. Draft and composer state
+     * deliberately do not participate in this counter.
+     */
+    public long getTimelineRevision() {
+        return timelineRevision.get();
+    }
+
+    public void markTimelineChanged() {
+        timelineRevision.incrementAndGet();
+    }
+
+    public Message getFirstUnreadMessage() {
+        Message first = null;
+        synchronized (this.messages) {
+            for (int i = messages.size() - 1; i >= 0; --i) {
+                if (messages.get(i).isRead()) {
+                    return first;
+                } else {
+                    first = messages.get(i);
+                }
+            }
+        }
+        return first;
+    }
+
+    public String findMostRecentRemoteDisplayableId() {
+        final boolean multi = mode == Conversation.MODE_MULTI;
+        synchronized (this.messages) {
+            for (final Message message : Lists.reverse(this.messages)) {
+                if (message.getStatus() == Message.STATUS_RECEIVED) {
+                    final String serverMsgId = message.getServerMsgId();
+                    if (serverMsgId != null && multi) {
+                        return serverMsgId;
+                    }
+                    return message.getRemoteMsgId();
+                }
+            }
+        }
+        return null;
+    }
+
+    public int countFailedDeliveries() {
+        int count = 0;
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (message.getStatus() == Message.STATUS_SEND_FAILED) {
+                    ++count;
+                }
+            }
+        }
+        return count;
+    }
+
+    public Message getLastEditableMessage() {
+        synchronized (this.messages) {
+            for (final Message message : Lists.reverse(this.messages)) {
+                if (message.isEditable()) {
+                    if (message.isGeoUri() || message.getType() != Message.TYPE_TEXT) {
+                        return null;
+                    }
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Conversation getParentConversation() {
+        if (parentConversation == null) {
+            return null;
+        }
+
+        return parentConversation.get();
+    }
+
+    public void setParentConversation(Conversation c) {
+        this.parentConversation = new WeakReference<>(c);
+    }
+
+    public Message findUnsentMessageWithUuid(String uuid) {
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                final int s = message.getStatus();
+                if ((s == Message.STATUS_UNSEND || s == Message.STATUS_WAITING)
+                        && message.getUuid().equals(uuid)) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public void findWaitingMessages(OnMessageFound onMessageFound) {
+        final ArrayList<Message> results = new ArrayList<>();
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if (message.getStatus() == Message.STATUS_WAITING) {
+                    results.add(message);
+                }
+            }
+        }
+        for (Message result : results) {
+            onMessageFound.onMessageFound(result);
+        }
+    }
+
+    public void findUnreadMessagesAndCalls(OnMessageFound onMessageFound) {
+        final ArrayList<Message> results = new ArrayList<>();
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (message.isRead()) {
+                    continue;
+                }
+                results.add(message);
+            }
+        }
+        for (final Message result : results) {
+            onMessageFound.onMessageFound(result);
+        }
+    }
+
+    public Message findMessageWithFileAndUuid(final String uuid) {
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                final Transferable transferable = message.getTransferable();
+                final boolean unInitiatedButKnownSize =
+                        MessageUtils.unInitiatedButKnownSize(message);
+                if (message.getUuid().equals(uuid)
+                        && message.getEncryption() != Message.ENCRYPTION_PGP
+                        && (message.isFileOrImage()
+                                || message.treatAsDownloadable()
+                                || unInitiatedButKnownSize
+                                || (transferable != null
+                                        && transferable.getStatus()
+                                                != Transferable.STATUS_UPLOADING))) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Message findMessageWithUuid(final String uuid) {
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (message.getUuid().equals(uuid)) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    public Message findResidentMessageWithUuid(final String uuid) {
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (uuid.equals(message.getUuid())) {
+                    return message;
+                }
+            }
+            for (final Message message : this.historyPartMessages) {
+                if (uuid.equals(message.getUuid())) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public boolean markAsDeleted(final List<String> uuids) {
+        boolean deleted = false;
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if (uuids.contains(message.getUuid()) && !message.isDeleted()) {
+                    message.setDeleted(true);
+                    deleted = true;
+                }
+            }
+        }
+        if (deleted) {
+            markTimelineChanged();
+        }
+        return deleted;
+    }
+
+    public boolean markAsChanged(final List<FilePathInfo> files) {
+        boolean changed = false;
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                for (final FilePathInfo file : files)
+                    if (file.uuid.toString().equals(message.getUuid())) {
+                        if (message.isDeleted() != file.deleted) {
+                            message.setDeleted(file.deleted);
+                            changed = true;
+                        }
+                    }
+            }
+        }
+        if (changed) {
+            markTimelineChanged();
+        }
+        return changed;
+    }
+
+    public void deleteLocally(Message message) {
+        final boolean removed;
+        synchronized (this.messages) {
+            removed = this.messages.remove(message);
+        }
+        if (removed) {
+            markTimelineChanged();
+        }
+    }
+
+    /**
+     * Remove an XEP-0425 moderated target from presentation while retaining its durable tombstone.
+     *
+     * <p>The database row and moderation marker remain available for deduplication, reply
+     * resolution and late MAM replay suppression. Only the visible timeline entry disappears.
+     */
+    public boolean removeModeratedMessageFromTimeline(final Message message) {
+        if (message == null || !message.isModerated()) {
+            return false;
+        }
+        final boolean removed;
+        synchronized (this.messages) {
+            final boolean removedTimeline = this.messages.remove(message);
+            final boolean removedHistory = this.historyPartMessages.remove(message);
+            if (this.replyTo == message) {
+                this.replyTo = null;
+            }
+            removed = removedTimeline || removedHistory;
+        }
+        if (removed) {
+            markTimelineChanged();
+        }
+        return removed;
+    }
+
+    public void clearMessages() {
+        final boolean changed;
+        synchronized (this.messages) {
+            changed = !this.messages.isEmpty();
+            this.messages.clear();
+        }
+        if (changed) {
+            markTimelineChanged();
+        }
+    }
+
+    /** Clears only resident message state after durable account-local cleanup succeeds. */
+    public void clearLocalMessageState() {
+        final boolean changed;
+        synchronized (this.messages) {
+            changed = !this.messages.isEmpty() || !this.historyPartMessages.isEmpty();
+            for (final Message message : this.messages) {
+                message.clearVerifiedProtectedBody();
+            }
+            for (final Message message : this.historyPartMessages) {
+                message.clearVerifiedProtectedBody();
+            }
+            this.messages.clear();
+            this.historyPartMessages.clear();
+            this.replyTo = null;
+            setCorrectingMessage(null);
+        }
+        if (changed) {
+            markTimelineChanged();
+        }
+    }
+
+    public boolean setIncomingChatState(ChatState state) {
+        if (this.mIncomingChatState == state) {
+            return false;
+        }
+        this.mIncomingChatState = state;
+        return true;
+    }
+
+    public ChatState getIncomingChatState() {
+        return this.mIncomingChatState;
+    }
+
+    public boolean setOutgoingChatState(ChatState state) {
+        if (mode == MODE_SINGLE && !getContact().isSelf()
+                || (isPrivateAndNonAnonymous() && getNextCounterpart() == null)) {
+            if (this.mOutgoingChatState != state) {
+                this.mOutgoingChatState = state;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public ChatState getOutgoingChatState() {
+        return this.mOutgoingChatState;
+    }
+
+    public void trim() {
+        synchronized (this.messages) {
+            final int size = messages.size();
+            final int maxsize = Config.PAGE_SIZE * Config.MAX_NUM_PAGES;
+            if (size > maxsize) {
+                List<Message> discards = this.messages.subList(0, size - maxsize);
+                discards.clear();
+                untieMessages();
+                markTimelineChanged();
+            }
+        }
+    }
+
+    public void findUnsentMessagesWithEncryption(int encryptionType, OnMessageFound onMessageFound) {
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if ((message.getStatus() == Message.STATUS_UNSEND || message.getStatus() == Message.STATUS_WAITING)
+                        && (message.getEncryption() == encryptionType)) {
+                    onMessageFound.onMessageFound(message);
+                }
+            }
+        }
+    }
+
+    public void findUnsentTextMessages(OnMessageFound onMessageFound) {
+        final ArrayList<Message> results = new ArrayList<>();
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if ((message.getType() == Message.TYPE_TEXT || message.hasFileOnRemoteHost())
+                        && message.getStatus() == Message.STATUS_UNSEND) {
+                    results.add(message);
+                }
+            }
+        }
+        for (Message result : results) {
+            onMessageFound.onMessageFound(result);
+        }
+    }
+
+    public Message findSentMessageWithUuidOrRemoteId(String id) {
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if (id.equals(message.getUuid())
+                        || (message.getStatus() >= Message.STATUS_SEND
+                                && id.equals(message.getRemoteMsgId()))) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Message findMessageWithUuidOrRemoteId(final String id) {
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (id.equals(message.getUuid()) || id.equals(message.getRemoteMsgId())) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Message findMessageWithRemoteIdAndCounterpart(String id, Jid counterpart) {
+        synchronized (this.messages) {
+            for (int i = this.messages.size() - 1; i >= 0; --i) {
+                final Message message = messages.get(i);
+                final Jid mcp = message.getCounterpart();
+                if (mcp == null && counterpart != null) {
+                    continue;
+                }
+                if (counterpart == null || mcp.equals(counterpart) || mcp.asBareJid().equals(counterpart)) {
+                    final boolean idMatch = id.equals(message.getUuid()) || id.equals(message.getRemoteMsgId()) || message.remoteMsgIdMatchInEdit(id) || (getMode() == MODE_MULTI && id.equals(message.getServerMsgId()));
+                    if (idMatch) return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Message findMessageWithRemoteIdAndCounterpart(String id, Jid counterpart, boolean received, boolean carbon) {
+        synchronized (this.messages) {
+            for (int i = this.messages.size() - 1; i >= 0; --i) {
+                final Message message = messages.get(i);
+                final Jid mcp = message.getCounterpart();
+                if (mcp == null) {
+                    continue;
+                }
+                if (!mcp.equals(counterpart)) {
+                    continue;
+                }
+                if ((message.getStatus() == Message.STATUS_RECEIVED) != received) {
+                    continue;
+                }
+                if (!received && carbon != message.isCarbon()) {
+                    continue;
+                }
+                if (!id.equals(message.getRemoteMsgId())) {
+                    continue;
+                }
+                if (message.isFileOrImage() || message.treatAsDownloadable()) {
+                    continue;
+                }
+                return message;
+            }
+        }
+        return null;
+    }
+
+    public Message findSentMessageWithUuid(String id) {
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if (id.equals(message.getUuid())) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Message findMessageWithRemoteId(String id, Jid counterpart) {
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if (counterpart.equals(message.getCounterpart())
+                        && (id.equals(message.getRemoteMsgId()) || id.equals(message.getUuid()))) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Message findReceivedWithRemoteId(final String id) {
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (message.getStatus() == Message.STATUS_RECEIVED
+                        && id.equals(message.getRemoteMsgId())) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Message findMessageWithRoomStanzaId(final String id) {
+        if (id == null) return null;
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (id.equals(message.getRoomStanzaId())) return message;
+            }
+            for (final Message message : this.historyPartMessages) {
+                if (id.equals(message.getRoomStanzaId())) return message;
+            }
+        }
+        return null;
+    }
+
+    public Message findMessageForModerationId(final String id) {
+        if (id == null) return null;
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (id.equals(message.getRoomStanzaId())) return message;
+            }
+            for (final Message message : this.historyPartMessages) {
+                if (id.equals(message.getRoomStanzaId())) return message;
+            }
+            // Compatibility for rows created before roomStanzaId was persisted on MUC self-echo.
+            // In that path the room-issued stanza id lived in serverMsgId instead.
+            for (final Message message : this.messages) {
+                if (message.getRoomStanzaId() == null && id.equals(message.getServerMsgId())) {
+                    return message;
+                }
+            }
+            for (final Message message : this.historyPartMessages) {
+                if (message.getRoomStanzaId() == null && id.equals(message.getServerMsgId())) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Replace detached reply previews with the scrubbed target on both timeline pages. */
+    public void refreshModeratedReplyReferences(final Message target) {
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                final Message reply = message.getReplyMessage();
+                if (reply != null && target.getUuid().equals(reply.getUuid())) {
+                    message.setReplyMessage(target, false);
+                }
+            }
+            for (final Message message : this.historyPartMessages) {
+                final Message reply = message.getReplyMessage();
+                if (reply != null && target.getUuid().equals(reply.getUuid())) {
+                    message.setReplyMessage(target, false);
+                }
+            }
+        }
+    }
+
+    public Message findMessageWithServerMsgId(String id) {
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if (id != null && id.equals(message.getServerMsgId())) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public boolean hasMessageWithCounterpart(Jid counterpart) {
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if (counterpart.equals(message.getCounterpart())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public Message findMessageReactingTo(String id, Jid reactor) {
+        if (id == null) return null;
+
+        synchronized (this.messages) {
+            for (int i = this.messages.size() - 1; i >= 0; --i) {
+                final Message message = messages.get(i);
+                if (reactor == null && message.getStatus() < Message.STATUS_SEND) continue;
+                if (reactor != null && message.getCounterpart() == null) continue;
+                if (reactor != null && !(message.getCounterpart().equals(reactor) || message.getCounterpart().asBareJid().equals(reactor))) continue;
+
+                final Element r = message.getReactions();
+                if (r != null && r.getAttribute("id") != null && id.equals(r.getAttribute("id"))) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public Set<String> findReactionsTo(String id, Jid reactor) {
+        Set<String> reactionEmoji = new HashSet<>();
+        Message reactM = findMessageReactingTo(id, reactor);
+        Element reactions = reactM == null ? null : reactM.getReactions();
+        if (reactions != null) {
+            for (Element el : reactions.getChildren()) {
+                if (el.getName().equals("reaction") && el.getNamespace().equals("urn:xmpp:reactions:0")) {
+                    reactionEmoji.add(el.getContent());
+                }
+            }
+        }
+        return reactionEmoji;
+    }
+
+
+    public void populateWithMessages(final List<Message> messages) {
+        if (historyPartMessages.size() > 0) {
+            messages.clear();
+            messages.addAll(this.historyPartMessages);
+        } else {
+            synchronized (this.messages) {
+                messages.clear();
+                messages.addAll(this.messages);
+            }
+        }
+    }
+
+    /**
+     * Returns an immutable-by-ownership snapshot of the canonical conversation message list.
+     *
+     * <p>This deliberately ignores history-part presentation state. Service-side lifecycle
+     * coordinators need the durable/current message set, not whichever history page the UI is
+     * currently showing.</p>
+     */
+    public List<Message> snapshotMessages() {
+        synchronized (this.messages) {
+            return new ArrayList<>(this.messages);
+        }
+    }
+
+    @Override
+    public boolean isBlocked() {
+        return getContact().isBlocked();
+    }
+
+    @Override
+    public boolean isDomainBlocked() {
+        return getContact().isDomainBlocked();
+    }
+
+    @Override
+    public Jid getBlockedJid() {
+        return getContact().getBlockedJid();
+    }
+
+    public String getLastReceivedOtrMessageId() {
+        return this.mLastReceivedOtrMessageId;
+    }
+
+    public void setLastReceivedOtrMessageId(String id) {
+        this.mLastReceivedOtrMessageId = id;
+    }
+
+    public int countMessages() {
+        synchronized (this.messages) {
+            return this.messages.size();
+        }
+    }
+
+    public String getFirstMamReference() {
+        return this.mFirstMamReference;
+    }
+
+    public void setFirstMamReference(String reference) {
+        this.mFirstMamReference = reference;
+    }
+
+    public void setLastClearHistory(long time, String reference) {
+        if (reference != null) {
+            setAttribute(ATTRIBUTE_LAST_CLEAR_HISTORY, time + ":" + reference);
+        } else {
+            setAttribute(ATTRIBUTE_LAST_CLEAR_HISTORY, time);
+        }
+    }
+
+    public MamReference getLastClearHistory() {
+        return MamReference.fromAttribute(getAttribute(ATTRIBUTE_LAST_CLEAR_HISTORY));
+    }
+
+    public List<Jid> getAcceptedCryptoTargets() {
+        if (mode == MODE_SINGLE) {
+            return Collections.singletonList(getJid().asBareJid());
+        } else {
+            return getJidListAttribute(ATTRIBUTE_CRYPTO_TARGETS);
+        }
+    }
+
+    public void setAcceptedCryptoTargets(List<Jid> acceptedTargets) {
+        setAttribute(ATTRIBUTE_CRYPTO_TARGETS, acceptedTargets);
+    }
+
+    public boolean setCorrectingMessage(Message correctingMessage) {
+        setAttribute(
+                ATTRIBUTE_CORRECTING_MESSAGE,
+                correctingMessage == null ? null : correctingMessage.getUuid());
+        return correctingMessage == null && draftMessage != null;
+    }
+
+    public Message getCorrectingMessage() {
+        final String uuid = getAttribute(ATTRIBUTE_CORRECTING_MESSAGE);
+        return uuid == null ? null : findSentMessageWithUuid(uuid);
+    }
+
+    public boolean withSelf() {
+        return getContact().isSelf();
+    }
+
+    @Override
+    public int compareTo(@NonNull Conversation another) {
+        return ComparisonChain.start()
+                .compareFalseFirst(another.getBooleanAttribute(ATTRIBUTE_PINNED_ON_TOP, false) && another.withSelf(), getBooleanAttribute(ATTRIBUTE_PINNED_ON_TOP, false) && withSelf())
+                .compareFalseFirst(another.getBooleanAttribute(ATTRIBUTE_PINNED_ON_TOP, false), getBooleanAttribute(ATTRIBUTE_PINNED_ON_TOP, false))
+                .compare(another.getSortableTime(), getSortableTime())
+                .result();
+    }
+
+    private long getSortableTime() {
+        Draft draft = getDraft();
+        long messageTime = getLatestMessage().getTimeSent();
+        if (draft == null) {
+            return messageTime;
+        } else {
+            return Math.max(messageTime, draft.getTimestamp());
+        }
+    }
+
+    public String getDraftMessage() {
+        return draftMessage;
+    }
+
+    public void setDraftMessage(String draftMessage) {
+        this.draftMessage = draftMessage;
+    }
+
+    public void setReplyTo(Message m) {
+        this.replyTo = m;
+    }
+
+    public Message getReplyTo() {
+        return this.replyTo;
+    }
+
+    public boolean isRead() {
+        synchronized (this.messages) {
+            for (final Message message : Lists.reverse(this.messages)) {
+                if (message.isRead() && message.getType() == Message.TYPE_RTP_SESSION) {
+                    continue;
+                }
+                return message.isRead();
+            }
+            return true;
+        }
+    }
+
+    public List<Message> markRead(final String upToUuid) {
+        final ImmutableList.Builder<Message> unread = new ImmutableList.Builder<>();
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                if (!message.isRead()) {
+                    message.markRead();
+                    unread.add(message);
+                }
+                if (message.getUuid().equals(upToUuid)) {
+                    return unread.build();
+                }
+            }
+        }
+        return unread.build();
+    }
+
+    @Nullable
+    public Message getMessageWithAnyMatchingId(String uuid) {
+        if (uuid == null) {
+            return null;
+        }
+
+        synchronized (this.messages) {
+            for (int i = 0; i < messages.size(); ++i) {
+                if (uuid.equals(messages.get(i).getServerMsgId())) {
+                    return messages.get(i);
+                }
+
+                if (uuid.equals(messages.get(i).getRemoteMsgId())) {
+                    return messages.get(i);
+                }
+
+                if (uuid.equals(messages.get(i).getUuid())) {
+                    return messages.get(i);
+                }
+            }
+
+            for (int i = 0; i < historyPartMessages.size(); ++i) {
+                if (uuid.equals(historyPartMessages.get(i).getServerMsgId())) {
+                    return historyPartMessages.get(i);
+                }
+
+                if (uuid.equals(historyPartMessages.get(i).getRemoteMsgId())) {
+                    return historyPartMessages.get(i);
+                }
+
+                if (uuid.equals(historyPartMessages.get(i).getUuid())) {
+                    return historyPartMessages.get(i);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public Message getLatestMessage() {
+        synchronized (this.messages) {
+            if (this.messages.size() == 0) {
+                Message message = new Message(this, "", Message.ENCRYPTION_NONE);
+                message.setType(Message.TYPE_STATUS);
+                message.setTime(Math.max(getCreated(), getLastClearHistory().getTimestamp()));
+                return message;
+            } else {
+                return this.messages.get(this.messages.size() - 1);
+            }
+        }
+    }
+
+    public @NonNull CharSequence getName() {
+        if (getMode() == MODE_MULTI) {
+            final String roomName = getMucOptions().getName();
+            final String subject = getMucOptions().getSubject();
+            final Bookmark bookmark = getBookmark();
+            final String bookmarkName = bookmark != null ? bookmark.getBookmarkName() : null;
+            if (printableValue(roomName)) {
+                return roomName;
+            } else if (printableValue(subject)) {
+                return subject;
+            } else if (printableValue(bookmarkName, false)) {
+                return bookmarkName;
+            } else {
+                final String generatedName = getMucOptions().createNameFromParticipants();
+                if (printableValue(generatedName)) {
+                    return generatedName;
+                } else {
+                    return contactJid.getLocal() != null ? contactJid.getLocal() : contactJid;
+                }
+            }
+        } else if ((QuickConversationsService.isConversations()
+                        || !Config.QUICKSY_DOMAIN.equals(contactJid.getDomain()))
+                && isWithStranger()) {
+            return contactJid;
+        } else {
+            return this.getContact().getDisplayName();
+        }
+    }
+
+    public String getAccountUuid() {
+        return this.accountUuid;
+    }
+
+    public Jid getContactJid() {
+        return contactJid;
+    }
+
+    public Account getAccount() {
+        return this.account;
+    }
+
+    public void setAccount(final Account account) {
+        this.account = account;
+    }
+
+    public Contact getContact() {
+        return this.account.getRoster().getContact(this.contactJid);
+    }
+
+    @Override
+    public Jid getJid() {
+        return this.contactJid;
+    }
+
+    public int getStatus() {
+        return this.status;
+    }
+
+    public void setStatus(int status) {
+        this.status = status;
+    }
+
+    public long getCreated() {
+        return this.created;
+    }
+
+    public ContentValues getContentValues() {
+        ContentValues values = new ContentValues();
+        values.put(UUID, uuid);
+        values.put(NAME, name);
+        values.put(CONTACT, contactUuid);
+        values.put(ACCOUNT, accountUuid);
+        values.put(CONTACTJID, contactJid.toString());
+        values.put(CREATED, created);
+        values.put(STATUS, status);
+        values.put(MODE, mode);
+
+        if (nextCounterpart != null && hasPermanentCounterpart) {
+            values.put(NEXT_COUNTERPART, nextCounterpart.toString());
+        }
+
+        synchronized (this.attributes) {
+            values.put(ATTRIBUTES, attributes.toString());
+        }
+        return values;
+    }
+
+    public int getMode() {
+        return this.mode;
+    }
+
+    public void setMode(int mode) {
+        this.mode = mode;
+    }
+
+    public SessionImpl startOtrSession(String presence, boolean sendStart) {
+        if (this.otrSession != null) {
+            return this.otrSession;
+        } else {
+            final SessionID sessionId = new SessionID(this.getJid().asBareJid().toString(),
+                    presence,
+                    "xmpp");
+            this.otrSession = new SessionImpl(sessionId, getAccount().getOtrService());
+            try {
+                if (sendStart) {
+                    this.otrSession.startSession();
+                    return this.otrSession;
+                }
+                return this.otrSession;
+            } catch (OtrException e) {
+                return null;
+            }
+        }
+
+    }
+
+    public SessionImpl getOtrSession() {
+        return this.otrSession;
+    }
+
+    public void resetOtrSession() {
+        this.otrFingerprint = null;
+        this.otrSession = null;
+        this.mSmp.hint = null;
+        this.mSmp.secret = null;
+        this.mSmp.status = Smp.STATUS_NONE;
+    }
+
+    public Smp smp() {
+        return mSmp;
+    }
+
+    public boolean startOtrIfNeeded() {
+        if (this.otrSession != null && this.otrSession.getSessionStatus() != SessionStatus.ENCRYPTED) {
+            try {
+                this.otrSession.startSession();
+                return true;
+            } catch (OtrException e) {
+                this.resetOtrSession();
+                return false;
+            }
+        } else {
+            return true;
+        }
+    }
+
+    public boolean endOtrIfNeeded() {
+        if (this.otrSession != null) {
+            if (this.otrSession.getSessionStatus() == SessionStatus.ENCRYPTED) {
+                try {
+                    this.otrSession.endSession();
+                    this.resetOtrSession();
+                    return true;
+                } catch (OtrException e) {
+                    this.resetOtrSession();
+                    return false;
+                }
+            } else {
+                this.resetOtrSession();
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    public boolean hasValidOtrSession() {
+        return this.otrSession != null;
+    }
+
+    public synchronized String getOtrFingerprint() {
+        if (this.otrFingerprint == null) {
+            try {
+                if (getOtrSession() == null || getOtrSession().getSessionStatus() != SessionStatus.ENCRYPTED) {
+                    return null;
+                }
+                DSAPublicKey remotePubKey = (DSAPublicKey) getOtrSession().getRemotePublicKey();
+                this.otrFingerprint = getAccount().getOtrService().getFingerprint(remotePubKey).toLowerCase(Locale.US);
+            } catch (final OtrCryptoException ignored) {
+                return null;
+            } catch (final UnsupportedOperationException ignored) {
+                return null;
+            }
+        }
+        return this.otrFingerprint;
+    }
+
+    public boolean verifyOtrFingerprint() {
+        final String fingerprint = getOtrFingerprint();
+        if (fingerprint != null) {
+            getContact().addOtrFingerprint(fingerprint);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public boolean isOtrFingerprintVerified() {
+        return getContact().getOtrFingerprints().contains(getOtrFingerprint());
+    }
+
+    public class Smp {
+        public static final int STATUS_NONE = 0;
+        public static final int STATUS_CONTACT_REQUESTED = 1;
+        public static final int STATUS_WE_REQUESTED = 2;
+        public static final int STATUS_FAILED = 3;
+        public static final int STATUS_VERIFIED = 4;
+
+        public String secret = null;
+        public String hint = null;
+        public int status = 0;
+    }
+
+    /**
+     * short for is Private and Non-anonymous
+     */
+    public boolean isSingleOrPrivateAndNonAnonymous() {
+        return mode == MODE_SINGLE || isPrivateAndNonAnonymous();
+    }
+
+    public boolean isPrivateAndNonAnonymous() {
+        return getMucOptions().isPrivateAndNonAnonymous();
+    }
+
+    public synchronized MucOptions getMucOptions() {
+        Conversation parent = parentConversation == null ? null : parentConversation.get();
+
+        if (parent != null) {
+            this.mucOptions = parent.getMucOptions();
+        }
+
+        if (this.mucOptions == null) {
+            this.mucOptions = new MucOptions(this);
+        }
+        return this.mucOptions;
+    }
+
+    public void resetMucOptions() {
+        this.mucOptions = null;
+    }
+
+    public void setContactJid(final Jid jid) {
+        this.contactJid = jid;
+    }
+
+    public Jid getNextCounterpart() {
+        return this.nextCounterpart;
+    }
+
+    public boolean hasPermanentCounterpart() {
+        return hasPermanentCounterpart;
+    }
+
+    public void setNextCounterpart(Jid jid) {
+        this.nextCounterpart = jid;
+    }
+
+    public int getNextEncryption() {
+        if (!Config.supportOmemo() && !Config.supportOtr()) {
+            return Message.ENCRYPTION_NONE;
+        }
+
+        if (Config.supportOtr() && nextCounterpart != null && getMode() == MODE_SINGLE && hasPermanentCounterpart) {
+            return Message.ENCRYPTION_OTR;
+        }
+
+        if (OmemoSetting.isAlways()) {
+            return suitableForOmemoByDefault(this)
+                    ? Message.ENCRYPTION_AXOLOTL
+                    : Message.ENCRYPTION_NONE;
+        }
+        final int defaultEncryption;
+        if (suitableForOmemoByDefault(this)) {
+            defaultEncryption = OmemoSetting.getEncryption();
+        } else {
+            defaultEncryption = Message.ENCRYPTION_NONE;
+        }
+        int encryption = this.getIntAttribute(ATTRIBUTE_NEXT_ENCRYPTION, defaultEncryption);
+        if (encryption < 0) {
+            return defaultEncryption;
+        }
+        // Older databases may still remember a legacy encryption mode. Transparently
+        // migrate the chat back to the current encryption choice.
+        if (encryption == Message.ENCRYPTION_PGP || encryption == Message.ENCRYPTION_DECRYPTED) {
+            return defaultEncryption;
+        }
+        return encryption;
+    }
+
+    public boolean setNextEncryption(int encryption) {
+        return this.setAttribute(ATTRIBUTE_NEXT_ENCRYPTION, encryption);
+    }
+
+    public String getNextMessage() {
+        if (protectedDraftHydrated) {
+            return protectedDraftMessage == null ? "" : protectedDraftMessage;
+        }
+        final String nextMessage = getAttribute(ATTRIBUTE_NEXT_MESSAGE);
+        return nextMessage == null ? "" : nextMessage;
+    }
+
+    public String getLegacyNextMessage() {
+        return getAttribute(ATTRIBUTE_NEXT_MESSAGE);
+    }
+
+    public boolean clearLegacyNextMessage() {
+        return setAttribute(ATTRIBUTE_NEXT_MESSAGE, (String) null);
+    }
+
+    public String getLegacyMucPassword() {
+        return getAttribute(ATTRIBUTE_MUC_PASSWORD);
+    }
+
+    public boolean clearLegacyMucPassword() {
+        return setAttribute(ATTRIBUTE_MUC_PASSWORD, (String) null);
+    }
+
+    public void hydrateProtectedDraft(final String message, final long timestamp) {
+        this.protectedDraftHydrated = true;
+        this.protectedDraftMessage = message;
+        this.protectedDraftTimestamp = message == null ? 0L : Math.max(0L, timestamp);
+    }
+
+    public void clearTransientProtectedSecrets() {
+        this.protectedDraftMessage = null;
+        this.protectedDraftTimestamp = 0L;
+        // Explicit empty protected state prevents locked runtime from falling back to legacy attrs.
+        this.protectedDraftHydrated = true;
+        if (this.mucOptions != null) {
+            this.mucOptions.setPassword(null);
+        }
+
+        // Verified protected bodies are process-local plaintext presentation state. They must be
+        // retired explicitly when High Security suspends crypto, independent of repository/LRU
+        // membership, because a live Message owns its verified body until lifecycle invalidation.
+        synchronized (this.messages) {
+            for (final Message message : this.messages) {
+                message.clearVerifiedProtectedBody();
+            }
+            for (final Message message : this.historyPartMessages) {
+                message.clearVerifiedProtectedBody();
+            }
+        }
+    }
+
+
+    public boolean smpRequested() {
+        return smp().status == Smp.STATUS_CONTACT_REQUESTED;
+    }
+
+    public @Nullable Draft getDraft() {
+        final long timestamp =
+                protectedDraftHydrated
+                        ? protectedDraftTimestamp
+                        : getLongAttribute(ATTRIBUTE_NEXT_MESSAGE_TIMESTAMP, 0);
+        final String message = getNextMessage();
+        if (timestamp > getLatestMessage().getTimeSent()
+                && !TextUtils.isEmpty(message)
+                && timestamp != 0) {
+            return new Draft(message, timestamp);
+        }
+        return null;
+    }
+
+    public boolean setNextMessage(final String input) {
+        final String message = input == null || input.trim().isEmpty() ? null : input;
+        final boolean changed = !java.util.Objects.equals(getNextMessage(), message);
+        this.protectedDraftHydrated = true;
+        this.protectedDraftMessage = message;
+        if (changed) {
+            this.protectedDraftTimestamp =
+                    message == null ? 0L : System.currentTimeMillis();
+            this.setAttribute(ATTRIBUTE_NEXT_MESSAGE_TIMESTAMP, this.protectedDraftTimestamp);
+        }
+        // New drafts are never persisted in Conversation.attributes.
+        this.setAttribute(ATTRIBUTE_NEXT_MESSAGE, (String) null);
+        return changed;
+    }
+
+    public void setSymmetricKey(byte[] key) {
+        this.symmetricKey = key;
+    }
+
+    public byte[] getSymmetricKey() {
+        return this.symmetricKey;
+    }
+
+    public Bookmark getBookmark() {
+        return this.account.getBookmark(this.contactJid);
+    }
+
+    public Message findDuplicateMessage(Message message) {
+        synchronized (this.messages) {
+            for (int i = this.messages.size() - 1; i >= 0; --i) {
+                if (this.messages.get(i).similar(message)) {
+                    return this.messages.get(i);
+                }
+            }
+        }
+        return null;
+    }
+
+    public boolean hasDuplicateMessage(Message message) {
+        return findDuplicateMessage(message) != null;
+    }
+
+    public Message findSentMessageWithBody(String body) {
+        synchronized (this.messages) {
+            for (int i = this.messages.size() - 1; i >= 0; --i) {
+                Message message = this.messages.get(i);
+                if (message.getStatus() == Message.STATUS_UNSEND
+                        || message.getStatus() == Message.STATUS_SEND) {
+                    String otherBody;
+                    if (message.hasFileOnRemoteHost()) {
+                        otherBody = message.getFileParams().url;
+                    } else {
+                        otherBody = message.body;
+                    }
+                    if (otherBody != null && otherBody.equals(body)) {
+                        return message;
+                    }
+                }
+            }
+            return null;
+        }
+    }
+
+    public Message findRtpSession(final String sessionId, final int s) {
+        synchronized (this.messages) {
+            for (int i = this.messages.size() - 1; i >= 0; --i) {
+                final Message message = this.messages.get(i);
+                if ((message.getStatus() == s)
+                        && (message.getType() == Message.TYPE_RTP_SESSION)
+                        && sessionId.equals(message.getRemoteMsgId())) {
+                    return message;
+                }
+            }
+        }
+        return null;
+    }
+
+    public boolean possibleDuplicate(final String serverMsgId, final String remoteMsgId) {
+        if (serverMsgId == null || remoteMsgId == null) {
+            return false;
+        }
+        synchronized (this.messages) {
+            for (Message message : this.messages) {
+                if (serverMsgId.equals(message.getServerMsgId())
+                        || remoteMsgId.equals(message.getRemoteMsgId())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public MamReference getLastMessageTransmitted() {
+        final MamReference lastClear = getLastClearHistory();
+        MamReference lastReceived = new MamReference(0);
+        synchronized (this.messages) {
+            for (int i = this.messages.size() - 1; i >= 0; --i) {
+                final Message message = this.messages.get(i);
+                if (message.isPrivateMessage()) {
+                    continue; // it's unsafe to use private messages as anchor. They could be coming
+                    // from user archive
+                }
+                if (message.getStatus() == Message.STATUS_RECEIVED
+                        || message.isCarbon()
+                        || message.getServerMsgId() != null) {
+                    lastReceived =
+                            new MamReference(message.getTimeSent(), message.getServerMsgId());
+                    break;
+                }
+            }
+        }
+        return MamReference.max(lastClear, lastReceived);
+    }
+
+    public void setMutedTill(long value) {
+        this.setAttribute(ATTRIBUTE_MUTED_TILL, String.valueOf(value));
+    }
+
+    public boolean isMuted() {
+        return System.currentTimeMillis() < this.getLongAttribute(ATTRIBUTE_MUTED_TILL, 0);
+    }
+
+    public void setNotificationThrottlingPeriod(long value) {
+        this.setAttribute(ATTRIBUTE_NOTIFICATIONS_THROTTLING_PERIOD, String.valueOf(value));
+    }
+
+    public long getNotificationThrottlingPeriod() {
+        return this.getLongAttribute(ATTRIBUTE_NOTIFICATIONS_THROTTLING_PERIOD, -2);
+    }
+
+    public boolean alwaysNotify() {
+        return mode == MODE_SINGLE
+                || getBooleanAttribute(
+                        ATTRIBUTE_ALWAYS_NOTIFY,
+                        Config.ALWAYS_NOTIFY_BY_DEFAULT || isPrivateAndNonAnonymous());
+    }
+
+    public boolean isMucExplicitlyLeft() {
+        return mode == MODE_MULTI
+                && nextCounterpart == null
+                && getBooleanAttribute(ATTRIBUTE_MUC_EXPLICITLY_LEFT, false);
+    }
+
+    public boolean setMucExplicitlyLeft(final boolean explicitlyLeft) {
+        return setAttribute(ATTRIBUTE_MUC_EXPLICITLY_LEFT, explicitlyLeft);
+    }
+
+    public boolean setAttribute(String key, boolean value) {
+        return setAttribute(key, String.valueOf(value));
+    }
+
+    private boolean setAttribute(String key, long value) {
+        return setAttribute(key, Long.toString(value));
+    }
+
+    private boolean setAttribute(String key, int value) {
+        return setAttribute(key, String.valueOf(value));
+    }
+
+    public boolean setAttribute(String key, String value) {
+        synchronized (this.attributes) {
+            try {
+                if (value == null) {
+                    if (this.attributes.has(key)) {
+                        this.attributes.remove(key);
+                        return true;
+                    } else {
+                        return false;
+                    }
+                } else {
+                    final String prev = this.attributes.optString(key, null);
+                    this.attributes.put(key, value);
+                    return !value.equals(prev);
+                }
+            } catch (JSONException e) {
+                throw new AssertionError(e);
+            }
+        }
+    }
+
+    public boolean setAttribute(String key, List<Jid> jids) {
+        JSONArray array = new JSONArray();
+        for (Jid jid : jids) {
+            array.put(jid.asBareJid().toString());
+        }
+        synchronized (this.attributes) {
+            try {
+                this.attributes.put(key, array);
+                return true;
+            } catch (JSONException e) {
+                return false;
+            }
+        }
+    }
+
+    public String getAttribute(String key) {
+        synchronized (this.attributes) {
+            return this.attributes.optString(key, null);
+        }
+    }
+
+    private List<Jid> getJidListAttribute(String key) {
+        ArrayList<Jid> list = new ArrayList<>();
+        synchronized (this.attributes) {
+            try {
+                JSONArray array = this.attributes.getJSONArray(key);
+                for (int i = 0; i < array.length(); ++i) {
+                    try {
+                        list.add(Jid.of(array.getString(i)));
+                    } catch (IllegalArgumentException e) {
+                        // ignored
+                    }
+                }
+            } catch (JSONException e) {
+                // ignored
+            }
+        }
+        return list;
+    }
+
+    private int getIntAttribute(String key, int defaultValue) {
+        String value = this.getAttribute(key);
+        if (value == null) {
+            return defaultValue;
+        } else {
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                return defaultValue;
+            }
+        }
+    }
+
+    public long getLongAttribute(String key, long defaultValue) {
+        String value = this.getAttribute(key);
+        if (value == null) {
+            return defaultValue;
+        } else {
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException e) {
+                return defaultValue;
+            }
+        }
+    }
+
+    public boolean getBooleanAttribute(String key, boolean defaultValue) {
+        String value = this.getAttribute(key);
+        if (value == null) {
+            return defaultValue;
+        } else {
+            return Boolean.parseBoolean(value);
+        }
+    }
+
+    public void add(Message message) {
+        String res1 = message.getCounterpart() == null ? null : message.getCounterpart().getResource();
+        String res2 = nextCounterpart == null ? null : nextCounterpart.getResource();
+
+        boolean added = false;
+        if (nextCounterpart == null) {
+            if (!message.isPrivateMessage() && message.encryption != Message.ENCRYPTION_OTR) {
+                synchronized (this.messages) {
+                    this.messages.add(message);
+                    actualizeReplyMessages(this.messages, List.of(message));
+                    added = true;
+                }
+            }
+        } else {
+            if ((message.isPrivateMessage() || message.encryption == Message.ENCRYPTION_OTR) && Objects.equals(res1, res2)) {
+                synchronized (this.messages) {
+                    this.messages.add(message);
+                    actualizeReplyMessages(this.messages, List.of(message));
+                    added = true;
+                }
+            }
+        }
+        if (added) {
+            markTimelineChanged();
+        }
+    }
+
+    public void prepend(int offset, Message message) {
+        String res1 = message.getCounterpart() == null ? null : message.getCounterpart().getResource();
+        String res2 = nextCounterpart == null ? null : nextCounterpart.getResource();
+
+        List<Message> properListToAdd;
+
+        if (!historyPartMessages.isEmpty()) {
+            properListToAdd = historyPartMessages;
+        } else {
+            properListToAdd = this.messages;
+        }
+
+        boolean added = false;
+        if (nextCounterpart == null) {
+            if (!message.isPrivateMessage() && message.encryption != Message.ENCRYPTION_OTR) {
+                synchronized (this.messages) {
+                    properListToAdd.add(Math.min(offset, properListToAdd.size()), message);
+                    actualizeReplyMessages(properListToAdd, List.of(message));
+                    added = true;
+                }
+            }
+        } else {
+            if ((message.isPrivateMessage() || message.encryption == Message.ENCRYPTION_OTR) && Objects.equals(res1, res2)) {
+                synchronized (this.messages) {
+                    properListToAdd.add(Math.min(offset, properListToAdd.size()), message);
+                    actualizeReplyMessages(properListToAdd, List.of(message));
+                    added = true;
+                }
+            }
+        }
+
+        synchronized (this.messages) {
+            if (!historyPartMessages.isEmpty() && hasDuplicateMessage(historyPartMessages.get(historyPartMessages.size() - 1))) {
+                messages.addAll(0, historyPartMessages);
+                actualizeReplyMessages(messages, List.of(message));
+                jumpToLatest();
+            }
+        }
+        if (added) {
+            markTimelineChanged();
+        }
+    }
+
+    public void addAll(int index, List<Message> messages, boolean fromPagination) {
+        if (messages.isEmpty()) return;
+
+        List<Message> newM = new ArrayList<>();
+
+        if (nextCounterpart == null) {
+            for(Message m : messages) {
+                if (!m.isPrivateMessage() && m.encryption != Message.ENCRYPTION_OTR) {
+                    newM.add(m);
+                }
+            }
+
+        } else {
+            for(Message m : messages) {
+                String res1 = m.getCounterpart() == null ? null : m.getCounterpart().getResource();
+                String res2 = nextCounterpart == null ? null : nextCounterpart.getResource();
+
+
+                if ((m.isPrivateMessage() || m.encryption == Message.ENCRYPTION_OTR) && Objects.equals(res1, res2)) {
+                    newM.add(m);
+                }
+            }
+
+        }
+
+        synchronized (this.messages) {
+            List<Message> properListToAdd;
+
+            if (fromPagination && !historyPartMessages.isEmpty() && checkIsMergeable(newM)) {
+                historyPartMessages.addAll(newM);
+                newM = filterExisted(historyPartMessages);
+                index = 0;
+                jumpToLatest();
+            }
+
+            if (fromPagination && !historyPartMessages.isEmpty()) {
+                properListToAdd = historyPartMessages;
+            } else {
+                properListToAdd = this.messages;
+            }
+
+            final boolean added;
+            if (index == -1) {
+                added = properListToAdd.addAll(newM);
+            } else {
+                properListToAdd.addAll(index, newM);
+                added = !newM.isEmpty();
+            }
+
+            actualizeReplyMessages(properListToAdd, messages);
+            if (added) {
+                markTimelineChanged();
+            }
+        }
+    }
+
+    private void actualizeReplyMessages(List<Message> mainList, List<Message> messages) {
+        for (Message m : mainList) {
+            if (m.isReplyRestoredFromDb()) {
+                Element reply = m.getReplyOrReaction();
+
+                if (reply == null) {
+                    continue;
+                }
+
+                String replyId = reply.getAttribute("id");
+
+                for (Message rep : messages) {
+                    if (replyId.equals(rep.getServerMsgId())) {
+                        m.setReplyMessage(rep, false);
+                        break;
+                    }
+
+                    if (replyId.equals(rep.getRemoteMsgId())) {
+                        m.setReplyMessage(rep, false);
+                        break;
+                    }
+
+                    if (replyId.equals(rep.getUuid())) {
+                        m.setReplyMessage(rep, false);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    public void expireOldMessages(long timestamp) {
+        boolean changed = false;
+        synchronized (this.messages) {
+            for (ListIterator<Message> iterator = this.messages.listIterator();
+                    iterator.hasNext(); ) {
+                if (iterator.next().getTimeSent() < timestamp) {
+                    iterator.remove();
+                    changed = true;
+                }
+            }
+            untieMessages();
+        }
+        if (changed) {
+            markTimelineChanged();
+        }
+    }
+
+    public void sort() {
+        synchronized (this.messages) {
+            Collections.sort(
+                    this.messages,
+                    (left, right) -> {
+                        if (left.getTimeSent() < right.getTimeSent()) {
+                            return -1;
+                        } else if (left.getTimeSent() > right.getTimeSent()) {
+                            return 1;
+                        } else {
+                            return 0;
+                        }
+                    });
+            untieMessages();
+        }
+        markTimelineChanged();
+    }
+
+    public void jumpToHistoryPart(List<Message> messages) {
+        final boolean wasInHistoryPart = !historyPartMessages.isEmpty();
+        historyPartMessages.clear();
+
+        if (checkIsMergeable(messages)) {
+            addAll(0, filterExisted(messages), false);
+        } else {
+            historyPartMessages.addAll(messages);
+        }
+        if (wasInHistoryPart || !historyPartMessages.isEmpty()) {
+            markTimelineChanged();
+        }
+    }
+
+    public void jumpToLatest() {
+        if (!historyPartMessages.isEmpty()) {
+            markTimelineChanged();
+        }
+        historyPartMessages.clear();
+    }
+
+    public boolean isInHistoryPart() {
+        return !historyPartMessages.isEmpty();
+    }
+
+    private boolean checkIsMergeable(List<Message> messages) {
+        if (messages.isEmpty()) return true;
+        return findDuplicateMessage(messages.get(messages.size() - 1)) != null;
+    }
+
+    private List<Message> filterExisted(List<Message> messages) {
+        if (messages.isEmpty()) return Collections.emptyList();
+
+        List<Message> result = new ArrayList<>();
+
+        for (Message m : messages) {
+            if (findDuplicateMessage(m) == null) {
+                result.add(m);
+            }
+        }
+
+        return result;
+    }
+
+    private void untieMessages() {
+        for (Message message : this.messages) {
+            message.untie();
+        }
+    }
+
+    public int unreadCount() {
+        synchronized (this.messages) {
+            int count = 0;
+            for (final Message message : Lists.reverse(this.messages)) {
+                if (message.isRead()) {
+                    if (message.getType() == Message.TYPE_RTP_SESSION) {
+                        continue;
+                    }
+                    return count;
+                }
+                ++count;
+            }
+            return count;
+        }
+    }
+
+    public int receivedMessagesCount() {
+        int count = 0;
+        synchronized (this.messages) {
+            for (Message message : messages) {
+                if (message.getStatus() == Message.STATUS_RECEIVED) {
+                    ++count;
+                }
+            }
+        }
+        return count;
+    }
+
+    public int sentMessagesCount() {
+        int count = 0;
+        synchronized (this.messages) {
+            for (Message message : messages) {
+                if (message.getStatus() != Message.STATUS_RECEIVED) {
+                    ++count;
+                }
+            }
+        }
+        return count;
+    }
+
+    public boolean isWithStranger() {
+        final Contact contact = getContact();
+        return mode == MODE_SINGLE
+                && !contact.isOwnServer()
+                && !contact.showInContactList()
+                && !contact.isSelf()
+                && !(contact.getJid().isDomainJid() && JidHelper.isQuicksyDomain(contact.getJid()))
+                && sentMessagesCount() == 0;
+    }
+
+    public int getReceivedMessagesCountSinceUuid(String uuid) {
+        if (uuid == null) {
+            return 0;
+        }
+        int count = 0;
+        synchronized (this.messages) {
+            for (int i = messages.size() - 1; i >= 0; i--) {
+                final Message message = messages.get(i);
+                if (uuid.equals(message.getUuid())) {
+                    return count;
+                }
+                if (message.getStatus() <= Message.STATUS_RECEIVED) {
+                    ++count;
+                }
+            }
+        }
+        return 0;
+    }
+
+    @Override
+    public int getAvatarBackgroundColor() {
+        return UIHelper.getColorForName(getName().toString());
+    }
+
+    @Override
+    public String getAvatarName() {
+        return getName().toString();
+    }
+
+    public void setDisplayState(final String stanzaId) {
+        this.displayState = stanzaId;
+    }
+
+    public String getDisplayState() {
+        return this.displayState;
+    }
+
+    public void setCurrentTab(int tab) {
+        mCurrentTab = tab;
+    }
+
+    public int getCurrentTab() {
+        if (mCurrentTab >= 0) return mCurrentTab;
+
+        if (!isRead() || getContact().resourceWhichSupport(Namespace.COMMANDS) == null) {
+            return 0;
+        }
+
+        return 1;
+    }
+
+    public void refreshSessions() {
+        pagerAdapter.refreshSessions();
+    }
+
+    public void startCommand(Element command, XmppConnectionService xmppConnectionService, Context activityContext) {
+        pagerAdapter.startCommand(command, xmppConnectionService, activityContext);
+    }
+
+    public void setupViewPager(ViewPager pager, TabLayout tabs, Conversation oldConversation) {
+        pagerAdapter.setupViewPager(pager, tabs, oldConversation);
+    }
+
+    public void showViewPager() {
+        pagerAdapter.show();
+    }
+
+    public void hideViewPager() {
+        pagerAdapter.hide();
+    }
+
+
+    public interface OnMessageFound {
+        void onMessageFound(final Message message);
+    }
+
+    public static class Draft {
+        private final String message;
+        private final long timestamp;
+
+        private Draft(String message, long timestamp) {
+            this.message = message;
+            this.timestamp = timestamp;
+        }
+
+        public long getTimestamp() {
+            return timestamp;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+    }
+
+    public interface ConversationPage {
+        public String getTitle();
+        public String getNode();
+        public View inflateUi(Context context, Consumer<ConversationPage> remover);
+        public View getView();
+        public void refresh();
+    }
+
+    public class ConversationPagerAdapter extends PagerAdapter {
+        protected ViewPager mPager = null;
+        protected TabLayout mTabs = null;
+        ArrayList<ConversationPage> sessions = null;
+        protected View page1 = null;
+        protected View page2 = null;
+
+        public void setupViewPager(ViewPager pager, TabLayout tabs, Conversation oldConversation) {
+            mPager = pager;
+            mTabs = tabs;
+
+            if (oldConversation != null) {
+                oldConversation.pagerAdapter.mPager = null;
+                oldConversation.pagerAdapter.mTabs = null;
+            }
+
+            if (mPager == null) {
+                page1 = null;
+                page2 = null;
+                return;
+            }
+            if (sessions != null) show();
+
+            if (pager.getChildAt(0) != null) page1 = pager.getChildAt(0);
+            if (pager.getChildAt(1) != null) page2 = pager.getChildAt(1);
+            if (page2 != null && page2.findViewById(R.id.commands_view) == null) {
+                page1 = null;
+                page2 = null;
+            }
+            if (page1 == null) page1 = oldConversation.pagerAdapter.page1;
+            if (page2 == null) page2 = oldConversation.pagerAdapter.page2;
+            if (page1 == null || page2 == null) {
+                throw new IllegalStateException("page1 or page2 were not present as child or in model?");
+            }
+            pager.removeView(page1);
+            pager.removeView(page2);
+            pager.setAdapter(this);
+            tabs.setupWithViewPager(mPager);
+            pager.post(() -> pager.setCurrentItem(getCurrentTab()));
+
+            mPager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+                public void onPageScrollStateChanged(int state) { }
+                public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) { }
+
+                public void onPageSelected(int position) {
+                    setCurrentTab(position);
+                }
+            });
+        }
+
+        public void show() {
+            if (sessions == null) {
+                sessions = new ArrayList<>();
+                notifyDataSetChanged();
+            }
+
+            if (mTabs != null) mTabs.setVisibility(View.VISIBLE);
+        }
+
+        public void hide() {
+            if (sessions != null && !sessions.isEmpty()) return; // Do not hide during active session
+            if (mPager != null) mPager.setCurrentItem(0);
+            if (mTabs != null) mTabs.setVisibility(View.GONE);
+
+            sessions = null;
+            notifyDataSetChanged();
+        }
+
+        public void refreshSessions() {
+            if (sessions == null) return;
+
+            for (ConversationPage session : sessions) {
+                session.refresh();
+            }
+        }
+
+        public void startCommand(Element command, XmppConnectionService xmppConnectionService, Context activityContext) {
+            show();
+            CommandSession session = new CommandSession(command.getAttribute("name"), command.getAttribute("node"), xmppConnectionService, activityContext);
+
+            final Iq packet = new Iq(Iq.Type.SET);
+            packet.setTo(command.getAttributeAsJid("jid"));
+            final Element c = packet.addChild("command", Namespace.COMMANDS);
+            c.setAttribute("node", command.getAttribute("node"));
+            c.setAttribute("action", "execute");
+
+            final TimerTask task = new TimerTask() {
+                @Override
+                public void run() {
+                    if (session.closed) {
+                        return;
+                    }
+                    if (getAccount().getStatus() != Account.State.ONLINE) {
+                        final TimerTask self = this;
+                        new Timer().schedule(new TimerTask() {
+                            @Override
+                            public void run() {
+                                self.run();
+                            }
+                        }, 1000);
+                    } else {
+                        session.lastRequestPacket = packet;
+                        xmppConnectionService.sendIqPacket(
+                                getAccount(), packet, session::updateWithResponse, 120L);
+                    }
+                }
+            };
+
+            task.run();
+
+            sessions.add(session);
+            notifyDataSetChanged();
+            if (mPager != null) mPager.setCurrentItem(getCount() - 1);
+        }
+
+        public void removeSession(ConversationPage session) {
+            if (session instanceof CommandSession) {
+                ((CommandSession) session).closeSession();
+            }
+            sessions.remove(session);
+            notifyDataSetChanged();
+        }
+
+        @NonNull
+        @Override
+        public Object instantiateItem(@NonNull ViewGroup container, int position) {
+            if (position == 0) {
+                if (page1 != null && page1.getParent() != null) {
+                    ((ViewGroup) page1.getParent()).removeView(page1);
+                }
+                container.addView(page1);
+                return page1;
+            }
+            if (position == 1) {
+                if (page2 != null && page2.getParent() != null) {
+                    ((ViewGroup) page2.getParent()).removeView(page2);
+                }
+                container.addView(page2);
+                return page2;
+            }
+
+            ConversationPage session = sessions.get(position-2);
+            View v = session.inflateUi(container.getContext(), (s) -> removeSession(s));
+            if (v != null && v.getParent() != null) {
+                ((ViewGroup) v.getParent()).removeView(v);
+            }
+            container.addView(v);
+            return session;
+        }
+
+        @Override
+        public void destroyItem(@NonNull ViewGroup container, int position, Object o) {
+            if (position < 2) {
+                container.removeView((View) o);
+                return;
+            }
+
+            container.removeView(((ConversationPage) o).getView());
+        }
+
+        @Override
+        public int getItemPosition(Object o) {
+            if (mPager != null) {
+                if (o == page1) return PagerAdapter.POSITION_UNCHANGED;
+                if (o == page2) return PagerAdapter.POSITION_UNCHANGED;
+            }
+
+            int pos = sessions == null ? -1 : sessions.indexOf(o);
+            if (pos < 0) return PagerAdapter.POSITION_NONE;
+            return pos + 2;
+        }
+
+        @Override
+        public int getCount() {
+            if (sessions == null) return 1;
+
+            int count = 2 + sessions.size();
+            if (mTabs == null) return count;
+
+            if (count > 2) {
+                mTabs.setTabMode(TabLayout.MODE_SCROLLABLE);
+            } else {
+                mTabs.setTabMode(TabLayout.MODE_FIXED);
+            }
+            return count;
+        }
+
+        @Override
+        public boolean isViewFromObject(@NonNull View view, @NonNull Object o) {
+            if (view == o) return true;
+
+            if (o instanceof ConversationPage) {
+                return ((ConversationPage) o).getView() == view;
+            }
+
+            return false;
+        }
+
+        @Nullable
+        @Override
+        public CharSequence getPageTitle(int position) {
+            final Context context =
+                    mPager != null
+                            ? mPager.getContext()
+                            : (page1 != null ? page1.getContext() : null);
+            switch (position) {
+                case 0:
+                    return context == null
+                            ? super.getPageTitle(position)
+                            : context.getString(R.string.command_tab_conversation);
+                case 1:
+                    return context == null
+                            ? super.getPageTitle(position)
+                            : context.getString(R.string.command_tab_commands);
+                default:
+                    ConversationPage session = sessions.get(position-2);
+                    if (session == null) return super.getPageTitle(position);
+                    return session.getTitle();
+            }
+        }
+
+        class CommandSession extends RecyclerView.Adapter<CommandSession.ViewHolder> implements ConversationPage {
+            abstract class ViewHolder<T extends ViewDataBinding> extends RecyclerView.ViewHolder {
+                protected T binding;
+
+                public ViewHolder(T binding) {
+                    super(binding.getRoot());
+                    this.binding = binding;
+                }
+
+                abstract public void bind(Item el);
+
+                protected void setTextOrHide(TextView v, Optional<String> s) {
+                    if (s == null || !s.isPresent()) {
+                        v.setVisibility(View.GONE);
+                    } else {
+                        v.setVisibility(View.VISIBLE);
+                        v.setText(s.get());
+                    }
+                }
+
+                protected void setupInputType(Element field, TextView textinput, TextInputLayout layout) {
+                    int flags = 0;
+                    if (layout != null) layout.setEndIconMode(TextInputLayout.END_ICON_NONE);
+                    textinput.setInputType(flags | InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT);
+
+                    String type = field.getAttribute("type");
+                    if (type != null) {
+                        if (type.equals("text-multi") || type.equals("jid-multi")) {
+                            flags |= InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+                        }
+
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT);
+
+                        if (type.equals("jid-single") || type.equals("jid-multi")) {
+                            textinput.setInputType(flags | InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+                        }
+
+                        if (type.equals("text-private")) {
+                            textinput.setInputType(flags | InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                            if (layout != null) layout.setEndIconMode(TextInputLayout.END_ICON_PASSWORD_TOGGLE);
+                        }
+                    }
+
+                    Element validate = field.findChild("validate", "http://jabber.org/protocol/xdata-validate");
+                    if (validate == null) return;
+                    String datatype = validate.getAttribute("datatype");
+                    if (datatype == null) return;
+
+                    if (datatype.equals("xs:integer") || datatype.equals("xs:int") || datatype.equals("xs:long") || datatype.equals("xs:short") || datatype.equals("xs:byte")) {
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
+                    }
+
+                    if (datatype.equals("xs:decimal") || datatype.equals("xs:double")) {
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                    }
+
+                    if (datatype.equals("xs:date")) {
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_DATE);
+                    }
+
+                    if (datatype.equals("xs:dateTime")) {
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_NORMAL);
+                    }
+
+                    if (datatype.equals("xs:time")) {
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_DATETIME | InputType.TYPE_DATETIME_VARIATION_TIME);
+                    }
+
+                    if (datatype.equals("xs:anyURI")) {
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+                    }
+
+                    if (datatype.equals("html:tel")) {
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_PHONE);
+                    }
+
+                    if (datatype.equals("html:email")) {
+                        textinput.setInputType(flags | InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+                    }
+                }
+
+                protected String formatValue(String datatype, String value, boolean compact) {
+                    if ("xs:dateTime".equals(datatype)) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            ZonedDateTime zonedDateTime = null;
+                            try {
+                                zonedDateTime = ZonedDateTime.parse(value, DateTimeFormatter.ISO_DATE_TIME);
+                            } catch (final DateTimeParseException e) {
+                                try {
+                                    DateTimeFormatter almostIso = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm[:ss] X");
+                                    zonedDateTime = ZonedDateTime.parse(value, almostIso);
+                                } catch (final DateTimeParseException e2) {
+                                }
+                            }
+                            if (zonedDateTime == null) return value;
+                            ZonedDateTime localZonedDateTime = zonedDateTime.withZoneSameInstant(ZoneId.systemDefault());
+                            DateTimeFormatter outputFormat = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT);
+                            return localZonedDateTime.toLocalDateTime().format(outputFormat);
+                        } else {
+                            return value;
+                        }
+                    }
+
+                    if ("html:tel".equals(datatype) && !compact) {
+                        return PhoneNumberUtils.formatNumber(value, value, null);
+                    }
+
+                    return value;
+                }
+            }
+
+            class ErrorViewHolder extends ViewHolder<CommandNoteBinding> {
+                public ErrorViewHolder(CommandNoteBinding binding) { super(binding); }
+
+                @Override
+                public void bind(Item iq) {
+                    binding.errorIcon.setVisibility(View.VISIBLE);
+
+                    if (iq.el instanceof Iq
+                            && ((Iq) iq.el).getType() == Iq.Type.TIMEOUT) {
+                        binding.message.setText(R.string.command_timeout);
+                        return;
+                    }
+
+                    Element error = iq.el.findChild("error");
+                    if (error == null) return;
+                    String text = error.findChildContent("text", "urn:ietf:params:xml:ns:xmpp-stanzas");
+                    if (text == null || text.equals("")) {
+                        text = error.getChildren().get(0).getName();
+                    }
+                    binding.message.setText(text);
+                }
+            }
+
+            class NoteViewHolder extends ViewHolder<CommandNoteBinding> {
+                public NoteViewHolder(CommandNoteBinding binding) { super(binding); }
+
+                @Override
+                public void bind(Item note) {
+                    binding.message.setText(note.el.getContent());
+
+                    String type = note.el.getAttribute("type");
+                    if (type != null && type.equals("error")) {
+                        binding.errorIcon.setVisibility(View.VISIBLE);
+                    }
+                }
+            }
+
+            class ResultFieldViewHolder extends ViewHolder<CommandResultFieldBinding> {
+                public ResultFieldViewHolder(CommandResultFieldBinding binding) { super(binding); }
+
+                @Override
+                public void bind(Item item) {
+                    Field field = (Field) item;
+                    setTextOrHide(binding.label, field.getLabel());
+                    setTextOrHide(binding.desc, field.getDesc());
+
+                    Element media = field.el.findChild("media", "urn:xmpp:media-element");
+                    if (media == null) {
+                        binding.mediaImage.setVisibility(View.GONE);
+                    } else {
+                        for (Element uriEl : media.getChildren()) {
+                            if (!"uri".equals(uriEl.getName())) continue;
+                            if (!"urn:xmpp:media-element".equals(uriEl.getNamespace())) continue;
+                            String mimeType = uriEl.getAttribute("type");
+                            String uriS = uriEl.getContent();
+                            if (mimeType == null || uriS == null) continue;
+                            Uri uri = Uri.parse(uriS);
+                            if (mimeType.startsWith("image/") && "https".equals(uri.getScheme())) {
+                                binding.mediaImage.setVisibility(View.VISIBLE);
+
+                                Glide.with(binding.getRoot().getContext())
+                                        .load(uri)
+                                        .centerCrop()
+                                        .into(binding.mediaImage);
+                            }
+                        }
+                    }
+
+                    Element validate = field.el.findChild("validate", "http://jabber.org/protocol/xdata-validate");
+                    String datatype = validate == null ? null : validate.getAttribute("datatype");
+
+                    ArrayAdapter<Option> values = new ArrayAdapter<>(binding.getRoot().getContext(), R.layout.simple_list_item);
+                    for (Element el : field.el.getChildren()) {
+                        if (el.getName().equals("value") && el.getNamespace().equals("jabber:x:data")) {
+                            values.add(new Option(el.getContent(), formatValue(datatype, el.getContent(), false)));
+                        }
+                    }
+                    binding.values.setAdapter(values);
+                    justifyListViewHeightBasedOnChildren(binding.values);
+
+                    if (field.getType().equals(Optional.of("jid-single")) || field.getType().equals(Optional.of("jid-multi"))) {
+                        binding.values.setOnItemClickListener((arg0, arg1, pos, id) -> {
+                            new FixedURLSpan("xmpp:" + Jid.of(values.getItem(pos).getValue()).toString(), account).onClick(binding.values);
+                        });
+                    } else if ("xs:anyURI".equals(datatype)) {
+                        binding.values.setOnItemClickListener((arg0, arg1, pos, id) -> {
+                            new FixedURLSpan(values.getItem(pos).getValue(), account).onClick(binding.values);
+                        });
+                    } else if ("html:tel".equals(datatype)) {
+                        binding.values.setOnItemClickListener((arg0, arg1, pos, id) -> {
+                            try {
+                                new FixedURLSpan("tel:" + PhoneNumberUtilWrapper.normalize(binding.getRoot().getContext(), values.getItem(pos).getValue()), account).onClick(binding.values);
+                            } catch (final IllegalArgumentException | NumberParseException | NullPointerException e) { }
+                        });
+                    }
+
+                    binding.values.setOnItemLongClickListener((arg0, arg1, pos, id) -> {
+                        if (ShareUtil.copyTextToClipboard(binding.getRoot().getContext(), values.getItem(pos).getValue(), R.string.message)) {
+                            Toast.makeText(binding.getRoot().getContext(), R.string.message_copied_to_clipboard, Toast.LENGTH_SHORT).show();
+                        }
+                        return true;
+                    });
+                }
+
+                private void justifyListViewHeightBasedOnChildren (ListView listView) {
+                    ListAdapter adapter = listView.getAdapter();
+
+                    if (adapter == null) {
+                        return;
+                    }
+                    ViewGroup vg = listView;
+                    int totalHeight = 0;
+                    for (int i = 0; i < adapter.getCount(); i++) {
+                        View listItem = adapter.getView(i, null, vg);
+                        listItem.measure(0, 0);
+                        totalHeight += listItem.getMeasuredHeight();
+                    }
+
+                    ViewGroup.LayoutParams par = listView.getLayoutParams();
+                    par.height = totalHeight + (listView.getDividerHeight() * (adapter.getCount() - 1));
+                    listView.setLayoutParams(par);
+                    listView.requestLayout();
+                }
+            }
+
+            class ResultCellViewHolder extends ViewHolder<CommandResultCellBinding> {
+                public ResultCellViewHolder(CommandResultCellBinding binding) { super(binding); }
+
+                @Override
+                public void bind(Item item) {
+                    Cell cell = (Cell) item;
+
+                    if (cell.el == null) {
+                        binding.text.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium);
+                        setTextOrHide(binding.text, cell.reported.getLabel());
+                    } else {
+                        Element validate = cell.reported.el.findChild("validate", "http://jabber.org/protocol/xdata-validate");
+                        String datatype = validate == null ? null : validate.getAttribute("datatype");
+                        String value = formatValue(datatype, cell.el.findChildContent("value", "jabber:x:data"), true);
+                        SpannableStringBuilder text = new SpannableStringBuilder(value == null ? "" : value);
+                        if (cell.reported.getType().equals(Optional.of("jid-single"))) {
+                            text.setSpan(new FixedURLSpan("xmpp:" + Jid.of(text.toString()).toString(), account), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        } else if ("xs:anyURI".equals(datatype)) {
+                            text.setSpan(new FixedURLSpan(text.toString(), account), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        } else if ("html:tel".equals(datatype)) {
+                            try {
+                                text.setSpan(new FixedURLSpan("tel:" + PhoneNumberUtilWrapper.normalize(binding.getRoot().getContext(), text.toString()), account), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            } catch (final IllegalArgumentException | NumberParseException | NullPointerException e) { }
+                        }
+
+                        binding.text.setText(text);
+
+                        BetterLinkMovementMethod method = BetterLinkMovementMethod.newInstance();
+                        method.setOnLinkLongClickListener((tv, url) -> {
+                            tv.dispatchTouchEvent(MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0f, 0f, 0));
+                            ShareUtil.copyLinkToClipboard(binding.getRoot().getContext(), url);
+                            return true;
+                        });
+                        binding.text.setMovementMethod(method);
+                        Linkify.addLinks(binding.text, Linkify.ALL);
+                    }
+                }
+            }
+
+            class ItemCardViewHolder extends ViewHolder<CommandItemCardBinding> {
+                public ItemCardViewHolder(CommandItemCardBinding binding) { super(binding); }
+
+                @Override
+                public void bind(Item item) {
+                    binding.fields.removeAllViews();
+
+                    for (Field field : reported) {
+                        CommandResultFieldBinding row = DataBindingUtil.inflate(LayoutInflater.from(binding.getRoot().getContext()), R.layout.command_result_field, binding.fields, false);
+                        GridLayout.LayoutParams param = new GridLayout.LayoutParams();
+                        param.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, GridLayout.FILL, 1f);
+                        param.width = 0;
+                        row.getRoot().setLayoutParams(param);
+                        binding.fields.addView(row.getRoot());
+                        for (Element el : item.el.getChildren()) {
+                            if (el.getName().equals("field") && el.getNamespace().equals("jabber:x:data") && el.getAttribute("var") != null && el.getAttribute("var").equals(field.getVar())) {
+                                for (String label : field.getLabel().asSet()) {
+                                    el.setAttribute("label", label);
+                                }
+                                for (String desc : field.getDesc().asSet()) {
+                                    el.setAttribute("desc", desc);
+                                }
+                                for (String type : field.getType().asSet()) {
+                                    el.setAttribute("type", type);
+                                }
+                                Element validate = field.el.findChild("validate", "http://jabber.org/protocol/xdata-validate");
+                                if (validate != null) el.addChild(validate);
+                                new ResultFieldViewHolder(row).bind(new Field(eu.siacs.conversations.xmpp.forms.Field.parse(el), -1));
+                            }
+                        }
+                    }
+                }
+            }
+
+            class CheckboxFieldViewHolder extends ViewHolder<CommandCheckboxFieldBinding> implements CompoundButton.OnCheckedChangeListener {
+                public CheckboxFieldViewHolder(CommandCheckboxFieldBinding binding) {
+                    super(binding);
+                    binding.row.setOnClickListener((v) -> {
+                        binding.checkbox.toggle();
+                    });
+                    binding.checkbox.setOnCheckedChangeListener(this);
+                }
+                protected Element mValue = null;
+
+                @Override
+                public void bind(Item item) {
+                    Field field = (Field) item;
+                    binding.label.setText(field.getLabel().or(""));
+                    setTextOrHide(binding.desc, field.getDesc());
+                    mValue = field.getValue();
+                    binding.checkbox.setChecked(mValue.getContent() != null && (mValue.getContent().equals("true") || mValue.getContent().equals("1")));
+                }
+
+                @Override
+                public void onCheckedChanged(CompoundButton checkbox, boolean isChecked) {
+                    if (mValue == null) return;
+
+                    mValue.setContent(isChecked ? "true" : "false");
+                }
+            }
+
+            class SearchListFieldViewHolder extends ViewHolder<CommandSearchListFieldBinding> implements TextWatcher {
+                public SearchListFieldViewHolder(CommandSearchListFieldBinding binding) {
+                    super(binding);
+                    binding.search.addTextChangedListener(this);
+                }
+                protected Element mValue = null;
+                List<Option> options = new ArrayList<>();
+                protected ArrayAdapter<Option> adapter;
+                protected boolean open;
+
+                @Override
+                public void bind(Item item) {
+                    Field field = (Field) item;
+                    setTextOrHide(binding.label, field.getLabel());
+                    setTextOrHide(binding.desc, field.getDesc());
+
+                    if (field.error != null) {
+                        binding.desc.setVisibility(View.VISIBLE);
+                        binding.desc.setText(field.error);
+
+                        binding.desc.setTextColor(
+                                MaterialColors.getColor(
+                                        binding.desc,
+                                        androidx.appcompat.R.attr.colorError)
+                        );
+                    } else {
+                        binding.desc.setTextColor(
+                                MaterialColors.getColor(
+                                        binding.desc,
+                                        com.google.android.material.R.attr.colorOnSurfaceVariant)
+                        );
+                    }
+
+                    mValue = field.getValue();
+
+                    Element validate = field.el.findChild("validate", "http://jabber.org/protocol/xdata-validate");
+                    open = validate != null && validate.findChild("open", "http://jabber.org/protocol/xdata-validate") != null;
+                    setupInputType(field.el, binding.search, null);
+
+                    options = field.getOptions();
+                    binding.list.setOnItemClickListener((parent, view, position, id) -> {
+                        mValue.setContent(adapter.getItem(binding.list.getCheckedItemPosition()).getValue());
+                        if (open) binding.search.setText(mValue.getContent());
+                    });
+                    search("");
+                }
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                    if (open) mValue.setContent(s.toString());
+                    search(s.toString());
+                }
+
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int count, int after) { }
+
+                protected void search(String s) {
+                    List<Option> filteredOptions;
+                    final String q = s.replaceAll("\\W", "").toLowerCase();
+                    if (q == null || q.equals("")) {
+                        filteredOptions = options;
+                    } else {
+                        filteredOptions = options.stream().filter(o -> o.toString().replaceAll("\\W", "").toLowerCase().contains(q)).collect(Collectors.toList());
+                    }
+                    adapter = new ArrayAdapter(binding.getRoot().getContext(), R.layout.simple_list_item, filteredOptions);
+                    binding.list.setAdapter(adapter);
+
+                    int checkedPos = filteredOptions.indexOf(new Option(mValue.getContent(), ""));
+                    if (checkedPos >= 0) binding.list.setItemChecked(checkedPos, true);
+                }
+            }
+
+            class RadioEditFieldViewHolder extends ViewHolder<CommandRadioEditFieldBinding> implements CompoundButton.OnCheckedChangeListener, TextWatcher {
+                public RadioEditFieldViewHolder(CommandRadioEditFieldBinding binding) {
+                    super(binding);
+                    binding.open.addTextChangedListener(this);
+                    options = new ArrayAdapter<Option>(binding.getRoot().getContext(), R.layout.radio_grid_item) {
+                        @Override
+                        public View getView(int position, View convertView, ViewGroup parent) {
+                            CompoundButton v = (CompoundButton) super.getView(position, convertView, parent);
+                            v.setId(position);
+                            v.setChecked(getItem(position).getValue().equals(mValue.getContent()));
+                            v.setOnCheckedChangeListener(RadioEditFieldViewHolder.this);
+                            return v;
+                        }
+                    };
+                }
+                protected Element mValue = null;
+                protected ArrayAdapter<Option> options;
+
+                @Override
+                public void bind(Item item) {
+                    Field field = (Field) item;
+                    setTextOrHide(binding.label, field.getLabel());
+                    setTextOrHide(binding.desc, field.getDesc());
+
+                    if (field.error != null) {
+                        binding.desc.setVisibility(View.VISIBLE);
+                        binding.desc.setText(field.error);
+                        binding.desc.setTextColor(
+                                MaterialColors.getColor(
+                                        binding.desc,
+                                        androidx.appcompat.R.attr.colorError)
+                        );
+                    } else {
+                        binding.desc.setTextColor(
+                                MaterialColors.getColor(
+                                        binding.desc,
+                                        com.google.android.material.R.attr.colorOnSurfaceVariant)
+                        );
+                    }
+
+                    mValue = field.getValue();
+
+                    Element validate = field.el.findChild("validate", "http://jabber.org/protocol/xdata-validate");
+                    binding.open.setVisibility((validate != null && validate.findChild("open", "http://jabber.org/protocol/xdata-validate") != null) ? View.VISIBLE : View.GONE);
+                    binding.open.setText(mValue.getContent());
+                    setupInputType(field.el, binding.open, null);
+
+                    options.clear();
+                    List<Option> theOptions = field.getOptions();
+                    options.addAll(theOptions);
+
+                    float screenWidth = binding.getRoot().getContext().getResources().getDisplayMetrics().widthPixels;
+                    TextPaint paint = ((TextView) LayoutInflater.from(binding.getRoot().getContext()).inflate(R.layout.radio_grid_item, null)).getPaint();
+                    float maxColumnWidth = theOptions.stream().map((x) ->
+                            StaticLayout.getDesiredWidth(x.toString(), paint)
+                    ).max(Float::compare).orElse(new Float(0.0));
+                    if (maxColumnWidth * theOptions.size() < 0.90 * screenWidth) {
+                        binding.radios.setNumColumns(theOptions.size());
+                    } else if (maxColumnWidth * (theOptions.size() / 2) < 0.90 * screenWidth) {
+                        binding.radios.setNumColumns(theOptions.size() / 2);
+                    } else {
+                        binding.radios.setNumColumns(1);
+                    }
+                    binding.radios.setAdapter(options);
+                }
+
+                @Override
+                public void onCheckedChanged(CompoundButton radio, boolean isChecked) {
+                    if (mValue == null) return;
+
+                    if (isChecked) {
+                        mValue.setContent(options.getItem(radio.getId()).getValue());
+                        binding.open.setText(mValue.getContent());
+                    }
+                    options.notifyDataSetChanged();
+                }
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                    if (mValue == null) return;
+
+                    mValue.setContent(s.toString());
+                    options.notifyDataSetChanged();
+                }
+
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int count, int after) { }
+            }
+
+            class SpinnerFieldViewHolder extends ViewHolder<CommandSpinnerFieldBinding> implements AdapterView.OnItemSelectedListener {
+                public SpinnerFieldViewHolder(CommandSpinnerFieldBinding binding) {
+                    super(binding);
+                    binding.spinner.setOnItemSelectedListener(this);
+                }
+                protected Element mValue = null;
+
+                @Override
+                public void bind(Item item) {
+                    Field field = (Field) item;
+                    setTextOrHide(binding.label, field.getLabel());
+                    binding.spinner.setPrompt(field.getLabel().or(""));
+                    setTextOrHide(binding.desc, field.getDesc());
+
+                    mValue = field.getValue();
+
+                    ArrayAdapter<Option> options = new ArrayAdapter<Option>(binding.getRoot().getContext(), android.R.layout.simple_spinner_item);
+                    options.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                    options.addAll(field.getOptions());
+
+                    binding.spinner.setAdapter(options);
+                    binding.spinner.setSelection(options.getPosition(new Option(mValue.getContent(), null)));
+                }
+
+                @Override
+                public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
+                    Option o = (Option) parent.getItemAtPosition(pos);
+                    if (mValue == null) return;
+
+                    mValue.setContent(o == null ? "" : o.getValue());
+                }
+
+                @Override
+                public void onNothingSelected(AdapterView<?> parent) {
+                    mValue.setContent("");
+                }
+            }
+
+            class ButtonGridFieldViewHolder extends ViewHolder<CommandButtonGridFieldBinding> {
+                public ButtonGridFieldViewHolder(CommandButtonGridFieldBinding binding) {
+                    super(binding);
+                    options = new ArrayAdapter<Option>(binding.getRoot().getContext(), R.layout.button_grid_item) {
+                        @Override
+                        public View getView(int position, View convertView, ViewGroup parent) {
+                            Button v = (Button) super.getView(position, convertView, parent);
+                            v.setOnClickListener((view) -> {
+                                mValue.setContent(getItem(position).getValue());
+                                execute();
+                                loading = true;
+                            });
+
+                            final SVG icon = getItem(position).getIcon();
+                            if (icon != null) {
+                                v.post(() -> {
+                                    if (v.getHeight() == 0) return;
+                                    icon.setDocumentPreserveAspectRatio(com.caverock.androidsvg.PreserveAspectRatio.TOP);
+                                    Bitmap bitmap = Bitmap.createBitmap(v.getHeight(), v.getHeight(), Bitmap.Config.ARGB_8888);
+                                    Canvas bmcanvas = new Canvas(bitmap);
+                                    icon.renderToCanvas(bmcanvas);
+                                    v.setCompoundDrawablesRelativeWithIntrinsicBounds(new BitmapDrawable(bitmap), null, null, null);
+                                });
+                            }
+
+                            return v;
+                        }
+                    };
+                }
+                protected Element mValue = null;
+                protected ArrayAdapter<Option> options;
+                protected Option defaultOption = null;
+
+                @Override
+                public void bind(Item item) {
+                    Field field = (Field) item;
+                    setTextOrHide(binding.label, field.getLabel());
+                    setTextOrHide(binding.desc, field.getDesc());
+
+                    if (field.error != null) {
+                        binding.desc.setVisibility(View.VISIBLE);
+                        binding.desc.setText(field.error);
+                        binding.desc.setTextColor(
+                                MaterialColors.getColor(
+                                        binding.desc,
+                                        androidx.appcompat.R.attr.colorError)
+                        );
+                    } else {
+                        binding.desc.setTextColor(
+                                MaterialColors.getColor(
+                                        binding.desc,
+                                        com.google.android.material.R.attr.colorOnSurfaceVariant)
+                        );
+                    }
+
+                    mValue = field.getValue();
+
+                    Element validate = field.el.findChild("validate", "http://jabber.org/protocol/xdata-validate");
+                    binding.openButton.setVisibility((validate != null && validate.findChild("open", "http://jabber.org/protocol/xdata-validate") != null) ? View.VISIBLE : View.GONE);
+                    binding.openButton.setOnClickListener((view) -> {
+                        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(binding.getRoot().getContext());
+                        DialogQuickeditBinding dialogBinding = DataBindingUtil.inflate(LayoutInflater.from(binding.getRoot().getContext()), R.layout.dialog_quickedit, null, false);
+                        builder.setPositiveButton(R.string.action_execute, null);
+                        if (field.getDesc().isPresent()) {
+                            dialogBinding.inputEditText.setHint(field.getDesc().get());
+                        }
+                        dialogBinding.inputEditText.requestFocus();
+                        dialogBinding.inputEditText.getText().append(mValue.getContent());
+                        builder.setView(dialogBinding.getRoot());
+                        builder.setNegativeButton(R.string.cancel, null);
+                        final AlertDialog dialog = builder.create();
+                        dialog.setOnShowListener(d -> SoftKeyboardUtils.showKeyboard(dialogBinding.inputEditText));
+                        dialog.show();
+                        View.OnClickListener clickListener = v -> {
+                            String value = dialogBinding.inputEditText.getText().toString();
+                            mValue.setContent(value);
+                            SoftKeyboardUtils.hideSoftKeyboard(dialogBinding.inputEditText);
+                            dialog.dismiss();
+                            execute();
+                            loading = true;
+                        };
+                        dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(clickListener);
+                        dialog.getButton(DialogInterface.BUTTON_NEGATIVE).setOnClickListener((v -> {
+                            SoftKeyboardUtils.hideSoftKeyboard(dialogBinding.inputEditText);
+                            dialog.dismiss();
+                        }));
+                        dialog.setCanceledOnTouchOutside(false);
+                        dialog.setOnDismissListener(dialog1 -> {
+                            SoftKeyboardUtils.hideSoftKeyboard(dialogBinding.inputEditText);
+                        });
+                    });
+
+                    options.clear();
+                    List<Option> theOptions = field.getType().equals(Optional.of("boolean")) ? new ArrayList<>(List.of(new Option("false", binding.getRoot().getContext().getString(R.string.no)), new Option("true", binding.getRoot().getContext().getString(R.string.yes)))) : field.getOptions();
+
+                    defaultOption = null;
+                    for (Option option : theOptions) {
+                        if (option.getValue().equals(mValue.getContent())) {
+                            defaultOption = option;
+                            break;
+                        }
+                    }
+                    if (defaultOption == null && mValue.getContent() != null && !mValue.getContent().equals("")) {
+                        // Synthesize default option for custom value
+                        defaultOption = new Option(mValue.getContent(), mValue.getContent());
+                    }
+                    if (defaultOption == null) {
+                        binding.defaultButton.setVisibility(View.GONE);
+                    } else {
+                        theOptions.remove(defaultOption);
+                        binding.defaultButton.setVisibility(View.VISIBLE);
+
+                        final SVG defaultIcon = defaultOption.getIcon();
+                        if (defaultIcon != null) {
+                            defaultIcon.setDocumentPreserveAspectRatio(com.caverock.androidsvg.PreserveAspectRatio.TOP);
+                            DisplayMetrics display = mPager.getContext().getResources().getDisplayMetrics();
+                            Bitmap bitmap = Bitmap.createBitmap((int)(display.heightPixels*display.density/4), (int)(display.heightPixels*display.density/4), Bitmap.Config.ARGB_8888);
+                            bitmap.setDensity(display.densityDpi);
+                            Canvas bmcanvas = new Canvas(bitmap);
+                            defaultIcon.renderToCanvas(bmcanvas);
+                            binding.defaultButton.setCompoundDrawablesRelativeWithIntrinsicBounds(null, new BitmapDrawable(bitmap), null, null);
+                        }
+
+                        binding.defaultButton.setText(defaultOption.toString());
+                        binding.defaultButton.setOnClickListener((view) -> {
+                            mValue.setContent(defaultOption.getValue());
+                            execute();
+                            loading = true;
+                        });
+                    }
+
+                    options.addAll(theOptions);
+                    binding.buttons.setAdapter(options);
+                }
+            }
+
+            class TextFieldViewHolder extends ViewHolder<CommandTextFieldBinding> implements TextWatcher {
+                public TextFieldViewHolder(CommandTextFieldBinding binding) {
+                    super(binding);
+                    binding.textinput.addTextChangedListener(this);
+                }
+                protected Field field = null;
+
+                @Override
+                public void bind(Item item) {
+                    field = (Field) item;
+                    binding.textinputLayout.setHint(field.getLabel().or(""));
+
+                    binding.textinputLayout.setHelperTextEnabled(field.getDesc().isPresent());
+                    for (String desc : field.getDesc().asSet()) {
+                        binding.textinputLayout.setHelperText(desc);
+                    }
+
+                    binding.textinputLayout.setErrorEnabled(field.error != null);
+                    if (field.error != null) binding.textinputLayout.setError(field.error);
+
+                    binding.textinput.setTextAlignment(View.TEXT_ALIGNMENT_GRAVITY);
+                    String suffixLabel = field.el.findChildContent("x", "https://ns.cheogram.com/suffix-label");
+                    if (suffixLabel == null) {
+                        binding.textinputLayout.setSuffixText("");
+                    } else {
+                        binding.textinputLayout.setSuffixText(suffixLabel);
+                        binding.textinput.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_END);
+                    }
+
+                    String prefixLabel = field.el.findChildContent("x", "https://ns.cheogram.com/prefix-label");
+                    binding.textinputLayout.setPrefixText(prefixLabel == null ? "" : prefixLabel);
+
+                    binding.textinput.setText(String.join("\n", field.getValues()));
+                    setupInputType(field.el, binding.textinput, binding.textinputLayout);
+                }
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                    if (field == null) return;
+
+                    field.setValues(List.of(s.toString().split("\n")));
+                }
+
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int count, int after) { }
+            }
+
+            class WebViewHolder extends ViewHolder<CommandWebviewBinding> {
+                public WebViewHolder(CommandWebviewBinding binding) { super(binding); }
+                protected String boundUrl = "";
+
+                @Override
+                public void bind(Item oob) {
+                    setTextOrHide(binding.desc, Optional.fromNullable(oob.el.findChildContent("desc", "jabber:x:oob")));
+                    binding.webview.getSettings().setJavaScriptEnabled(true);
+                    binding.webview.getSettings().setUserAgentString("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.106 Mobile Safari/537.36");
+                    binding.webview.getSettings().setDatabaseEnabled(true);
+                    binding.webview.getSettings().setDomStorageEnabled(true);
+                    binding.webview.setWebChromeClient(new WebChromeClient() {
+                        @Override
+                        public void onProgressChanged(WebView view, int newProgress) {
+                            binding.progressbar.setVisibility(newProgress < 100 ? View.VISIBLE : View.GONE);
+                            binding.progressbar.setProgress(newProgress);
+                        }
+                    });
+                    binding.webview.setWebViewClient(new WebViewClient() {
+                        @Override
+                        public void onPageFinished(WebView view, String url) {
+                            super.onPageFinished(view, url);
+                            mTitle = view.getTitle();
+                            ConversationPagerAdapter.this.notifyDataSetChanged();
+                        }
+                    });
+                    final String url = oob.el.findChildContent("url", "jabber:x:oob");
+                    if (!boundUrl.equals(url)) {
+                        binding.webview.addJavascriptInterface(new JsObject(), "xmpp_xep0050");
+                        binding.webview.loadUrl(url);
+                        boundUrl = url;
+                    }
+                }
+
+                class JsObject {
+                    @JavascriptInterface
+                    public void execute() { execute("execute"); }
+
+                    @JavascriptInterface
+                    public void execute(String action) {
+                        getView().post(() -> {
+                            actionToWebview = null;
+                            if(CommandSession.this.execute(action)) {
+                                removeSession(CommandSession.this);
+                            }
+                        });
+                    }
+
+                    @JavascriptInterface
+                    public void preventDefault() {
+                        actionToWebview = binding.webview;
+                    }
+                }
+            }
+
+            class ProgressBarViewHolder extends ViewHolder<CommandProgressBarBinding> {
+                public ProgressBarViewHolder(CommandProgressBarBinding binding) { super(binding); }
+
+                @Override
+                public void bind(Item item) {
+                    binding.text.setVisibility(loadingHasBeenLong ? View.VISIBLE : View.GONE);
+                    binding.text.setText(
+                            loadingHasBeenVeryLong
+                                    ? R.string.command_loading_slow
+                                    : R.string.command_loading);
+                    binding.closeButton.setVisibility(
+                            loadingHasBeenVeryLong ? View.VISIBLE : View.GONE);
+                    binding.closeButton.setOnClickListener(
+                            view -> removeSession(CommandSession.this));
+                }
+            }
+
+            class UnknownViewHolder extends ViewHolder<CommandUnknownBinding> {
+                public UnknownViewHolder(CommandUnknownBinding binding) { super(binding); }
+
+                @Override
+                public void bind(Item item) {}
+            }
+
+            class Item {
+                protected Element el;
+                protected int viewType;
+                protected String error = null;
+
+                Item(Element el, int viewType) {
+                    this.el = el;
+                    this.viewType = viewType;
+                }
+
+                public boolean validate() {
+                    error = null;
+                    return true;
+                }
+            }
+
+            class Field extends Item {
+                Field(eu.siacs.conversations.xmpp.forms.Field el, int viewType) { super(el, viewType); }
+
+                @Override
+                public boolean validate() {
+                    if (!super.validate()) return false;
+                    if (el.findChild("required", "jabber:x:data") == null) return true;
+                    if (getValue().getContent() != null && !getValue().getContent().equals("")) return true;
+
+                    error = "this value is required";
+                    return false;
+                }
+
+                public String getVar() {
+                    return el.getAttribute("var");
+                }
+
+                public Optional<String> getType() {
+                    return Optional.fromNullable(el.getAttribute("type"));
+                }
+
+                public Optional<String> getLabel() {
+                    String label = el.getAttribute("label");
+                    if (label == null) label = getVar();
+                    return Optional.fromNullable(label);
+                }
+
+                public Optional<String> getDesc() {
+                    return Optional.fromNullable(el.findChildContent("desc", "jabber:x:data"));
+                }
+
+                public Element getValue() {
+                    Element value = el.findChild("value", "jabber:x:data");
+                    if (value == null) {
+                        value = el.addChild("value", "jabber:x:data");
+                    }
+                    return value;
+                }
+
+                public void setValues(List<String> values) {
+                    for(Element child : el.getChildren()) {
+                        if ("value".equals(child.getName()) && "jabber:x:data".equals(child.getNamespace())) {
+                            el.removeChild(child);
+                        }
+                    }
+
+                    for (String value : values) {
+                        el.addChild("value", "jabber:x:data").setContent(value);
+                    }
+                }
+
+                public List<String> getValues() {
+                    List<String> values = new ArrayList<>();
+                    for(Element child : el.getChildren()) {
+                        if ("value".equals(child.getName()) && "jabber:x:data".equals(child.getNamespace())) {
+                            values.add(child.getContent());
+                        }
+                    }
+                    return values;
+                }
+
+                public List<Option> getOptions() {
+                    return Option.forField(el);
+                }
+            }
+
+            class Cell extends Item {
+                protected Field reported;
+
+                Cell(Field reported, Element item) {
+                    super(item, TYPE_RESULT_CELL);
+                    this.reported = reported;
+                }
+            }
+
+            protected Field mkField(Element el) {
+                int viewType = TYPE_UNKNOWN;
+
+                String formType = responseElement.getAttribute("type");
+                if (formType != null) {
+                    String fieldType = el.getAttribute("type");
+                    if (fieldType == null) fieldType = "text-single";
+
+                    if (formType.equals("result") || fieldType.equals("fixed")) {
+                        viewType = TYPE_RESULT_FIELD;
+                    } else if (formType.equals("form")) {
+                        if (fieldType.equals("boolean")) {
+                            if (fillableFieldCount == 1 && actionsAdapter.countExceptCancel() < 1) {
+                                viewType = TYPE_BUTTON_GRID_FIELD;
+                            } else {
+                                viewType = TYPE_CHECKBOX_FIELD;
+                            }
+                        } else if (fieldType.equals("list-single")) {
+                            Element validate = el.findChild("validate", "http://jabber.org/protocol/xdata-validate");
+                            if (Option.forField(el).size() > 9) {
+                                viewType = TYPE_SEARCH_LIST_FIELD;
+                            } else if (fillableFieldCount == 1 && actionsAdapter.countExceptCancel() < 1) {
+                                viewType = TYPE_BUTTON_GRID_FIELD;
+                            } else if (el.findChild("value", "jabber:x:data") == null || (validate != null && validate.findChild("open", "http://jabber.org/protocol/xdata-validate") != null)) {
+                                viewType = TYPE_RADIO_EDIT_FIELD;
+                            } else {
+                                viewType = TYPE_SPINNER_FIELD;
+                            }
+                        } else {
+                            viewType = TYPE_TEXT_FIELD;
+                        }
+                    }
+
+                    return new Field(eu.siacs.conversations.xmpp.forms.Field.parse(el), viewType);
+                }
+
+                return null;
+            }
+
+            protected Item mkItem(Element el, int pos) {
+                int viewType = TYPE_UNKNOWN;
+
+                if (response != null && response.getType() == Iq.Type.RESULT) {
+                    if (el.getName().equals("note")) {
+                        viewType = TYPE_NOTE;
+                    } else if (el.getNamespace().equals("jabber:x:oob")) {
+                        viewType = TYPE_WEB;
+                    } else if (el.getName().equals("instructions") && el.getNamespace().equals("jabber:x:data")) {
+                        viewType = TYPE_NOTE;
+                    } else if (el.getName().equals("field") && el.getNamespace().equals("jabber:x:data")) {
+                        Field field = mkField(el);
+                        if (field != null) {
+                            items.put(pos, field);
+                            return field;
+                        }
+                    }
+                } else if (response != null) {
+                    viewType = TYPE_ERROR;
+                }
+
+                Item item = new Item(el, viewType);
+                items.put(pos, item);
+                return item;
+            }
+
+            class ActionsAdapter extends ArrayAdapter<Pair<String, String>> {
+                protected Context ctx;
+
+                public ActionsAdapter(Context ctx) {
+                    super(ctx, R.layout.simple_list_item);
+                    this.ctx = ctx;
+                }
+
+                @Override
+                public View getView(int position, View convertView, ViewGroup parent) {
+                    View v = super.getView(position, convertView, parent);
+                    TextView tv = (TextView) v.findViewById(android.R.id.text1);
+                    final Pair<String, String> item = getItem(position);
+                    final String action = item.first;
+                    tv.setGravity(Gravity.CENTER);
+                    tv.setText(item.second);
+                    final int resId = getActionLabelResource(action);
+                    if (resId != 0 && item.second.equals(action)) {
+                        tv.setText(ctx.getResources().getString(resId));
+                    }
+
+                    final boolean neutralAction =
+                            "cancel".equals(action)
+                                    || "close".equals(action)
+                                    || "prev".equals(action)
+                                    || "previous".equals(action)
+                                    || "back".equals(action);
+                    final int backgroundAttr =
+                            neutralAction
+                                    ? com.google.android.material.R.attr.colorSurfaceContainerHigh
+                                    : com.google.android.material.R.attr.colorPrimaryContainer;
+                    final int textAttr =
+                            neutralAction
+                                    ? com.google.android.material.R.attr.colorOnSurface
+                                    : com.google.android.material.R.attr.colorOnPrimaryContainer;
+                    tv.setTextColor(MaterialColors.getColor(tv, textAttr));
+                    tv.setTextAppearance(
+                            com.google.android.material.R.style.TextAppearance_Material3_LabelLarge);
+                    tv.setMinHeight(
+                            Math.round(52f * ctx.getResources().getDisplayMetrics().density));
+                    final int horizontalPadding =
+                            Math.round(16f * ctx.getResources().getDisplayMetrics().density);
+                    tv.setPadding(horizontalPadding, 0, horizontalPadding, 0);
+
+                    final GradientDrawable background = new GradientDrawable();
+                    background.setColor(MaterialColors.getColor(tv, backgroundAttr));
+                    background.setCornerRadius(
+                            16f * ctx.getResources().getDisplayMetrics().density);
+                    final int inset =
+                            Math.round(4f * ctx.getResources().getDisplayMetrics().density);
+                    tv.setBackground(new InsetDrawable(background, inset));
+                    return v;
+                }
+
+                private int getActionLabelResource(final String action) {
+                    if ("execute".equals(action)) {
+                        return R.string.command_action_execute;
+                    }
+                    if ("next".equals(action)) {
+                        return R.string.command_action_next;
+                    }
+                    if ("prev".equals(action) || "previous".equals(action) || "back".equals(action)) {
+                        return R.string.command_action_previous;
+                    }
+                    if ("complete".equals(action)) {
+                        return R.string.command_action_complete;
+                    }
+                    if ("cancel".equals(action)) {
+                        return R.string.command_action_cancel;
+                    }
+                    if ("close".equals(action)) {
+                        return R.string.command_action_close;
+                    }
+                    if ("retry".equals(action)) {
+                        return R.string.command_action_retry;
+                    }
+                    return ctx.getResources()
+                            .getIdentifier("action_" + action, "string", ctx.getPackageName());
+                }
+
+                public int getPosition(String s) {
+                    for(int i = 0; i < getCount(); i++) {
+                        if (getItem(i).first.equals(s)) return i;
+                    }
+                    return -1;
+                }
+
+                public int countExceptCancel() {
+                    int count = 0;
+                    for(int i = 0; i < getCount(); i++) {
+                        if (!getItem(i).first.equals("cancel")) count++;
+                    }
+                    return count;
+                }
+
+                public void clearExceptCancel() {
+                    Pair<String,String> cancelItem = null;
+                    for(int i = 0; i < getCount(); i++) {
+                        if (getItem(i).first.equals("cancel")) cancelItem = getItem(i);
+                    }
+                    clear();
+                    if (cancelItem != null) add(cancelItem);
+                }
+            }
+
+            final int TYPE_ERROR = 1;
+            final int TYPE_NOTE = 2;
+            final int TYPE_WEB = 3;
+            final int TYPE_RESULT_FIELD = 4;
+            final int TYPE_TEXT_FIELD = 5;
+            final int TYPE_CHECKBOX_FIELD = 6;
+            final int TYPE_SPINNER_FIELD = 7;
+            final int TYPE_RADIO_EDIT_FIELD = 8;
+            final int TYPE_RESULT_CELL = 9;
+            final int TYPE_PROGRESSBAR = 10;
+            final int TYPE_SEARCH_LIST_FIELD = 11;
+            final int TYPE_ITEM_CARD = 12;
+            final int TYPE_BUTTON_GRID_FIELD = 13;
+
+            final int TYPE_UNKNOWN = 100;
+
+            protected boolean executing = false;
+            protected boolean loading = false;
+            protected boolean loadingHasBeenLong = false;
+            protected boolean loadingHasBeenVeryLong = false;
+            protected boolean closed = false;
+            protected Iq lastRequestPacket = null;
+            protected Timer loadingTimer = new Timer();
+            protected String mTitle;
+            protected String mNode;
+            protected CommandPageBinding mBinding = null;
+            protected Iq response = null;
+            protected Element responseElement = null;
+            protected List<Field> reported = null;
+            protected SparseArray<Item> items = new SparseArray<>();
+            protected XmppConnectionService xmppConnectionService;
+            protected ActionsAdapter actionsAdapter;
+            protected GridLayoutManager layoutManager;
+            protected WebView actionToWebview = null;
+            protected int fillableFieldCount = 0;
+            protected Iq pendingResponsePacket = null;
+            protected boolean waitingForRefresh = false;
+
+            CommandSession(String title, String node, XmppConnectionService xmppConnectionService, Context activityContext) {
+                loading();
+                mTitle = title;
+                mNode = node;
+                this.xmppConnectionService = xmppConnectionService;
+                if (mPager != null) setupLayoutManager();
+                actionsAdapter = new ActionsAdapter(activityContext);
+                actionsAdapter.registerDataSetObserver(new DataSetObserver() {
+                    @Override
+                    public void onChanged() {
+                        if (mBinding == null) return;
+
+                        mBinding.actions.setNumColumns(actionsAdapter.getCount() > 1 ? 2 : 1);
+                    }
+
+                    @Override
+                    public void onInvalidated() {}
+                });
+            }
+
+            public String getTitle() {
+                return mTitle;
+            }
+
+            public String getNode() {
+                return mNode;
+            }
+
+            public void updateWithResponse(final Iq iq) {
+                if (closed) {
+                    return;
+                }
+                if (getView() != null && getView().isAttachedToWindow()) {
+                    getView().post(() -> updateWithResponseUiThread(iq));
+                } else {
+                    pendingResponsePacket = iq;
+                }
+            }
+
+            protected void updateWithResponseUiThread(final Iq iq) {
+                this.loadingTimer.cancel();
+                this.loadingTimer = new Timer();
+                this.executing = false;
+                this.loading = false;
+                this.loadingHasBeenLong = false;
+                this.loadingHasBeenVeryLong = false;
+                this.responseElement = null;
+                this.fillableFieldCount = 0;
+                this.reported = null;
+                this.response = iq;
+                this.items.clear();
+                this.actionsAdapter.clear();
+                layoutManager.setSpanCount(1);
+
+                boolean actionsCleared = false;
+                Element command = iq.findChild("command", "http://jabber.org/protocol/commands");
+                if (iq.getType() == Iq.Type.RESULT && command != null) {
+                    if (mNode.equals("jabber:iq:register") && command.getAttribute("status") != null && command.getAttribute("status").equals("completed")) {
+                        xmppConnectionService.createContact(getAccount().getRoster().getContact(iq.getFrom()), true);
+                    }
+
+                    Element actions = command.findChild("actions", "http://jabber.org/protocol/commands");
+                    if (actions != null) {
+                        for (Element action : actions.getChildren()) {
+                            if (!"http://jabber.org/protocol/commands".equals(action.getNamespace())) continue;
+                            if ("execute".equals(action.getName())) continue;
+
+                            actionsAdapter.add(Pair.create(action.getName(), action.getName()));
+                        }
+                    }
+
+                    for (Element el : command.getChildren()) {
+                        if ("x".equals(el.getName()) && "jabber:x:data".equals(el.getNamespace())) {
+                            Data form = Data.parse(el);
+                            String title = form.getTitle();
+                            if (title != null) {
+                                mTitle = title;
+                                ConversationPagerAdapter.this.notifyDataSetChanged();
+                            }
+
+                            if ("result".equals(el.getAttribute("type")) || "form".equals(el.getAttribute("type"))) {
+                                this.responseElement = el;
+                                setupReported(el.findChild("reported", "jabber:x:data"));
+                                if (mBinding != null) mBinding.form.setLayoutManager(setupLayoutManager());
+                            }
+
+                            eu.siacs.conversations.xmpp.forms.Field actionList = form.getFieldByName("http://jabber.org/protocol/commands#actions");
+                            if (actionList != null) {
+                                actionsAdapter.clear();
+
+                                for (Option action : actionList.getOptions()) {
+                                    actionsAdapter.add(Pair.create(action.getValue(), action.toString()));
+                                }
+                            }
+
+                            String fillableFieldType = null;
+                            String fillableFieldValue = null;
+                            for (eu.siacs.conversations.xmpp.forms.Field field : form.getFields()) {
+                                if ((field.getType() == null || (!field.getType().equals("hidden") && !field.getType().equals("fixed"))) && field.getFieldName() != null && !field.getFieldName().equals("http://jabber.org/protocol/commands#actions")) {
+                                    fillableFieldType = field.getType();
+                                    fillableFieldValue = field.getValue();
+                                    fillableFieldCount++;
+                                }
+                            }
+
+                            if (fillableFieldCount == 1 && actionsAdapter.countExceptCancel() < 2 && fillableFieldType != null && (fillableFieldType.equals("list-single") || (fillableFieldType.equals("boolean") && fillableFieldValue == null))) {
+                                actionsCleared = true;
+                                actionsAdapter.clearExceptCancel();
+                            }
+                            break;
+                        }
+                        if (el.getName().equals("x") && el.getNamespace().equals("jabber:x:oob")) {
+                            String url = el.findChildContent("url", "jabber:x:oob");
+                            if (url != null) {
+                                String scheme = Uri.parse(url).getScheme();
+                                if (scheme.equals("http") || scheme.equals("https")) {
+                                    this.responseElement = el;
+                                    break;
+                                }
+                                if (scheme.equals("xmpp")) {
+                                    final Intent intent = new Intent(getView().getContext(), UriHandlerActivity.class);
+                                    intent.setAction(Intent.ACTION_VIEW);
+                                    intent.setData(Uri.parse(url));
+                                    getView().getContext().startActivity(intent);
+                                    break;
+                                }
+                            }
+                        }
+                        if (el.getName().equals("note") && el.getNamespace().equals("http://jabber.org/protocol/commands")) {
+                            this.responseElement = el;
+                            break;
+                        }
+                    }
+
+                    if (responseElement == null && command.getAttribute("status") != null && (command.getAttribute("status").equals("completed") || command.getAttribute("status").equals("canceled"))) {
+                        if ("jabber:iq:register".equals(mNode) && "canceled".equals(command.getAttribute("status"))) {
+                            xmppConnectionService.archiveConversation(Conversation.this);
+                        }
+
+                        removeSession(this);
+                        return;
+                    }
+
+                    if ("executing".equals(command.getAttribute("status")) && actionsAdapter.countExceptCancel() < 1 && !actionsCleared) {
+                        // No actions have been given, but we are not done?
+                        // This is probably a spec violation, but we should do *something*
+                        actionsAdapter.add(Pair.create("execute", "execute"));
+                    }
+
+                    if (!actionsAdapter.isEmpty() || fillableFieldCount > 0) {
+                        if ("completed".equals(command.getAttribute("status")) || "canceled".equals(command.getAttribute("status"))) {
+                            actionsAdapter.add(Pair.create("close", "close"));
+                        } else if (actionsAdapter.getPosition("cancel") < 0) {
+                            actionsAdapter.insert(Pair.create("cancel", "cancel"), 0);
+                        }
+                    }
+                }
+
+                if (iq.getType() == Iq.Type.ERROR
+                        && lastRequestPacket != null
+                        && actionsAdapter.getPosition("retry") < 0) {
+                    actionsAdapter.add(Pair.create("retry", "retry"));
+                }
+                if (actionsAdapter.isEmpty() || iq.getType() != Iq.Type.RESULT) {
+                    if (actionsAdapter.getPosition("close") < 0) {
+                        actionsAdapter.add(Pair.create("close", "close"));
+                    }
+                }
+
+                actionsAdapter.sort((x, y) -> {
+                    if (x.first.equals("cancel")) return -1;
+                    if (y.first.equals("cancel")) return 1;
+                    return 0;
+                });
+
+                Data dataForm = null;
+                if (responseElement != null && responseElement.getName().equals("x") && responseElement.getNamespace().equals("jabber:x:data")) dataForm = Data.parse(responseElement);
+                if (mNode.equals("jabber:iq:register") &&
+                        xmppConnectionService.getPreferences().contains("onboarding_action") &&
+                        dataForm != null && dataForm.getFieldByName("gateway-jid") != null) {
+
+
+                    dataForm.put("gateway-jid", xmppConnectionService.getPreferences().getString("onboarding_action", ""));
+                    execute();
+                }
+                xmppConnectionService.getPreferences().edit().remove("onboarding_action").commit();
+                notifyDataSetChanged();
+            }
+
+            protected void setupReported(Element el) {
+                if (el == null) {
+                    reported = null;
+                    return;
+                }
+
+                reported = new ArrayList<>();
+                for (Element fieldEl : el.getChildren()) {
+                    if (!fieldEl.getName().equals("field") || !fieldEl.getNamespace().equals("jabber:x:data")) continue;
+                    reported.add(mkField(fieldEl));
+                }
+            }
+
+            @Override
+            public int getItemCount() {
+                if (loading) return 1;
+                if (response == null) return 0;
+                if (response.getType() == Iq.Type.RESULT && responseElement != null && responseElement.getNamespace().equals("jabber:x:data")) {
+                    int i = 0;
+                    for (Element el : responseElement.getChildren()) {
+                        if (!el.getNamespace().equals("jabber:x:data")) continue;
+                        if (el.getName().equals("title")) continue;
+                        if (el.getName().equals("field")) {
+                            String type = el.getAttribute("type");
+                            if (type != null && type.equals("hidden")) continue;
+                            if (el.getAttribute("var") != null && el.getAttribute("var").equals("http://jabber.org/protocol/commands#actions")) continue;
+                        }
+
+                        if (el.getName().equals("reported") || el.getName().equals("item")) {
+                            if ((layoutManager == null ? 1 : layoutManager.getSpanCount()) < reported.size()) {
+                                if (el.getName().equals("reported")) continue;
+                                i += 1;
+                            } else {
+                                if (reported != null) i += reported.size();
+                            }
+                            continue;
+                        }
+
+                        i++;
+                    }
+                    return i;
+                }
+                return 1;
+            }
+
+            public Item getItem(int position) {
+                if (loading) return new Item(null, TYPE_PROGRESSBAR);
+                if (items.get(position) != null) return items.get(position);
+                if (response == null) return null;
+
+                if (response.getType() == Iq.Type.RESULT && responseElement != null) {
+                    if (responseElement.getNamespace().equals("jabber:x:data")) {
+                        int i = 0;
+                        for (Element el : responseElement.getChildren()) {
+                            if (!el.getNamespace().equals("jabber:x:data")) continue;
+                            if (el.getName().equals("title")) continue;
+                            if (el.getName().equals("field")) {
+                                String type = el.getAttribute("type");
+                                if (type != null && type.equals("hidden")) continue;
+                                if (el.getAttribute("var") != null && el.getAttribute("var").equals("http://jabber.org/protocol/commands#actions")) continue;
+                            }
+
+                            if (el.getName().equals("reported") || el.getName().equals("item")) {
+                                Cell cell = null;
+
+                                if (reported != null) {
+                                    if ((layoutManager == null ? 1 : layoutManager.getSpanCount()) < reported.size()) {
+                                        if (el.getName().equals("reported")) continue;
+                                        if (i == position) {
+                                            items.put(position, new Item(el, TYPE_ITEM_CARD));
+                                            return items.get(position);
+                                        }
+                                    } else {
+                                        if (reported.size() > position - i) {
+                                            Field reportedField = reported.get(position - i);
+                                            Element itemField = null;
+                                            if (el.getName().equals("item")) {
+                                                for (Element subel : el.getChildren()) {
+                                                    if (subel.getAttribute("var").equals(reportedField.getVar())) {
+                                                        itemField = subel;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            cell = new Cell(reportedField, itemField);
+                                        } else {
+                                            i += reported.size();
+                                            continue;
+                                        }
+                                    }
+                                }
+
+                                if (cell != null) {
+                                    items.put(position, cell);
+                                    return cell;
+                                }
+                            }
+
+                            if (i < position) {
+                                i++;
+                                continue;
+                            }
+
+                            return mkItem(el, position);
+                        }
+                    }
+                }
+
+                return mkItem(responseElement == null ? response : responseElement, position);
+            }
+
+            @Override
+            public int getItemViewType(int position) {
+                return getItem(position).viewType;
+            }
+
+            @Override
+            public ViewHolder onCreateViewHolder(ViewGroup container, int viewType) {
+                switch(viewType) {
+                    case TYPE_ERROR: {
+                        CommandNoteBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_note, container, false);
+                        return new ErrorViewHolder(binding);
+                    }
+                    case TYPE_NOTE: {
+                        CommandNoteBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_note, container, false);
+                        return new NoteViewHolder(binding);
+                    }
+                    case TYPE_WEB: {
+                        CommandWebviewBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_webview, container, false);
+                        return new WebViewHolder(binding);
+                    }
+                    case TYPE_RESULT_FIELD: {
+                        CommandResultFieldBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_result_field, container, false);
+                        return new ResultFieldViewHolder(binding);
+                    }
+                    case TYPE_RESULT_CELL: {
+                        CommandResultCellBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_result_cell, container, false);
+                        return new ResultCellViewHolder(binding);
+                    }
+                    case TYPE_ITEM_CARD: {
+                        CommandItemCardBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_item_card, container, false);
+                        return new ItemCardViewHolder(binding);
+                    }
+                    case TYPE_CHECKBOX_FIELD: {
+                        CommandCheckboxFieldBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_checkbox_field, container, false);
+                        return new CheckboxFieldViewHolder(binding);
+                    }
+                    case TYPE_SEARCH_LIST_FIELD: {
+                        CommandSearchListFieldBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_search_list_field, container, false);
+                        return new SearchListFieldViewHolder(binding);
+                    }
+                    case TYPE_RADIO_EDIT_FIELD: {
+                        CommandRadioEditFieldBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_radio_edit_field, container, false);
+                        return new RadioEditFieldViewHolder(binding);
+                    }
+                    case TYPE_SPINNER_FIELD: {
+                        CommandSpinnerFieldBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_spinner_field, container, false);
+                        return new SpinnerFieldViewHolder(binding);
+                    }
+                    case TYPE_BUTTON_GRID_FIELD: {
+                        CommandButtonGridFieldBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_button_grid_field, container, false);
+                        return new ButtonGridFieldViewHolder(binding);
+                    }
+                    case TYPE_TEXT_FIELD: {
+                        CommandTextFieldBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_text_field, container, false);
+                        return new TextFieldViewHolder(binding);
+                    }
+                    case TYPE_PROGRESSBAR: {
+                        CommandProgressBarBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_progress_bar, container, false);
+                        return new ProgressBarViewHolder(binding);
+                    }
+                    case TYPE_UNKNOWN: {
+                        CommandUnknownBinding binding = DataBindingUtil.inflate(LayoutInflater.from(container.getContext()), R.layout.command_unknown, container, false);
+                        return new UnknownViewHolder(binding);
+                    }
+                    default:
+                        throw new IllegalArgumentException("Unknown viewType: " + viewType + " based on: " + response);
+                }
+            }
+
+            @Override
+            public void onBindViewHolder(ViewHolder viewHolder, int position) {
+                viewHolder.bind(getItem(position));
+            }
+
+            public View getView() {
+                if (mBinding == null) return null;
+                return mBinding.getRoot();
+            }
+
+            public boolean validate() {
+                int count = getItemCount();
+                boolean isValid = true;
+                for (int i = 0; i < count; i++) {
+                    boolean oneIsValid = getItem(i).validate();
+                    isValid = isValid && oneIsValid;
+                }
+                notifyDataSetChanged();
+                return isValid;
+            }
+
+            public boolean execute() {
+                return execute("execute");
+            }
+
+            public boolean execute(int actionPosition) {
+                return execute(actionsAdapter.getItem(actionPosition).first);
+            }
+
+            public synchronized boolean execute(String action) {
+                if ("close".equals(action)) {
+                    return true;
+                }
+                if ("retry".equals(action)) {
+                    if (executing
+                            || response == null
+                            || response.getType() != Iq.Type.ERROR
+                            || lastRequestPacket == null) {
+                        return false;
+                    }
+                    lastRequestPacket.setId(CryptoHelper.random(9));
+                    executing = true;
+                    response = null;
+                    responseElement = null;
+                    items.clear();
+                    actionsAdapter.clear();
+                    loading = true;
+                    loadingHasBeenLong = false;
+                    loadingHasBeenVeryLong = false;
+                    notifyDataSetChanged();
+                    xmppConnectionService.sendIqPacket(
+                            getAccount(),
+                            lastRequestPacket,
+                            this::updateWithResponse,
+                            120L);
+                    loading();
+                    return false;
+                }
+                if (!"cancel".equals(action) && executing) {
+                    loadingHasBeenLong = true;
+                    notifyDataSetChanged();
+                    return false;
+                }
+                if (!action.equals("cancel") && !action.equals("prev") && !validate()) return false;
+
+                if (response == null) return true;
+                Element command = response.findChild("command", "http://jabber.org/protocol/commands");
+                if (command == null) return true;
+                String status = command.getAttribute("status");
+                if (status == null || (!status.equals("executing") && !action.equals("prev"))) return true;
+
+                if (actionToWebview != null && !action.equals("cancel") && Build.VERSION.SDK_INT >= 23) {
+                    actionToWebview.postWebMessage(new WebMessage("xmpp_xep0050/" + action), Uri.parse("*"));
+                    return false;
+                }
+
+                final Iq packet = new Iq(Iq.Type.SET);
+                packet.setTo(response.getFrom());
+                final Element c = packet.addChild("command", Namespace.COMMANDS);
+                c.setAttribute("node", mNode);
+                c.setAttribute("sessionid", command.getAttribute("sessionid"));
+
+                String formType = responseElement == null ? null : responseElement.getAttribute("type");
+                if (!action.equals("cancel") &&
+                        !action.equals("prev") &&
+                        responseElement != null &&
+                        responseElement.getName().equals("x") &&
+                        responseElement.getNamespace().equals("jabber:x:data") &&
+                        formType != null && formType.equals("form")) {
+
+                    Data form = Data.parse(responseElement);
+                    eu.siacs.conversations.xmpp.forms.Field actionList = form.getFieldByName("http://jabber.org/protocol/commands#actions");
+                    if (actionList != null) {
+                        actionList.setValue(action);
+                        c.setAttribute("action", "execute");
+                    }
+
+                    responseElement.setAttribute("type", "submit");
+                    Element rsm = responseElement.findChild("set", "http://jabber.org/protocol/rsm");
+                    if (rsm != null) {
+                        Element max = new Element("max", "http://jabber.org/protocol/rsm");
+                        max.setContent("1000");
+                        rsm.addChild(max);
+                    }
+
+                    c.addChild(responseElement);
+                }
+
+                if (c.getAttribute("action") == null) c.setAttribute("action", action);
+
+                executing = true;
+                lastRequestPacket = packet;
+                xmppConnectionService.sendIqPacket(
+                        getAccount(), packet, this::updateWithResponse, 120L);
+
+                loading();
+                return false;
+            }
+
+            public void refresh() {
+                synchronized(this) {
+                    if (waitingForRefresh) notifyDataSetChanged();
+                }
+            }
+
+            protected void loading() {
+                View v = getView();
+                try {
+                    loadingTimer.schedule(new TimerTask() {
+                        @Override
+                        public void run() {
+                            View v2 = getView();
+                            loading = true;
+
+                            loadingTimer.schedule(new TimerTask() {
+                                @Override
+                                public void run() {
+                                    loadingHasBeenLong = true;
+                                    if (v == null && v2 == null) return;
+                                    (v == null ? v2 : v).post(() -> notifyDataSetChanged());
+                                }
+                            }, 3000);
+
+                            loadingTimer.schedule(new TimerTask() {
+                                @Override
+                                public void run() {
+                                    loadingHasBeenLong = true;
+                                    loadingHasBeenVeryLong = true;
+                                    if (v == null && v2 == null) return;
+                                    (v == null ? v2 : v).post(() -> notifyDataSetChanged());
+                                }
+                            }, 11500);
+
+                            if (v == null && v2 == null) return;
+                            (v == null ? v2 : v).post(() -> notifyDataSetChanged());
+                        }
+                    }, 500);
+                } catch (final IllegalStateException e) { }
+            }
+
+            private void closeSession() {
+                closed = true;
+                executing = false;
+                loadingTimer.cancel();
+            }
+
+            protected GridLayoutManager setupLayoutManager() {
+                int spanCount = 1;
+
+                Context ctx = mPager == null ? getView().getContext() : mPager.getContext();
+                if (reported != null) {
+                    float screenWidth = ctx.getResources().getDisplayMetrics().widthPixels;
+                    TextPaint paint = ((TextView) LayoutInflater.from(mPager.getContext()).inflate(R.layout.command_result_cell, null)).getPaint();
+                    float tableHeaderWidth = reported.stream().reduce(
+                            0f,
+                            (total, field) -> total + StaticLayout.getDesiredWidth(field.getLabel().or("--------") + "\t", paint),
+                            (a, b) -> a + b
+                    );
+
+                    spanCount = tableHeaderWidth > 0.59 * screenWidth ? 1 : this.reported.size();
+                }
+
+                if (layoutManager != null && layoutManager.getSpanCount() != spanCount) {
+                    items.clear();
+                    notifyDataSetChanged();
+                }
+
+                layoutManager = new GridLayoutManager(ctx, spanCount);
+                layoutManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
+                    @Override
+                    public int getSpanSize(int position) {
+                        if (getItemViewType(position) != TYPE_RESULT_CELL) return layoutManager.getSpanCount();
+                        return 1;
+                    }
+                });
+                return layoutManager;
+            }
+
+            protected void setBinding(CommandPageBinding b) {
+                mBinding = b;
+                // https://stackoverflow.com/a/32350474/8611
+                mBinding.form.addOnItemTouchListener(new RecyclerView.OnItemTouchListener() {
+                    @Override
+                    public boolean onInterceptTouchEvent(RecyclerView rv, MotionEvent e) {
+                        if(rv.getChildCount() > 0) {
+                            int[] location = new int[2];
+                            rv.getLocationOnScreen(location);
+                            View childView = rv.findChildViewUnder(e.getX(), e.getY());
+                            if (childView instanceof ViewGroup) {
+                                childView = findViewAt((ViewGroup) childView, location[0] + e.getX(), location[1] + e.getY());
+                            }
+                            int action = e.getAction();
+                            switch (action) {
+                                case MotionEvent.ACTION_DOWN:
+                                    if ((childView instanceof AbsListView && ((AbsListView) childView).canScrollList(1)) || childView instanceof WebView) {
+                                        rv.requestDisallowInterceptTouchEvent(true);
+                                    }
+                                case MotionEvent.ACTION_UP:
+                                    if ((childView instanceof AbsListView && ((AbsListView) childView).canScrollList(-11)) || childView instanceof WebView) {
+                                        rv.requestDisallowInterceptTouchEvent(true);
+                                    }
+                            }
+                        }
+
+                        return false;
+                    }
+
+                    @Override
+                    public void onRequestDisallowInterceptTouchEvent(boolean disallow) { }
+
+                    @Override
+                    public void onTouchEvent(RecyclerView rv, MotionEvent e) { }
+                });
+                mBinding.form.setLayoutManager(setupLayoutManager());
+                mBinding.form.setAdapter(this);
+                mBinding.actions.setAdapter(actionsAdapter);
+                mBinding.actions.setOnItemClickListener((parent, v, pos, id) -> {
+                    if (execute(pos)) {
+                        removeSession(CommandSession.this);
+                    }
+                });
+
+                actionsAdapter.notifyDataSetChanged();
+
+                if (pendingResponsePacket != null) {
+                    final Iq pending = pendingResponsePacket;
+                    pendingResponsePacket = null;
+                    updateWithResponseUiThread(pending);
+                }
+            }
+
+            public View inflateUi(Context context, Consumer<ConversationPage> remover) {
+                CommandPageBinding binding = DataBindingUtil.inflate(LayoutInflater.from(context), R.layout.command_page, null, false);
+                setBinding(binding);
+                return binding.getRoot();
+            }
+
+            // https://stackoverflow.com/a/36037991/8611
+            private View findViewAt(ViewGroup viewGroup, float x, float y) {
+                for(int i = 0; i < viewGroup.getChildCount(); i++) {
+                    View child = viewGroup.getChildAt(i);
+                    if (child instanceof ViewGroup && !(child instanceof AbsListView) && !(child instanceof WebView)) {
+                        View foundView = findViewAt((ViewGroup) child, x, y);
+                        if (foundView != null && foundView.isShown()) {
+                            return foundView;
+                        }
+                    } else {
+                        int[] location = new int[2];
+                        child.getLocationOnScreen(location);
+                        Rect rect = new Rect(location[0], location[1], location[0] + child.getWidth(), location[1] + child.getHeight());
+                        if (rect.contains((int)x, (int)y)) {
+                            return child;
+                        }
+                    }
+                }
+
+                return null;
+            }
+        }
+    }
+}

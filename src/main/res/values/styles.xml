@@ -1,0 +1,292 @@
+<resources xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+
+    <!--<style name="TextAppearance.Conversations.Display2.Monospace" parent="TextAppearance.Conversations.Display2">
+        <item name="android:fontFamily" tools:targetApi="jelly_bean">monospace</item>
+        <item name="android:typeface">monospace</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Title.Monospace" parent="TextAppearance.Conversations.Title">
+        <item name="android:fontFamily" tools:targetApi="jelly_bean">monospace</item>
+        <item name="android:typeface">monospace</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Display2" parent="TextAppearance.AppCompat.Display2">
+        <item name="android:textSize">?TextSizeDisplay2</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Title" parent="TextAppearance.AppCompat.Title">
+        <item name="android:textSize">?TextSizeTitle</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Subhead" parent="TextAppearance.AppCompat.Subhead">
+        <item name="android:textSize">?TextSizeSubhead</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Subhead.Bold" parent="TextAppearance.Conversations.Subhead">
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Subhead.Bold.Secondary" parent="TextAppearance.Conversations.Subhead.Bold">
+        <item name="android:textColor">?android:textColorSecondary</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body2" parent="TextAppearance.AppCompat.Body2">
+        <item name="android:textSize">?TextSizeBody2</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1" parent="TextAppearance.AppCompat.Body1">
+        <item name="android:textSize">?TextSizeBody1</item>
+        <item name="android:textColorLink">?android:textColorPrimary</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1.Warning" parent="TextAppearance.AppCompat.Body1">
+        <item name="android:textColor">?color_warning</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1.Linkified" parent="TextAppearance.AppCompat.Body1">
+        <item name="android:textSize">?TextSizeBody1</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Caption" parent="TextAppearance.AppCompat.Caption">
+        <item name="android:textSize">?TextSizeCaption</item>
+    </style>
+
+    <style name="ToolbarTitleAppearance" parent="@style/TextAppearance.Widget.AppCompat.Toolbar.Title">
+        <item name="android:textSize">18dp</item>
+    </style>
+
+    <style name="ToolbarSubtitleAppearance" parent="@style/TextAppearance.Widget.AppCompat.Toolbar.Subtitle">
+        <item name="android:textSize">13dp</item>
+    </style>
+
+    <style name="Widget.Conversations.EditText" parent="Widget.AppCompat.EditText">
+        <item name="android:textSize">?TextSizeInput</item>
+    </style>
+
+    <style name="Widget.Conversations.SearchView" parent="Widget.Conversations.EditText">
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textColorHint">@color/white70</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textCursorDrawable">@drawable/white_cursor</item>
+    </style>
+
+    <style name="Widget.Conversations.CheckBox" parent="Widget.AppCompat.CompoundButton.CheckBox">
+        <item name="android:textSize">?TextSizeBody1</item>
+    </style>
+
+    <style name="Widget.Conversations.RadioButton" parent="Widget.AppCompat.CompoundButton.RadioButton">
+        <item name="android:textSize">?TextSizeBody1</item>
+    </style>
+
+    <style name="Widget.Conversations.Button.Borderless" parent="@style/Widget.AppCompat.Button.Borderless">
+        <item name="android:textSize">?TextSizeBody2</item>
+        <item name="android:textColor">?colorAccent</item>
+    </style>
+
+    <style name="Widget.Conversations.Button.Borderless.Primary" parent="Widget.Conversations.Button.Borderless">
+        <item name="android:textColor">?colorAccent</item>
+    </style>
+
+
+    <style name="TextAppearance.Conversations.Design.Hint" parent="TextAppearance.Design.Hint">
+        <item name="android:textSize">?TextSizeCaption</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Design.Error" parent="TextAppearance.Design.Error">
+        <item name="android:textSize">?TextSizeCaption</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1.Secondary" parent="TextAppearance.Conversations.Body1">
+        <item name="android:textColor">?android:textColorSecondary</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1.Tertiary" parent="TextAppearance.Conversations.Body1">
+        <item name="android:textColor">?android:textColorTertiary</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Fingerprint" parent="TextAppearance.Conversations.Body1">
+        <item name="android:fontFamily" tools:targetApi="jelly_bean">monospace</item>
+        <item name="android:typeface">monospace</item>
+    </style>
+
+    <style name="InputLabel" parent="TextAppearance.Conversations.Caption">
+        <item name="android:paddingBottom">@dimen/input_label_vertical_spacing</item>
+        <item name="android:paddingLeft">@dimen/input_label_horizontal_spacing</item>
+        <item name="android:paddingRight">@dimen/input_label_horizontal_spacing</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Status" parent="TextAppearance.Conversations.Caption">
+        <item name="android:textStyle">italic</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Tag" parent="TextAppearance.Conversations.Caption">
+        <item name="android:textColor">@color/white</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Caption.OnDark" parent="TextAppearance.Conversations.Caption">
+        <item name="android:textColor">@color/white70</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Caption.OnDark.Bold" parent="TextAppearance.Conversations.Caption.OnDark">
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Caption.Warning" parent="TextAppearance.Conversations.Caption">
+        <item name="android:textColor">@color/red_a700</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Caption.Warning.OnDark" parent="TextAppearance.Conversations.Caption">
+        <item name="android:textColor">@color/red_a100</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Caption.Highlight" parent="TextAppearance.Conversations.Caption">
+        <item name="android:textColor">?colorAccent</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Caption.Disabled" parent="TextAppearance.Conversations.Caption">
+        <item name="android:textColor">?android:textColorTertiary</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Fingerprint.Disabled" parent="TextAppearance.Conversations.Fingerprint">
+        <item name="android:textColor">?android:textColorTertiary</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1.OnDark" parent="TextAppearance.Conversations.Body1">
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textColorLink">@color/white</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1.Emoji.OnDark" parent="TextAppearance.Conversations.Body1">
+        <item name="android:textColor">@color/white</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1.Emoji" parent="TextAppearance.Conversations.Body1">
+        <item name="android:textColor">?EmojiColor</item>
+    </style>
+
+    <style name="TextAppearance.Conversations.Body1.Secondary.OnDark" parent="TextAppearance.Conversations.Body1">
+        <item name="android:textColor">@color/white70</item>
+    </style> -->
+
+    <style name="TextAppearance.App.Toolbar.Overview.Title" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:fontFamily">@font/onest_medium</item>
+        <item name="fontFamily">@font/onest_medium</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:textSize">22sp</item>
+    </style>
+
+    <style name="TextAppearance.App.Toolbar.Overview.Subtitle" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:fontFamily">@font/onest_regular</item>
+        <item name="fontFamily">@font/onest_regular</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <style name="TextAppearance.App.Toolbar.Conversation.Title" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:fontFamily">@font/onest_medium</item>
+        <item name="fontFamily">@font/onest_medium</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="TextAppearance.App.Toolbar.Conversation.Subtitle" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:fontFamily">@font/onest_regular</item>
+        <item name="fontFamily">@font/onest_regular</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+        <item name="android:textSize">12.5sp</item>
+    </style>
+
+    <!-- Conversation-list typography is explicit so RecyclerView rows have final Onest
+         metrics on their first layout pass; runtime state changes only switch bundled weights. -->
+    <style name="TextAppearance.App.Conversation.Title" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:fontFamily">@font/onest_medium</item>
+        <item name="fontFamily">@font/onest_medium</item>
+    </style>
+
+    <style name="TextAppearance.App.Conversation.Preview" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:fontFamily">@font/onest_regular</item>
+        <item name="fontFamily">@font/onest_regular</item>
+    </style>
+
+    <style name="TextAppearance.App.Conversation.Meta" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:fontFamily">@font/onest_regular</item>
+        <item name="fontFamily">@font/onest_regular</item>
+    </style>
+
+    <style name="DialpadNumberStyle">
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:textSize">@dimen/dialpad_text_size</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="DialpadLetterStyle">
+        <item name="android:textSize">@dimen/smaller_text_size</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+
+    <style name="ShapeAppearanceOverlay.IncomingCall" parent="ShapeAppearance.MaterialComponents.SmallComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/incoming_call_radius</item>
+    </style>
+
+    <style name="ShapeAppearanceOverlay.NeoCont.CallCircle" parent="ShapeAppearance.MaterialComponents.SmallComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+    <style name="Widget.App.TextInput" parent="Widget.Material3.TextInputLayout.FilledBox">
+        <item name="boxBackgroundMode">none</item>
+        <item name="hintEnabled">false</item>
+        <item name="errorTextColor">?attr/colorError</item>
+        <item name="errorIconTint">?attr/colorError</item>
+    </style>
+
+    <style name="Widget.App.AccountTextInput" parent="Widget.App.TextInput" />
+
+    <style name="Widget.App.Switch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:focusable">false</item>
+        <item name="android:scaleX">0.84</item>
+        <item name="android:scaleY">0.84</item>
+        <item name="trackDecoration">@null</item>
+    </style>
+
+    <!--
+        LibreSpan card system.
+        Theme.Conversations3 installs Widget.App.Card as the MaterialCardView default so card
+        chrome is controlled centrally instead of repeating stroke/elevation fixes per screen.
+        Local styles should describe semantic surface/shape differences; outlined cards must opt in.
+    -->
+    <style name="Widget.App.Card" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardCornerRadius">@dimen/app_island_corner_radius</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <style name="Widget.App.Card.SurfaceLow" parent="Widget.App.Card">
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+    </style>
+
+    <style name="Widget.App.Card.Surface" parent="Widget.App.Card">
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
+    </style>
+
+    <style name="Widget.App.Card.Panel" parent="Widget.App.Card.SurfaceLow">
+        <item name="cardCornerRadius">@dimen/app_island_corner_radius</item>
+    </style>
+
+    <style name="Widget.App.Card.Action" parent="Widget.App.Card.Surface">
+        <item name="cardCornerRadius">@dimen/app_island_corner_radius</item>
+        <item name="rippleColor">?attr/colorPrimaryContainer</item>
+    </style>
+
+    <style name="Widget.App.Card.Outlined" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardElevation">0dp</item>
+        <item name="strokeColor">?attr/colorOutlineVariant</item>
+        <item name="strokeWidth">1dp</item>
+    </style>
+
+    <style name="NeoCont.AttachmentPopupMenu" parent="Widget.AppCompat.PopupMenu">
+        <item name="android:popupBackground">@drawable/bg_attachment_popup</item>
+    </style>
+</resources>

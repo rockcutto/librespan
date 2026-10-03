@@ -1,0 +1,621 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:key="neocont_settings_main">
+
+    <PreferenceScreen
+        android:key="neocont_account"
+        android:icon="@drawable/ic_person_24dp"
+        android:layout="@layout/preference_navigation_row"
+        android:title="@string/neocont_settings_account"
+        android:summary="@string/neocont_settings_account_summary">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.ManageAccountActivity"
+            android:targetPackage="@string/applicationId" />
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="neocont_appearance"
+        android:icon="@drawable/ic_palette_24dp"
+        android:layout="@layout/preference_navigation_row"
+        android:title="@string/neocont_settings_appearance"
+        android:summary="@string/neocont_settings_appearance_summary">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra android:name="page" android:value="neocont_appearance" />
+        </intent>
+
+        <eu.siacs.conversations.ui.appearance.AppearancePreviewPreference
+            android:key="neocont_appearance_preview"
+            android:selectable="false" />
+        <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+            android:key="theme"
+            android:summary="@string/appearance_theme_description"
+            android:title="@string/pref_theme_options" />
+        <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+            android:key="appearance_color_source"
+            android:summary="@string/appearance_color_source_description"
+            android:title="@string/appearance_color_source" />
+        <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+            android:key="chat_wallpaper"
+            android:summary="@string/neocont_chat_wallpaper_summary"
+            android:title="@string/neocont_chat_wallpaper" />
+        <eu.siacs.conversations.ui.appearance.MessageTextSizePreference
+            android:key="message_text_size_sp"
+            android:title="@string/pref_text_scale" />
+        <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+            android:key="app_language"
+            android:summary="@string/neocont_app_language_summary"
+            android:title="@string/neocont_app_language" />
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="neocont_chats"
+        android:icon="@drawable/ic_chat_24dp"
+        android:layout="@layout/preference_navigation_row"
+        android:title="@string/neocont_settings_chats"
+        android:summary="@string/neocont_settings_chats_summary">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra android:name="page" android:value="neocont_chats" />
+        </intent>
+
+        <PreferenceCategory
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_chat_conversation">
+            <SwitchPreference
+                android:defaultValue="@bool/show_contact_status"
+                android:key="show_contact_status"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_show_contact_status_summary"
+                android:title="@string/neocont_show_contact_status"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/message_hyphenation"
+                android:key="message_hyphenation"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_message_hyphenation_summary"
+                android:title="@string/neocont_message_hyphenation"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/allow_message_correction"
+                android:key="allow_message_correction"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_message_editing_summary"
+                android:title="@string/neocont_message_editing"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_chat_sending">
+            <SwitchPreference
+                android:defaultValue="@bool/scroll_to_bottom"
+                android:key="scroll_to_bottom"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_scroll_after_send_summary"
+                android:title="@string/neocont_scroll_after_send"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:key="group_chats"
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_group_chats">
+            <SwitchPreference
+                android:defaultValue="@bool/autojoin"
+                android:key="autojoin"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/pref_autojoin_summary"
+                android:title="@string/pref_autojoin"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <ListPreference
+                android:defaultValue="@string/default_channel_discovery"
+                android:entries="@array/channel_discovery_entries"
+                android:entryValues="@array/channel_discover_values"
+                android:key="channel_discovery_method"
+                android:layout="@layout/preference_subnavigation_row"
+                android:summary="@string/pref_channel_discovery_summary"
+                android:title="@string/pref_channel_discovery" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:key="attachments"
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_chat_media">
+            <SwitchPreference
+                android:key="photo_editor_before_send"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_photo_editor_summary"
+                android:title="@string/neocont_photo_editor"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:key="video_editor_before_send"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_video_editor_summary"
+                android:title="@string/neocont_video_editor"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+                android:key="share_location_method"
+                android:summary="@string/neocont_location_method_summary"
+                android:title="@string/neocont_location_method" />
+        </PreferenceCategory>
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="neocont_notifications"
+        android:icon="@drawable/ic_notifications_24dp"
+        android:layout="@layout/preference_navigation_row"
+        android:title="@string/neocont_settings_notifications"
+        android:summary="@string/neocont_settings_notifications_summary">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra android:name="page" android:value="neocont_notifications" />
+        </intent>
+
+        <PreferenceCategory
+            android:key="neocont_message_notifications"
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_notifications_messages">
+            <SwitchPreference
+                android:defaultValue="@bool/headsup_notifications"
+                android:key="notification_headsup"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/pref_headsup_notifications_summary"
+                android:title="@string/pref_headsup_notifications"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/vibrate_on_notification"
+                android:key="vibrate_on_notification"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/pref_vibrate_summary"
+                android:title="@string/pref_vibrate"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <Preference
+                android:key="notification_ringtone"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/pref_notification_sound_summary"
+                android:title="@string/pref_notification_sound" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:key="neocont_notification_policy"
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_notification_policy">
+            <SwitchPreference
+                android:defaultValue="@bool/notifications_from_strangers"
+                android:key="notifications_from_strangers"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_notifications_from_strangers_summary"
+                android:title="@string/neocont_notifications_from_strangers"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:key="unified_push"
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_delivery_notifications">
+            <SwitchPreference
+                android:defaultValue="@bool/enable_foreground_service"
+                android:key="enable_foreground_service"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_background_connection_summary"
+                android:title="@string/neocont_background_connection"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <PreferenceScreen
+                android:key="neocont_push_settings"
+                android:layout="@layout/preference_subnavigation_row"
+                android:summary="@string/neocont_push_settings_summary"
+                android:title="@string/neocont_push_settings">
+                <intent
+                    android:action="android.intent.action.VIEW"
+                    android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+                    android:targetPackage="@string/applicationId">
+                    <extra android:name="page" android:value="neocont_push_settings" />
+                </intent>
+                <ListPreference
+                    android:defaultValue="@string/default_push_account"
+                    android:key="up_push_account"
+                    android:layout="@layout/preference_subnavigation_row"
+                    android:summary="@string/pref_up_push_account_summary"
+                    android:title="@string/pref_up_push_account_title" />
+                <EditTextPreference
+                    android:defaultValue="@string/default_push_server"
+                    android:key="up_push_server"
+                    android:layout="@layout/preference_subnavigation_row"
+                    android:summary="@string/pref_up_push_server_summary"
+                    android:title="@string/pref_up_push_server_title" />
+            </PreferenceScreen>
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:key="neocont_call_options"
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_notifications_calls">
+            <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+                android:key="call_ringtone"
+                android:summary="@string/neocont_call_ringtone_summary"
+                android:title="@string/neocont_call_ringtone" />
+            <Preference
+                android:key="fullscreen_notification"
+                android:layout="@layout/preference_subnavigation_row"
+                android:summary="@string/neocont_fullscreen_call_summary"
+                android:title="@string/neocont_fullscreen_call" />
+            <SwitchPreference
+                android:defaultValue="@bool/call_integration"
+                android:key="call_integration"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_call_integration_summary"
+                android:title="@string/neocont_call_integration"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="neocont_privacy"
+        android:icon="@drawable/ic_privacy_tip_24dp"
+        android:layout="@layout/preference_navigation_row"
+        android:title="@string/neocont_settings_privacy"
+        android:summary="@string/neocont_settings_privacy_summary">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra android:name="page" android:value="neocont_privacy" />
+        </intent>
+
+        <PreferenceCategory
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_app_protection">
+            <SwitchPreference
+                android:defaultValue="false"
+                android:key="app_lock_enabled"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_app_lock_summary"
+                android:title="@string/app_lock_title"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/prevent_screenshots"
+                android:key="prevent_screenshots"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_screen_protection_summary"
+                android:title="@string/neocont_screen_protection"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+                android:key="high_security_protection"
+                android:summary="@string/neocont_high_security_summary"
+                android:title="@string/high_security_title" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_privacy_controls">
+            <SwitchPreference
+                android:defaultValue="@bool/confirm_messages"
+                android:key="confirm_messages"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_receipts_summary"
+                android:title="@string/neocont_receipts"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/chat_states"
+                android:key="chat_states"
+                android:layout="@layout/preference_setting_row"
+                android:title="@string/neocont_typing_status"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/last_activity"
+                android:key="last_activity"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_activity_visibility_summary"
+                android:title="@string/neocont_activity_visibility"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <SwitchPreference
+                android:defaultValue="@bool/accept_invites_from_strangers"
+                android:key="accept_invites_from_strangers"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_stranger_invites_summary"
+                android:title="@string/neocont_stranger_invites"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_encryption">
+            <Preference
+                android:key="neocont_security_devices"
+                android:layout="@layout/preference_subnavigation_row"
+                android:summary="@string/neocont_my_devices_summary"
+                android:title="@string/neocont_my_devices" />
+            <SwitchPreference
+                android:defaultValue="@bool/btbv"
+                android:key="btbv"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_omemo_trust_policy_summary"
+                android:title="@string/neocont_omemo_trust_policy"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+
+        <PreferenceScreen
+            android:key="neocont_security_more"
+                android:layout="@layout/preference_subnavigation_row"
+                android:summary="@string/neocont_more_security_summary"
+                android:title="@string/neocont_more_security">
+                <intent
+                    android:action="android.intent.action.VIEW"
+                    android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+                    android:targetPackage="@string/applicationId">
+                    <extra android:name="page" android:value="neocont_security_more" />
+                </intent>
+
+                <PreferenceCategory
+                    android:layout="@layout/preference_category_header"
+                    android:title="@string/neocont_connection_security_section">
+                    <SwitchPreference
+                        android:defaultValue="@bool/use_tor"
+                        android:key="use_tor"
+                        android:layout="@layout/preference_setting_row"
+                        android:summary="@string/neocont_connection_via_tor_summary"
+                        android:title="@string/pref_use_tor"
+                        android:widgetLayout="@layout/preference_app_switch" />
+                    <SwitchPreference
+                        android:defaultValue="@bool/dont_trust_system_cas"
+                        android:key="dont_trust_system_cas"
+                        android:layout="@layout/preference_setting_row"
+                        android:summary="@string/neocont_manual_certificates_summary"
+                        android:title="@string/neocont_manual_certificates"
+                        android:widgetLayout="@layout/preference_app_switch" />
+                    <SwitchPreference
+                        android:defaultValue="@bool/validate_hostname"
+                        android:key="validate_hostname"
+                        android:layout="@layout/preference_setting_row"
+                        android:summary="@string/neocont_dnssec_hostname_summary"
+                        android:title="@string/neocont_dnssec_hostname"
+                        android:widgetLayout="@layout/preference_app_switch" />
+                    <SwitchPreference
+                        android:defaultValue="@bool/require_channel_binding"
+                        android:key="channel_binding_required"
+                        android:layout="@layout/preference_setting_row"
+                        android:summary="@string/neocont_channel_binding_summary"
+                        android:title="@string/neocont_channel_binding"
+                        android:widgetLayout="@layout/preference_app_switch" />
+                    <Preference
+                        android:key="remove_trusted_certificates"
+                        android:layout="@layout/preference_subnavigation_row"
+                        android:summary="@string/neocont_saved_certificates_summary"
+                        android:title="@string/neocont_saved_certificates" />
+                </PreferenceCategory>
+        </PreferenceScreen>
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="neocont_data"
+        android:icon="@drawable/ic_folder_open_24dp"
+        android:layout="@layout/preference_navigation_row"
+        android:title="@string/neocont_settings_data"
+        android:summary="@string/neocont_settings_data_summary">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra android:name="page" android:value="neocont_data" />
+        </intent>
+
+        <PreferenceCategory
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_media_sending">
+            <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+                android:key="picture_compression"
+                android:summary="@string/neocont_image_quality_summary"
+                android:title="@string/neocont_image_quality" />
+            <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+                android:key="video_compression"
+                android:summary="@string/neocont_video_quality_summary"
+                android:title="@string/neocont_video_quality" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_auto_download">
+            <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+                android:key="auto_accept_file_size"
+                android:summary="@string/neocont_auto_download_summary"
+                android:title="@string/neocont_auto_download_limit" />
+            <SwitchPreference
+                android:defaultValue="@bool/accept_all_files_if_wifi"
+                android:key="accept_all_files_if_wifi"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_wifi_unlimited_summary"
+                android:title="@string/neocont_wifi_unlimited"
+                android:widgetLayout="@layout/preference_app_switch" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_local_history">
+            <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+                android:key="automatic_message_deletion"
+                android:summary="@string/neocont_message_retention_summary"
+                android:title="@string/neocont_message_retention" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:key="neocont_storage_actions"
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_storage">
+            <eu.siacs.conversations.ui.appearance.AppearanceChoicePreference
+                android:key="local_storage_usage"
+                android:order="10"
+                android:summary="@string/neocont_local_storage_usage_summary"
+                android:title="@string/neocont_local_storage_usage" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
+            android:key="neocont_data_management"
+            android:layout="@layout/preference_category_header"
+            android:title="@string/neocont_data_management">
+            <Preference
+                android:key="clear_local_account_data"
+                android:layout="@layout/preference_subnavigation_row"
+                android:summary="@string/pref_clear_local_account_data_summary"
+                android:title="@string/pref_clear_local_account_data" />
+        </PreferenceCategory>
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="neocont_about"
+        android:icon="@drawable/ic_help_24dp"
+        android:layout="@layout/preference_navigation_row"
+        android:title="@string/neocont_settings_about"
+        android:summary="@string/neocont_settings_about_summary">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra android:name="page" android:value="neocont_about" />
+        </intent>
+
+        <eu.siacs.conversations.ui.AboutPreference />
+
+        <Preference
+            android:key="neocont_about_version"
+            android:layout="@layout/preference_setting_row"
+            android:title="@string/neocont_version" />
+
+        <PreferenceScreen
+            android:key="neocont_security_info"
+            android:layout="@layout/preference_subnavigation_row"
+            android:title="@string/neocont_security_info"
+            android:summary="@string/neocont_security_info_summary">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+                android:targetPackage="@string/applicationId">
+                <extra android:name="page" android:value="neocont_security_info" />
+            </intent>
+
+            <PreferenceCategory
+                android:layout="@layout/preference_category_header"
+                android:title="@string/neocont_security_info">
+                <Preference
+                    android:layout="@layout/preference_info_card"
+                    android:selectable="false"
+                    android:title="@string/neocont_security_e2ee_title"
+                    android:summary="@string/neocont_security_e2ee_body" />
+                <Preference
+                    android:layout="@layout/preference_info_card"
+                    android:selectable="false"
+                    android:title="@string/neocont_security_local_title"
+                    android:summary="@string/neocont_security_local_body" />
+                <Preference
+                    android:layout="@layout/preference_info_card"
+                    android:selectable="false"
+                    android:title="@string/neocont_security_access_title"
+                    android:summary="@string/neocont_security_access_body" />
+                <Preference
+                    android:layout="@layout/preference_info_card"
+                    android:selectable="false"
+                    android:title="@string/neocont_security_high_title"
+                    android:summary="@string/neocont_security_high_body" />
+                <Preference
+                    android:layout="@layout/preference_info_card"
+                    android:selectable="false"
+                    android:title="@string/neocont_security_server_title"
+                    android:summary="@string/neocont_security_server_body" />
+                <Preference
+                    android:layout="@layout/preference_info_card"
+                    android:selectable="false"
+                    android:title="@string/neocont_security_limits_title"
+                    android:summary="@string/neocont_security_limits_body" />
+            </PreferenceCategory>
+        </PreferenceScreen>
+
+        <PreferenceScreen
+            android:key="neocont_licenses"
+            android:layout="@layout/preference_subnavigation_row"
+            android:title="@string/neocont_licenses"
+            android:summary="@string/neocont_licenses_summary">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+                android:targetPackage="@string/applicationId">
+                <extra android:name="page" android:value="neocont_licenses" />
+            </intent>
+
+            <PreferenceCategory
+                android:layout="@layout/preference_category_header"
+                android:title="@string/neocont_licenses">
+                <Preference
+                    android:key="license_librespan"
+                    android:layout="@layout/preference_subnavigation_row"
+                    android:title="@string/app_name"
+                    android:summary="@string/neocont_license_gpl3" />
+                <Preference
+                    android:key="license_native_security"
+                    android:layout="@layout/preference_subnavigation_row"
+                    android:title="@string/neocont_license_native_components"
+                    android:summary="@string/neocont_license_mpl2" />
+                <Preference
+                    android:key="license_onest"
+                    android:layout="@layout/preference_subnavigation_row"
+                    android:title="Onest"
+                    android:summary="@string/neocont_license_ofl11" />
+                <Preference
+                    android:key="license_tabler"
+                    android:layout="@layout/preference_subnavigation_row"
+                    android:title="Tabler Icons"
+                    android:summary="@string/neocont_license_mit" />
+            </PreferenceCategory>
+        </PreferenceScreen>
+
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        android:key="neocont_advanced"
+        android:icon="@drawable/ic_settings_ethernet_24dp"
+        android:layout="@layout/preference_navigation_row"
+        android:title="@string/neocont_settings_advanced"
+        android:summary="@string/neocont_settings_advanced_summary">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="eu.siacs.conversations.ui.SettingsActivity"
+            android:targetPackage="@string/applicationId">
+            <extra android:name="page" android:value="neocont_advanced" />
+        </intent>
+
+        <Preference
+            android:key="secure_media_perf"
+                android:layout="@layout/preference_subnavigation_row"
+                android:title="@string/secure_media_perf_title"
+                android:summary="@string/secure_media_perf_summary" />
+        <Preference
+            android:key="network_diagnostics"
+            android:layout="@layout/preference_subnavigation_row"
+            android:title="@string/network_diagnostics_title"
+            android:summary="@string/network_diagnostics_pref_summary" />
+        <Preference
+            android:key="call_diagnostics"
+            android:layout="@layout/preference_subnavigation_row"
+            android:title="@string/call_diagnostics_title"
+            android:summary="@string/call_diagnostics_summary" />
+            <SwitchPreference
+                android:defaultValue="@bool/send_crash_reports"
+                android:key="send_crash_reports"
+                android:layout="@layout/preference_setting_row"
+                android:summary="@string/neocont_crash_reports_summary"
+                android:title="@string/neocont_crash_reports"
+                android:widgetLayout="@layout/preference_app_switch" />
+            <Preference
+                android:key="send_logs"
+                android:layout="@layout/preference_subnavigation_row"
+                android:title="@string/neocont_diagnostics"
+                android:summary="@string/neocont_diagnostics_summary" />
+    </PreferenceScreen>
+</PreferenceScreen>
