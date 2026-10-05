@@ -1738,9 +1738,7 @@ public class NotificationService {
                         mXmppConnectionService,
                         generateRequestCode(message.getConversation(), 18),
                         intent,
-                        s()
-                                ? PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-                                : PendingIntent.FLAG_UPDATE_CURRENT);
+                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             }
         }
         return null;
