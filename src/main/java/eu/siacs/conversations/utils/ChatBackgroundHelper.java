@@ -4,8 +4,10 @@ import static android.app.Activity.RESULT_OK;
 
 import android.app.Activity;
 import android.app.Fragment;
+import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ProviderInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -116,46 +118,69 @@ public class ChatBackgroundHelper {
         fragment.startActivityForResult(Intent.createChooser(intent, "Select image"), REQUEST_IMPORT_BACKGROUND);
     }
 
-    private static void onPickFile(Activity activity, Uri uri, @Nullable String conversationUUID) {
-        if (uri != null) {
-            InputStream in;
-            OutputStream out;
-            try {
-                File bgfolder = new File(activity.getFilesDir() + File.separator + "backgrounds");
-                File bgfile;
+    private static boolean isSafeExternalContentUri(final Activity activity, final Uri uri) {
+        if (!ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) {
+            return false;
+        }
+        final String authority = uri.getAuthority();
+        if (authority == null || authority.isEmpty()) {
+            return false;
+        }
+        final ProviderInfo providerInfo =
+                activity.getPackageManager().resolveContentProvider(authority, 0);
+        return providerInfo != null
+                && providerInfo.applicationInfo != null
+                && providerInfo.applicationInfo.uid != activity.getApplicationInfo().uid;
+    }
 
-                if (conversationUUID != null) {
-                    bgfile = new File(activity.getFilesDir() + File.separator + "backgrounds" + File.separator + "bg_" + conversationUUID + ".jpg");
-                } else {
-                   bgfile = new File(activity.getFilesDir() + File.separator + "backgrounds" + File.separator + "bg.jpg");
-                }
-                //create output directory if it doesn't exist
-                if (!bgfolder.exists()) {
-                    bgfolder.mkdirs();
-                }
+    private static void onPickFile(
+            final Activity activity, final Uri uri, @Nullable final String conversationUUID) {
+        if (uri == null) {
+            return;
+        }
+        if (!isSafeExternalContentUri(activity, uri)) {
+            Toast.makeText(activity, R.string.create_background_failed, Toast.LENGTH_LONG).show();
+            Log.w(Config.LOGTAG, "Rejected unsafe chat background URI");
+            return;
+        }
+        try {
+            final File bgfolder =
+                    new File(activity.getFilesDir() + File.separator + "backgrounds");
+            final File bgfile;
 
-                in = activity.getContentResolver().openInputStream(uri);
-                out = new FileOutputStream(bgfile);
-                byte[] buffer = new byte[4096];
-                int read;
-                while ((read = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, read);
-                }
-                in.close();
-                in = null;
-                // write the output file
-                out.flush();
-                out.close();
-                out = null;
-                compressImage(activity, bgfile, uri, 0);
-                if (conversationUUID == null) {
-                    ChatWallpaperPresets.selectCustom(activity);
-                }
-                Toast.makeText(activity, R.string.custom_background_set,Toast.LENGTH_LONG).show();
-            } catch (IOException exception) {
-                Toast.makeText(activity,R.string.create_background_failed,Toast.LENGTH_LONG).show();
-                Log.d(Config.LOGTAG, "Could not create background" + exception);
+            if (conversationUUID != null) {
+                bgfile =
+                        new File(
+                                activity.getFilesDir()
+                                        + File.separator
+                                        + "backgrounds"
+                                        + File.separator
+                                        + "bg_"
+                                        + conversationUUID
+                                        + ".jpg");
+            } else {
+                bgfile =
+                        new File(
+                                activity.getFilesDir()
+                                        + File.separator
+                                        + "backgrounds"
+                                        + File.separator
+                                        + "bg.jpg");
             }
+            if (!bgfolder.exists() && !bgfolder.mkdirs()) {
+                throw new IOException("Could not create backgrounds directory");
+            }
+
+            // Decode and re-encode the selected image directly. Do not first copy arbitrary
+            // provider bytes into app-private storage.
+            compressImage(activity, bgfile, uri, 0);
+            if (conversationUUID == null) {
+                ChatWallpaperPresets.selectCustom(activity);
+            }
+            Toast.makeText(activity, R.string.custom_background_set, Toast.LENGTH_LONG).show();
+        } catch (final IOException exception) {
+            Toast.makeText(activity, R.string.create_background_failed, Toast.LENGTH_LONG).show();
+            Log.d(Config.LOGTAG, "Could not create background", exception);
         }
     }
 
