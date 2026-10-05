@@ -273,7 +273,7 @@ public class AttachFileToConversationRunnable implements Runnable, TranscoderLis
     private void retireFailedVideoStaging() {
         final File staging = transcodedVideoStaging;
         transcodedVideoStaging = null;
-        if (staging != null && !VideoAttachmentStaging.retire(staging)) {
+        if (staging != null && !VideoAttachmentStaging.retire(mXmppConnectionService, staging)) {
             Log.w(Config.LOGTAG, "unable to retire failed outgoing video staging");
         }
     }
@@ -308,7 +308,7 @@ public class AttachFileToConversationRunnable implements Runnable, TranscoderLis
         if (originalFileSize != 0 && convertedFileSize >= originalFileSize) {
             if (SecureOutgoingVideoTranscodingPolicy.usesPrivateStaging(
                     Config.SECURE_CONTENT_MEDIA_ROLLOUT)) {
-                if (!VideoAttachmentStaging.retire(file)) {
+                if (!VideoAttachmentStaging.retire(mXmppConnectionService, file)) {
                     Log.w(Config.LOGTAG, "unable to retire oversized outgoing video staging");
                     mXmppConnectionService.failMediaSendBatchMessage(
                             message, mediaSendBatchId, mediaCaptionId);
@@ -335,7 +335,7 @@ public class AttachFileToConversationRunnable implements Runnable, TranscoderLis
                     FileBackend.getUriForFile(mXmppConnectionService, file),
                     "video/mp4",
                     convertedFileSize,
-                    () -> VideoAttachmentStaging.retire(file));
+                    () -> VideoAttachmentStaging.retire(mXmppConnectionService, file));
             return;
         }
         mXmppConnectionService.getFileBackend().updateFileParams(message);

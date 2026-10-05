@@ -682,7 +682,7 @@ public class VideoEditActivity extends BaseActivity implements TranscoderListene
                         }
                         runOnUiThread(() -> finishWithOutput(target));
                     } catch (final Exception error) {
-                        VideoAttachmentStaging.retire(target);
+                        VideoAttachmentStaging.retire(this, target);
                         runOnUiThread(this::showPreparationError);
                     }
                 });
@@ -739,7 +739,7 @@ public class VideoEditActivity extends BaseActivity implements TranscoderListene
                                 .transcode();
             }
         } catch (final RuntimeException error) {
-            VideoAttachmentStaging.retire(target);
+            VideoAttachmentStaging.retire(this, target);
             showPreparationError();
         }
     }
@@ -781,7 +781,7 @@ public class VideoEditActivity extends BaseActivity implements TranscoderListene
     public void onTranscodeFailed(@NonNull final Throwable exception) {
         final File target = outputFile;
         if (target != null) {
-            VideoAttachmentStaging.retire(target);
+            VideoAttachmentStaging.retire(this, target);
         }
         runOnUiThread(
                 () -> {
@@ -792,7 +792,7 @@ public class VideoEditActivity extends BaseActivity implements TranscoderListene
 
     private void finishWithOutput(@NonNull final File file) {
         if (isFinishing() || isDestroyed()) {
-            VideoAttachmentStaging.retire(file);
+            VideoAttachmentStaging.retire(this, file);
             return;
         }
         final Uri uri = FileBackend.getUriForFile(this, file);
@@ -826,7 +826,7 @@ public class VideoEditActivity extends BaseActivity implements TranscoderListene
         final File target = outputFile;
         outputFile = null;
         if (target != null) {
-            VideoAttachmentStaging.retire(target);
+            VideoAttachmentStaging.retire(this, target);
         }
         Toast.makeText(this, R.string.video_editor_failed, Toast.LENGTH_SHORT).show();
     }
@@ -840,7 +840,7 @@ public class VideoEditActivity extends BaseActivity implements TranscoderListene
         final File target = outputFile;
         outputFile = null;
         if (target != null) {
-            VideoAttachmentStaging.retire(target);
+            VideoAttachmentStaging.retire(this, target);
         }
         resultDelivered = false;
         setResult(Activity.RESULT_CANCELED);
@@ -878,7 +878,7 @@ public class VideoEditActivity extends BaseActivity implements TranscoderListene
         if (!resultDelivered && transcodeFuture == null) {
             final File target = outputFile;
             if (target != null) {
-                VideoAttachmentStaging.retire(target);
+                VideoAttachmentStaging.retire(this, target);
             }
         }
         super.onDestroy();

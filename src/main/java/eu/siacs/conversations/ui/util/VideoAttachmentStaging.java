@@ -38,17 +38,33 @@ public final class VideoAttachmentStaging {
     public static SecureOutgoingAttachmentStagingRetirer retirerForUri(
             final Context context, final Uri uri) {
         final File file = fileForUri(context, uri);
-        return file == null ? null : () -> retire(file);
+        return file == null ? null : () -> retire(context, file);
     }
 
     public static boolean retireControlledUri(final Context context, final Uri uri) {
         final File file = fileForUri(context, uri);
-        return file == null || retire(file);
+        return file == null || retire(context, file);
     }
 
-    /** A missing staging file is already retired; a deletion failure is reported to the caller. */
-    public static boolean retire(final File file) {
-        return !file.exists() || file.delete();
+    /**
+     * Retires only files that resolve directly inside this class's app-private staging directory.
+     * A missing controlled staging file is already retired; anything outside the directory fails
+     * closed and is never deleted.
+     */
+    public static boolean retire(final Context context, final File file) {
+        if (context == null || file == null) {
+            return false;
+        }
+        try {
+            final File root = directory(context).getCanonicalFile();
+            final File candidate = file.getCanonicalFile();
+            if (!root.equals(candidate.getParentFile())) {
+                return false;
+            }
+            return !candidate.exists() || candidate.delete();
+        } catch (final IOException | SecurityException e) {
+            return false;
+        }
     }
 
     @Nullable
