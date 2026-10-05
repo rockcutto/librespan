@@ -4,8 +4,11 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.Parcelable;
@@ -66,25 +69,80 @@ public class UnifiedPushDistributor extends BroadcastReceiver {
             return;
         }
         final String action = intent.getAction();
-        final String application;
-        final Parcelable appVerification = intent.getParcelableExtra("app");
-        if (appVerification instanceof PendingIntent pendingIntent) {
-            application = pendingIntent.getIntentSender().getCreatorPackage();
-            Log.d(Config.LOGTAG, "received application name via pending intent " + application);
-        } else {
-            application = intent.getStringExtra("application");
-        }
         final Parcelable messenger = intent.getParcelableExtra("messenger");
         final String instance = intent.getStringExtra("token");
         final List<String> features = intent.getStringArrayListExtra("features");
         switch (Strings.nullToEmpty(action)) {
-            case ACTION_REGISTER -> register(context, application, instance, features, messenger);
+            case ACTION_REGISTER -> {
+                final String application = resolveRegistrationApplication(context, intent);
+                register(context, application, instance, features, messenger);
+            }
             case ACTION_UNREGISTER -> unregister(context, instance);
             case Intent.ACTION_PACKAGE_FULLY_REMOVED -> unregisterApplication(
                     context, intent.getData());
             default -> Log.d(
                     Config.LOGTAG, "UnifiedPushDistributor received unknown action " + action);
         }
+    }
+
+    private String resolveRegistrationApplication(
+            final Context context, final Intent intent) {
+        final String claimedApplication = intent.getStringExtra("application");
+        final String verifiedApplication;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            final String sentFromPackage = getSentFromPackage();
+            if (!Strings.isNullOrEmpty(sentFromPackage)) {
+                verifiedApplication = sentFromPackage;
+            } else {
+                verifiedApplication = getLegacyPendingIntentCreator(context, intent);
+            }
+        } else {
+            verifiedApplication = getLegacyPendingIntentCreator(context, intent);
+        }
+
+        if (Strings.isNullOrEmpty(verifiedApplication)) {
+            Log.w(Config.LOGTAG, "ignoring UnifiedPush registration without verified app identity");
+            return null;
+        }
+        if (!Strings.isNullOrEmpty(claimedApplication)
+                && !verifiedApplication.equals(claimedApplication)) {
+            Log.w(Config.LOGTAG, "ignoring UnifiedPush registration with mismatched app identity");
+            return null;
+        }
+        return verifiedApplication;
+    }
+
+    private String getLegacyPendingIntentCreator(final Context context, final Intent intent) {
+        Parcelable appVerification = intent.getParcelableExtra("pi");
+        if (!(appVerification instanceof PendingIntent)) {
+            // Compatibility with older UnifiedPush connector implementations.
+            appVerification = intent.getParcelableExtra("app");
+        }
+        if (!(appVerification instanceof PendingIntent pendingIntent)) {
+            return null;
+        }
+
+        final String creatorPackage = pendingIntent.getCreatorPackage();
+        if (Strings.isNullOrEmpty(creatorPackage)) {
+            return null;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            try {
+                final ApplicationInfo applicationInfo =
+                        context.getPackageManager().getApplicationInfo(creatorPackage, 0);
+                if (applicationInfo.targetSdkVersion >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    // AND_3 requires apps targeting API 34+ to use FLAG_SHARE_IDENTITY.
+                    return null;
+                }
+            } catch (final PackageManager.NameNotFoundException e) {
+                return null;
+            }
+        }
+
+        Log.d(Config.LOGTAG, "verified UnifiedPush application via pending intent");
+        return creatorPackage;
     }
 
     private void register(
