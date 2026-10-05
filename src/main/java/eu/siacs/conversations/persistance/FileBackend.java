@@ -51,7 +51,6 @@ import eu.siacs.conversations.ui.adapter.MediaAdapter;
 import eu.siacs.conversations.ui.util.Attachment;
 import eu.siacs.conversations.ui.util.VideoThumbnailOverlay;
 import eu.siacs.conversations.utils.CryptoHelper;
-import eu.siacs.conversations.utils.FileUtils;
 import eu.siacs.conversations.utils.FileWriterException;
 import eu.siacs.conversations.utils.MimeUtils;
 import eu.siacs.conversations.xmpp.pep.Avatar;
@@ -824,13 +823,8 @@ public class FileBackend {
     }
 
     public boolean useImageAsIs(final Uri uri) {
-        final String path = getOriginalPath(uri);
-        if (path == null || isPathBlacklisted(path)) {
-            return false;
-        }
-        final File file = new File(path);
-        long size = file.length();
-        if (size == 0
+        final long size = getFileSize(mXmppConnectionService, uri);
+        if (size <= 0
                 || size
                         >= mXmppConnectionService
                                 .getResources()
@@ -853,15 +847,6 @@ public class FileBackend {
         } catch (FileNotFoundException e) {
             Log.d(Config.LOGTAG, "unable to get image dimensions", e);
             return false;
-        }
-    }
-
-    public String getOriginalPath(final Uri uri) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // On Android 11+ we don’t have access to the original file
-            return null;
-        } else {
-            return FileUtils.getPath(mXmppConnectionService, uri);
         }
     }
 
