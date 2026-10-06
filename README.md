@@ -32,20 +32,29 @@ through XMPP.
 
 ## Build
 
-LibreSpan's upstream Gradle configuration builds a universal APK by default.
+LibreSpan's Gradle configuration builds ABI-specific APKs for:
 
-```text
-bash ./gradlew assembleLibreSpanDebug
-bash ./gradlew assembleLibreSpanRelease
+- `armeabi-v7a`
+- `arm64-v8a`
+- `x86`
+- `x86_64`
+
+```bash
+./gradlew assembleLibreSpanDebug
+./gradlew assembleLibreSpanRelease
 ```
 
-Build outputs are written under `build/outputs/apk/conversationsFree/`. The internal Android
-variant remains `ConversationsFree`; the LibreSpan Gradle aliases are the supported human-facing
-build commands.
+Build outputs are written under:
 
-For distribution, LibreSpan also provides ABI-specific APKs for `armeabi-v7a`, `arm64-v8a`,
-`x86`, and `x86_64`. These release APKs are produced by the F-Droid build recipe and published
-as signed GitHub release assets.
+```text
+build/outputs/apk/conversationsFree/
+```
+
+The internal Android variant remains `ConversationsFree`; the LibreSpan Gradle aliases are the supported human-facing build commands.
+
+Each ABI-specific APK receives its own version code derived from the base application version code.
+
+Signed ABI-specific APKs are published as GitHub release assets. The F-Droid build recipe reproduces the corresponding ABI-specific builds from the tagged source revision.
 
 ## Channel lifecycle
 
