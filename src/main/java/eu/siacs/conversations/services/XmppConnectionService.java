@@ -1301,7 +1301,7 @@ public class XmppConnectionService extends Service {
                             final File committedSource = secureImageStaging;
                             final SecureOutgoingAttachmentStagingRetirer stagingRetirer =
                                     ImageAttachmentStaging.combine(
-                                            () -> ImageAttachmentStaging.retire(committedSource),
+                                            () -> ImageAttachmentStaging.retire(this, committedSource),
                                             sourceStagingRetirer);
                             new AttachFileToConversationRunnable(
                                             this,
@@ -1319,7 +1319,7 @@ public class XmppConnectionService extends Service {
                         getFileBackend().copyImageToPrivateStorage(message, uri);
                     } catch (FileBackend.ImageCompressionException e) {
                         if (secureImageStaging != null) {
-                            ImageAttachmentStaging.retire(secureImageStaging);
+                            ImageAttachmentStaging.retire(this, secureImageStaging);
                         }
                         if (!Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
                             message.setType(Message.TYPE_FILE);
@@ -1338,7 +1338,7 @@ public class XmppConnectionService extends Service {
                         return;
                     } catch (final FileBackend.FileCopyException e) {
                         if (secureImageStaging != null) {
-                            ImageAttachmentStaging.retire(secureImageStaging);
+                            ImageAttachmentStaging.retire(this, secureImageStaging);
                         }
                         failMediaSendBatchMessage(message, mediaSendBatchId, mediaCaptionId);
                         callback.error(e.getResId(), message);
@@ -1371,8 +1371,8 @@ public class XmppConnectionService extends Service {
         };
     }
 
-    private static void retireFailedImageStaging(final File staging) {
-        if (!ImageAttachmentStaging.retire(staging)) {
+    private void retireFailedImageStaging(final File staging) {
+        if (!ImageAttachmentStaging.retire(this, staging)) {
             Log.w(Config.LOGTAG, "unable to retire failed outgoing image staging");
         }
     }

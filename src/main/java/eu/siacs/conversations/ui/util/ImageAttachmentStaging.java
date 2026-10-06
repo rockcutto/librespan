@@ -56,7 +56,7 @@ public final class ImageAttachmentStaging {
     public static SecureOutgoingAttachmentStagingRetirer retirerForUri(
             final Context context, final Uri uri) {
         final File file = fileForUri(context, uri);
-        return file == null ? null : () -> retire(file);
+        return file == null ? null : () -> retire(context, file);
     }
 
     @Nullable
@@ -72,14 +72,41 @@ public final class ImageAttachmentStaging {
         return () -> first.retire() && second.retire();
     }
 
-    /** A missing staging file is already retired; a deletion failure is reported to the caller. */
-    public static boolean retire(final File file) {
-        return !file.exists() || file.delete();
+    /**
+     * Retires only files that resolve directly inside one of the app-private image staging roots.
+     * A missing controlled staging file is already retired; anything outside those roots fails
+     * closed and is never deleted.
+     */
+    public static boolean retire(final Context context, final File file) {
+        if (context == null || file == null) {
+            return false;
+        }
+        try {
+            final File candidate = file.getCanonicalFile();
+            final File parent = candidate.getParentFile();
+            if (!isControlledParent(context, parent)) {
+                return false;
+            }
+            return !candidate.exists() || candidate.delete();
+        } catch (final IOException | SecurityException e) {
+            return false;
+        }
     }
 
     public static boolean retireControlledUri(final Context context, final Uri uri) {
         final File file = fileForUri(context, uri);
-        return file == null || retire(file);
+        return file == null || retire(context, file);
+    }
+
+    private static boolean isControlledParent(final Context context, final File parent)
+            throws IOException {
+        if (parent == null) {
+            return false;
+        }
+        final File canonicalParent = parent.getCanonicalFile();
+        final File transformedRoot = directory(context).getCanonicalFile();
+        final File cameraRoot = new File(context.getCacheDir(), "Camera").getCanonicalFile();
+        return transformedRoot.equals(canonicalParent) || cameraRoot.equals(canonicalParent);
     }
 
     @Nullable
