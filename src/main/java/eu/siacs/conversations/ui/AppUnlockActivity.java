@@ -20,6 +20,7 @@ import com.google.android.material.button.MaterialButton;
 
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.services.XmppConnectionService;
+import eu.siacs.conversations.security.applock.AppLockBiometricAuthenticationOperationV1;
 import eu.siacs.conversations.security.applock.AppLockController;
 import eu.siacs.conversations.security.applock.AppUnlockOutcome;
 import eu.siacs.conversations.security.cryptolock.PendingSecureContentNormalUnlockV1;
@@ -34,6 +35,7 @@ public final class AppUnlockActivity extends AppCompatActivity {
     private static final int REQUEST_HIGH_SECURITY_RECOVERY = 0x4c02;
 
     private CancellationSignal biometricCancellationSignal;
+    private AppLockBiometricAuthenticationOperationV1 appLockBiometricOperation;
     private boolean biometricPromptActive;
     private boolean credentialIntentActive;
     private boolean unlockCompleted;
@@ -341,6 +343,15 @@ public final class AppUnlockActivity extends AppCompatActivity {
             return;
         }
 
+        closeAppLockBiometricOperation();
+        final AppLockBiometricAuthenticationOperationV1 operation =
+                AppLockBiometricAuthenticationOperationV1.prepare(this);
+        if (operation == null) {
+            requestDeviceCredential();
+            return;
+        }
+        appLockBiometricOperation = operation;
+
         final long generation = ++promptGeneration;
         final BiometricPrompt.Builder builder =
                 new BiometricPrompt.Builder(this)
@@ -359,6 +370,7 @@ public final class AppUnlockActivity extends AppCompatActivity {
                         return;
                     }
                     clearCurrentPromptWithoutCancel();
+                    closeAppLockBiometricOperation();
                     requestDeviceCredential();
                 });
 
@@ -367,6 +379,7 @@ public final class AppUnlockActivity extends AppCompatActivity {
         try {
             builder.build()
                 .authenticate(
+                        operation.cryptoObject(),
                         biometricCancellationSignal,
                         getMainExecutor(),
                         new BiometricPrompt.AuthenticationCallback() {
@@ -374,19 +387,40 @@ public final class AppUnlockActivity extends AppCompatActivity {
                             public void onAuthenticationSucceeded(
                                     final BiometricPrompt.AuthenticationResult result) {
                                 if (!isCurrentPrompt(generation)) {
+                                    operation.close();
                                     return;
                                 }
                                 clearCurrentPromptWithoutCancel();
-                                finishUnlocked();
+                                if (appLockBiometricOperation != operation) {
+                                    operation.close();
+                                    return;
+                                }
+                                appLockBiometricOperation = null;
+                                final boolean authenticated;
+                                try {
+                                    authenticated = operation.complete(result.getCryptoObject());
+                                } catch (final RuntimeException ignored) {
+                                    operation.close();
+                                    requestDeviceCredential();
+                                    return;
+                                }
+                                if (authenticated) {
+                                    finishUnlocked();
+                                } else {
+                                    operation.close();
+                                    requestDeviceCredential();
+                                }
                             }
 
                             @Override
                             public void onAuthenticationError(
                                     final int errorCode, final CharSequence errString) {
                                 if (!isCurrentPrompt(generation)) {
+                                    operation.close();
                                     return;
                                 }
                                 clearCurrentPromptWithoutCancel();
+                                closeAppLockBiometricOperation();
                                 if (credentialIntentActive) {
                                     return;
                                 }
@@ -460,9 +494,18 @@ public final class AppUnlockActivity extends AppCompatActivity {
         biometricCancellationSignal = null;
     }
 
+    private void closeAppLockBiometricOperation() {
+        final AppLockBiometricAuthenticationOperationV1 operation = appLockBiometricOperation;
+        appLockBiometricOperation = null;
+        if (operation != null) {
+            operation.close();
+        }
+    }
+
     private void cancelBiometricForTransition() {
         promptGeneration++;
         biometricPromptActive = false;
+        closeAppLockBiometricOperation();
         final CancellationSignal cancellation = biometricCancellationSignal;
         biometricCancellationSignal = null;
         if (cancellation != null) {
@@ -589,6 +632,7 @@ public final class AppUnlockActivity extends AppCompatActivity {
             biometricCancellationSignal = null;
         }
         biometricPromptActive = false;
+        closeAppLockBiometricOperation();
         if (!unlockCompleted && isFinishing() && !isChangingConfigurations()) {
             AppLockController.onUnlockUiDismissed(this);
         }
