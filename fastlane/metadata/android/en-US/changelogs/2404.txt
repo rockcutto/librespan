@@ -1,0 +1,9 @@
+LibreSpan 0.9.1 is a security-hardening maintenance release.
+
+- Hardened App Lock and High Security recovery authentication with Android Keystore-backed cryptographic proof.
+- Restricted temporary image and video cleanup to controlled application directories.
+- Hardened UnifiedPush registration sender verification.
+- Hardened imported content URI handling and image processing.
+- Fixed mutable implicit PendingIntent usage.
+
+No feature scope expansion in this release.
