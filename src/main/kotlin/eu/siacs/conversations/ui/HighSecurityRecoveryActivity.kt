@@ -26,6 +26,7 @@ import eu.siacs.conversations.R
 import eu.siacs.conversations.security.cryptolock.InactiveDeviceRecoveryRepairTransactionV1
 import eu.siacs.conversations.security.cryptolock.PendingRecoveryRepairVerificationV1
 import eu.siacs.conversations.security.cryptolock.PendingRecoveryRepairWrapV1
+import eu.siacs.conversations.security.cryptolock.RecoveryOwnerAuthenticationOperationV1
 import eu.siacs.conversations.security.cryptolock.RecoveryRepairResultV1
 import eu.siacs.conversations.security.cryptolock.RecoveryRepairSessionV1
 import eu.siacs.conversations.utils.ThemeHelper
@@ -34,6 +35,7 @@ class HighSecurityRecoveryActivity : AppCompatActivity() {
     private var transaction: InactiveDeviceRecoveryRepairTransactionV1? = null
     private var cancellation: CancellationSignal? = null
     private var promptGeneration = 0L
+    private var ownerAuthentication: RecoveryOwnerAuthenticationOperationV1? = null
     private var activeSession: RecoveryRepairSessionV1? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,6 +50,8 @@ class HighSecurityRecoveryActivity : AppCompatActivity() {
         promptGeneration++
         cancellation?.cancel()
         cancellation = null
+        ownerAuthentication?.close()
+        ownerAuthentication = null
         activeSession?.close()
         activeSession = null
         super.onDestroy()
@@ -106,6 +110,12 @@ class HighSecurityRecoveryActivity : AppCompatActivity() {
     private fun authenticateRecoveryOwner(onSuccess: () -> Unit) {
         val generation = ++promptGeneration
         cancellation?.cancel()
+        ownerAuthentication?.close()
+        ownerAuthentication = null
+
+        val operation = RecoveryOwnerAuthenticationOperationV1.prepare(this) ?: return
+        ownerAuthentication = operation
+
         val signal = CancellationSignal()
         cancellation = signal
         try {
@@ -131,6 +141,7 @@ class HighSecurityRecoveryActivity : AppCompatActivity() {
                 )
                 .build()
             prompt.authenticate(
+                operation.cryptoObject(),
                 signal,
                 mainExecutor,
                 object : BiometricPrompt.AuthenticationCallback() {
@@ -139,7 +150,23 @@ class HighSecurityRecoveryActivity : AppCompatActivity() {
                     ) {
                         if (generation != promptGeneration) return
                         cancellation = null
-                        onSuccess()
+                        val active = ownerAuthentication
+                        ownerAuthentication = null
+                        val authenticated =
+                            if (active !== operation) {
+                                operation.close()
+                                false
+                            } else {
+                                try {
+                                    operation.complete(result.cryptoObject)
+                                } catch (_: RuntimeException) {
+                                    operation.close()
+                                    false
+                                }
+                            }
+                        if (authenticated) {
+                            onSuccess()
+                        }
                     }
 
                     override fun onAuthenticationError(
@@ -148,11 +175,15 @@ class HighSecurityRecoveryActivity : AppCompatActivity() {
                     ) {
                         if (generation != promptGeneration) return
                         cancellation = null
+                        ownerAuthentication = null
+                        operation.close()
                     }
                 },
             )
         } catch (_: RuntimeException) {
             cancellation = null
+            ownerAuthentication = null
+            operation.close()
         }
     }
 
