@@ -33,7 +33,7 @@ configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configu
 }
 
 spotless {
-    ratchetFrom 'a7bd7509d8fabcdb1c69570235c097368d219419'
+    ratchetFrom 'cb32e1669afb622a5c5a4540676fc1a11b86a277'
     java {
         target '**/*.java'
         googleJavaFormat().aosp().reflowLongStrings()
