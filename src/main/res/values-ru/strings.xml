@@ -1811,4 +1811,5 @@
     <string name="network_diagnostics_quality_fair">Средне</string>
     <string name="network_diagnostics_quality_poor">Плохо</string>
     <string name="network_diagnostics_copied">Отчёт о сети скопирован</string>
+    <string name="reply_original_unavailable">Исходное сообщение недоступно</string>
 </resources>
