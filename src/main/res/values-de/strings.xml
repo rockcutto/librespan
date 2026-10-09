@@ -2115,4 +2115,7 @@
     <string name="network_diagnostics_quality_poor">Schlecht</string>
     <string name="network_diagnostics_copied">Netzwerkbericht kopiert</string>
     <string name="reply_original_unavailable">Ursprüngliche Nachricht nicht verfügbar</string>
-</resources>
+    <string name="omemo_chat_trust_required">Bestätige den OMEMO-Schlüssel, um Nachrichten zu senden.</string>
+    <string name="omemo_chat_fetching_keys">OMEMO-Schlüssel werden geladen…</string>
+    <string name="omemo_chat_verify_keys">Schlüssel prüfen</string>
+    <string name="omemo_chat_no_active_keys">Noch keine aktiven OMEMO-Geräteschlüssel verfügbar.</string>\n</resources>
