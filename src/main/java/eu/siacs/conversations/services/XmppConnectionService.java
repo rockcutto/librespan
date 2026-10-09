@@ -38,7 +38,6 @@ import android.os.IBinder;
 import android.os.Messenger;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
-import android.os.Process;
 import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.provider.ContactsContract;
@@ -63,45 +62,6 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import eu.siacs.conversations.AppSettings;
-
-import net.java.otr4j.session.Session;
-import net.java.otr4j.session.SessionID;
-import net.java.otr4j.session.SessionImpl;
-import net.java.otr4j.session.SessionStatus;
-
-import org.conscrypt.Conscrypt;
-import org.jxmpp.stringprep.libidn.LibIdnXmppStringprep;
-
-import java.io.File;
-import java.io.IOException;
-import java.security.Security;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Hashtable;
-import java.util.Iterator;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
-import java.util.Set;
-import java.util.WeakHashMap;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
-
 import eu.siacs.conversations.Config;
 import eu.siacs.conversations.Conversations;
 import eu.siacs.conversations.R;
@@ -118,7 +78,6 @@ import eu.siacs.conversations.entities.Conversation;
 import eu.siacs.conversations.entities.Conversational;
 import eu.siacs.conversations.entities.DownloadableFile;
 import eu.siacs.conversations.entities.Message;
-import eu.siacs.conversations.entities.media.MediaCaptionResolver;
 import eu.siacs.conversations.entities.MucOptions;
 import eu.siacs.conversations.entities.MucOptions.OnRenameListener;
 import eu.siacs.conversations.entities.Presence;
@@ -126,45 +85,10 @@ import eu.siacs.conversations.entities.PresenceTemplate;
 import eu.siacs.conversations.entities.Reaction;
 import eu.siacs.conversations.entities.Roster;
 import eu.siacs.conversations.entities.ServiceDiscoveryResult;
+import eu.siacs.conversations.entities.media.MediaCaptionResolver;
 import eu.siacs.conversations.generator.AbstractGenerator;
 import eu.siacs.conversations.generator.IqGenerator;
 import eu.siacs.conversations.generator.MessageGenerator;
-import eu.siacs.conversations.services.media.OutgoingMediaCaptionCoordinator;
-import eu.siacs.conversations.security.cryptolock.InactiveDeviceActivationRecoveryCoordinatorV1;
-import eu.siacs.conversations.security.cryptolock.InactiveDeviceDeactivationRecoveryCoordinatorV1;
-import eu.siacs.conversations.security.cryptolock.InactiveDevicePrivacyRuntimeV1;
-import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1;
-import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionStateV1;
-import eu.siacs.conversations.storage.secure.AccountSecretConnectionPolicyV1;
-import eu.siacs.conversations.storage.secure.PersistentSecureContentKeyMaterialStore;
-import eu.siacs.conversations.storage.secure.AccountSecretMigrationCoordinatorV1;
-import eu.siacs.conversations.storage.secure.AccountSecretMigrationOutcomeV1;
-import eu.siacs.conversations.storage.secure.AccountSecretRetirementV1;
-import eu.siacs.conversations.storage.secure.AccountSecretRuntimePersistenceV1;
-import eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaReadCache;
-import eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaSaver;
-import eu.siacs.conversations.storage.secure.DatabaseSecureMessagePayloadCoordinator;
-import eu.siacs.conversations.storage.secure.LegacyPlaintextMessageMigrator;
-import eu.siacs.conversations.storage.secure.LegacyPlaintextSqliteCleanupCoordinator;
-import eu.siacs.conversations.storage.secure.LegacyPlaintextSqliteCleanupResult;
-import eu.siacs.conversations.storage.secure.SecureColdStartPerfTrace;
-import eu.siacs.conversations.storage.secure.SecureContentObject;
-import eu.siacs.conversations.storage.secure.SecureMessageMediaCoordinator;
-import eu.siacs.conversations.storage.secure.SecureMessagePayloadCoordinator;
-import eu.siacs.conversations.storage.secure.SecureMessagePayloadMode;
-import eu.siacs.conversations.storage.secure.SecureMessageSearchCoordinator;
-import eu.siacs.conversations.storage.secure.SecureMessageSearchRepairResult;
-import eu.siacs.conversations.storage.secure.SecureMessageSearchRuntime;
-import eu.siacs.conversations.storage.secure.SecureMessageTextRepository;
-import eu.siacs.conversations.storage.secure.SecureTextPayload;
-import eu.siacs.conversations.storage.secure.SecureTextPayloadTooLargeException;
-import eu.siacs.conversations.storage.secure.SecureMessageRetirementBoundary;
-import eu.siacs.conversations.storage.secure.SecureMessageMediaLifecyclePolicy;
-import eu.siacs.conversations.storage.secure.SecureOutgoingTextPayloadPublisher;
-import eu.siacs.conversations.storage.secure.SecureOutgoingTextPayloadReader;
-import eu.siacs.conversations.storage.secure.SecureOutgoingAttachmentStagingRetirer;
-import eu.siacs.conversations.storage.secure.SecureOutgoingVoiceStagingRetirer;
-import eu.siacs.conversations.storage.secure.ScopedAccountSecretVaultV1;
 import eu.siacs.conversations.generator.PresenceGenerator;
 import eu.siacs.conversations.http.HttpConnectionManager;
 import eu.siacs.conversations.parser.AbstractParser;
@@ -176,26 +100,59 @@ import eu.siacs.conversations.persistance.FilePathInfo;
 import eu.siacs.conversations.persistance.LocalAccountDataSnapshot;
 import eu.siacs.conversations.persistance.UnifiedPushDatabase;
 import eu.siacs.conversations.receiver.SystemEventReceiver;
+import eu.siacs.conversations.security.cryptolock.InactiveDeviceActivationRecoveryCoordinatorV1;
+import eu.siacs.conversations.security.cryptolock.InactiveDeviceDeactivationRecoveryCoordinatorV1;
+import eu.siacs.conversations.security.cryptolock.InactiveDevicePrivacyRuntimeV1;
+import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1;
+import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionStateV1;
+import eu.siacs.conversations.services.media.OutgoingMediaCaptionCoordinator;
+import eu.siacs.conversations.storage.secure.AccountSecretConnectionPolicyV1;
+import eu.siacs.conversations.storage.secure.AccountSecretMigrationCoordinatorV1;
+import eu.siacs.conversations.storage.secure.AccountSecretMigrationOutcomeV1;
+import eu.siacs.conversations.storage.secure.AccountSecretRetirementV1;
+import eu.siacs.conversations.storage.secure.AccountSecretRuntimePersistenceV1;
+import eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaReadCache;
+import eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaSaver;
+import eu.siacs.conversations.storage.secure.DatabaseSecureMessagePayloadCoordinator;
+import eu.siacs.conversations.storage.secure.LegacyPlaintextMessageMigrator;
+import eu.siacs.conversations.storage.secure.LegacyPlaintextSqliteCleanupCoordinator;
+import eu.siacs.conversations.storage.secure.LegacyPlaintextSqliteCleanupResult;
+import eu.siacs.conversations.storage.secure.PersistentSecureContentKeyMaterialStore;
+import eu.siacs.conversations.storage.secure.ScopedAccountSecretVaultV1;
+import eu.siacs.conversations.storage.secure.SecureColdStartPerfTrace;
+import eu.siacs.conversations.storage.secure.SecureMessageMediaLifecyclePolicy;
+import eu.siacs.conversations.storage.secure.SecureMessagePayloadCoordinator;
+import eu.siacs.conversations.storage.secure.SecureMessagePayloadMode;
+import eu.siacs.conversations.storage.secure.SecureMessageRetirementBoundary;
+import eu.siacs.conversations.storage.secure.SecureMessageSearchCoordinator;
+import eu.siacs.conversations.storage.secure.SecureMessageSearchRepairResult;
+import eu.siacs.conversations.storage.secure.SecureMessageSearchRuntime;
+import eu.siacs.conversations.storage.secure.SecureMessageTextRepository;
+import eu.siacs.conversations.storage.secure.SecureOutgoingAttachmentStagingRetirer;
+import eu.siacs.conversations.storage.secure.SecureOutgoingTextPayloadPublisher;
+import eu.siacs.conversations.storage.secure.SecureOutgoingTextPayloadReader;
+import eu.siacs.conversations.storage.secure.SecureOutgoingVoiceStagingRetirer;
+import eu.siacs.conversations.storage.secure.SecureTextPayload;
+import eu.siacs.conversations.storage.secure.SecureTextPayloadTooLargeException;
 import eu.siacs.conversations.ui.ChooseAccountForProfilePictureActivity;
 import eu.siacs.conversations.ui.ConversationsActivity;
 import eu.siacs.conversations.ui.RtpSessionActivity;
 import eu.siacs.conversations.ui.UiCallback;
+import eu.siacs.conversations.ui.attachments.AttachmentBrowserRepository;
+import eu.siacs.conversations.ui.attachments.AttachmentEntry;
+import eu.siacs.conversations.ui.attachments.AttachmentPage;
 import eu.siacs.conversations.ui.interfaces.OnAttachmentPageLoaded;
 import eu.siacs.conversations.ui.interfaces.OnAvatarPublication;
 import eu.siacs.conversations.ui.interfaces.OnMediaLoaded;
 import eu.siacs.conversations.ui.interfaces.OnSearchResultsAvailable;
-import eu.siacs.conversations.ui.attachments.AttachmentBrowserRepository;
-import eu.siacs.conversations.ui.attachments.AttachmentEntry;
-import eu.siacs.conversations.ui.attachments.AttachmentPage;
 import eu.siacs.conversations.ui.util.Attachment;
-import eu.siacs.conversations.ui.util.ShareUtil;
 import eu.siacs.conversations.ui.util.ImageAttachmentStaging;
+import eu.siacs.conversations.ui.util.ShareUtil;
 import eu.siacs.conversations.ui.util.VideoAttachmentStaging;
 import eu.siacs.conversations.utils.Compatibility;
 import eu.siacs.conversations.utils.ConversationsFileObserver;
 import eu.siacs.conversations.utils.CryptoHelper;
 import eu.siacs.conversations.utils.EasyOnboardingInvite;
-import eu.siacs.conversations.utils.Emoticons;
 import eu.siacs.conversations.utils.Emoticons;
 import eu.siacs.conversations.utils.MimeUtils;
 import eu.siacs.conversations.utils.PhoneHelper;
@@ -236,6 +193,7 @@ import eu.siacs.conversations.xmpp.pep.Avatar;
 import eu.siacs.conversations.xmpp.pep.PublishOptions;
 import im.conversations.android.xmpp.model.stanza.Iq;
 import java.io.File;
+import java.io.IOException;
 import java.security.Security;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
@@ -243,13 +201,16 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -262,6 +223,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import me.leolin.shortcutbadger.ShortcutBadger;
+import net.java.otr4j.session.Session;
+import net.java.otr4j.session.SessionID;
+import net.java.otr4j.session.SessionImpl;
+import net.java.otr4j.session.SessionStatus;
 import org.conscrypt.Conscrypt;
 import org.jxmpp.stringprep.libidn.LibIdnXmppStringprep;
 
@@ -303,7 +268,7 @@ public class XmppConnectionService extends Service {
     public final CountDownLatch restoredFromDatabaseLatch = new CountDownLatch(1);
     private static final Executor FILE_OBSERVER_EXECUTOR = Executors.newSingleThreadExecutor();
     public static final Executor FILE_ATTACHMENT_EXECUTOR = Executors.newSingleThreadExecutor();
-    private final static Executor COPY_TO_DOWNLOAD_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final Executor COPY_TO_DOWNLOAD_EXECUTOR = Executors.newSingleThreadExecutor();
     private final ScheduledExecutorService internalPingExecutor =
             Executors.newSingleThreadScheduledExecutor();
 
@@ -381,8 +346,7 @@ public class XmppConnectionService extends Service {
     private final Executor legacyTextMigrationExecutor = Executors.newSingleThreadExecutor();
     private final Executor secureContentMaintenanceExecutor = Executors.newSingleThreadExecutor();
     private final Set<String> legacyTextMigrationInFlight = ConcurrentHashMap.newKeySet();
-    private final Set<String> secureContentAccountCleanupInProgress =
-            ConcurrentHashMap.newKeySet();
+    private final Set<String> secureContentAccountCleanupInProgress = ConcurrentHashMap.newKeySet();
     private final Object secureContentMigrationCleanupLock = new Object();
     private final Object secureContentMediaMutationLock = new Object();
     private final AtomicBoolean legacyBackgroundMigrationScheduled = new AtomicBoolean(false);
@@ -433,10 +397,12 @@ public class XmppConnectionService extends Service {
                         sendUnsentMessages(conversation);
                     }
                 } else {
-                    //check if the resource we are haveing a conversation with is still online
+                    // check if the resource we are haveing a conversation with is still online
                     if (conversation.hasValidOtrSession()) {
-                        String otrResource = conversation.getOtrSession().getSessionID().getUserID();
-                        if (!(Arrays.asList(contact.getPresences().toResourceArray()).contains(otrResource))) {
+                        String otrResource =
+                                conversation.getOtrSession().getSessionID().getUserID();
+                        if (!(Arrays.asList(contact.getPresences().toResourceArray())
+                                .contains(otrResource))) {
                             conversation.endOtrIfNeeded();
                         }
                     }
@@ -575,31 +541,35 @@ public class XmppConnectionService extends Service {
                                     && !pendingJoin
                                     && !inProgressJoin) {
                                 if (!conversation.startOtrIfNeeded()) {
-                            Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": couldn't start OTR with " + conversation.getContact().getJid() + " when needed");
+                                    Log.d(
+                                            Config.LOGTAG,
+                                            account.getJid().asBareJid()
+                                                    + ": couldn't start OTR with "
+                                                    + conversation.getContact().getJid()
+                                                    + " when needed");
+                                }
+                                sendUnsentMessages(conversation);
+                            }
                         }
-                        sendUnsentMessages(conversation);
-                    }
-                }
-                final List<Conversation> pendingLeaves;
-                synchronized (account.pendingConferenceLeaves) {
-                    pendingLeaves = new ArrayList<>(account.pendingConferenceLeaves);
-                    account.pendingConferenceLeaves.clear();
-
-                }
-                for (Conversation conversation : pendingLeaves) {
-                    leaveMuc(conversation);
-                }
-                final List<Conversation> pendingJoins;
-                synchronized (account.pendingConferenceJoins) {
-                    pendingJoins = new ArrayList<>(account.pendingConferenceJoins);
-                    account.pendingConferenceJoins.clear();
-                }
-                for (Conversation conversation : pendingJoins) {
-                    joinMuc(conversation);
-                }
-                scheduleWakeUpCall(
-                        getPingIntervalMillis(account, false),
-                        account.getUuid().hashCode());
+                        final List<Conversation> pendingLeaves;
+                        synchronized (account.pendingConferenceLeaves) {
+                            pendingLeaves = new ArrayList<>(account.pendingConferenceLeaves);
+                            account.pendingConferenceLeaves.clear();
+                        }
+                        for (Conversation conversation : pendingLeaves) {
+                            leaveMuc(conversation);
+                        }
+                        final List<Conversation> pendingJoins;
+                        synchronized (account.pendingConferenceJoins) {
+                            pendingJoins = new ArrayList<>(account.pendingConferenceJoins);
+                            account.pendingConferenceJoins.clear();
+                        }
+                        for (Conversation conversation : pendingJoins) {
+                            joinMuc(conversation);
+                        }
+                        scheduleWakeUpCall(
+                                getPingIntervalMillis(account, false),
+                                account.getUuid().hashCode());
                     } else if (account.getStatus() == Account.State.OFFLINE
                             || account.getStatus() == Account.State.DISABLED
                             || account.getStatus() == Account.State.LOGGED_OUT) {
@@ -695,59 +665,63 @@ public class XmppConnectionService extends Service {
     }
 
     public void copyAttachmentToDownloadsFolder(Message m, final UiCallback<Integer> callback) {
-        COPY_TO_DOWNLOAD_EXECUTOR.execute(() -> {
-            if (Config.SECURE_CONTENT_MEDIA_ROLLOUT && getApplication() instanceof Conversations) {
-                final Conversations application = (Conversations) getApplication();
-                final AndroidSecureMessageMediaSaver saver =
-                        new AndroidSecureMessageMediaSaver(
-                                this, application.getSecureContentStoreProvider().get());
-                try {
-                    if (saver.save(m)) {
-                        callback.success(-1);
-                        return;
+        COPY_TO_DOWNLOAD_EXECUTOR.execute(
+                () -> {
+                    if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                            && getApplication() instanceof Conversations) {
+                        final Conversations application = (Conversations) getApplication();
+                        final AndroidSecureMessageMediaSaver saver =
+                                new AndroidSecureMessageMediaSaver(
+                                        this, application.getSecureContentStoreProvider().get());
+                        try {
+                            if (saver.save(m)) {
+                                callback.success(-1);
+                                return;
+                            }
+                        } catch (final Exception e) {
+                            Log.w(Config.LOGTAG, "unable to save secure media to Downloads", e);
+                            callback.error(-1, R.string.error_io_exception);
+                            return;
+                        }
                     }
-                } catch (final Exception e) {
-                    Log.w(Config.LOGTAG, "unable to save secure media to Downloads", e);
-                    callback.error(-1, R.string.error_io_exception);
-                    return;
-                }
-            }
 
-            try {
-                fileBackend.copyAttachmentToDownloadsFolder(m);
-                callback.success(-1);
-            } catch (FileBackend.FileCopyException e) {
-                callback.error(-1, e.getResId());
-            }
-        });
+                    try {
+                        fileBackend.copyAttachmentToDownloadsFolder(m);
+                        callback.success(-1);
+                    } catch (FileBackend.FileCopyException e) {
+                        callback.error(-1, e.getResId());
+                    }
+                });
     }
 
     public void copyMediaToGallery(Message m, final UiCallback<Integer> callback) {
-        COPY_TO_DOWNLOAD_EXECUTOR.execute(() -> {
-            if (Config.SECURE_CONTENT_MEDIA_ROLLOUT && getApplication() instanceof Conversations) {
-                final Conversations application = (Conversations) getApplication();
-                final AndroidSecureMessageMediaSaver saver =
-                        new AndroidSecureMessageMediaSaver(
-                                this, application.getSecureContentStoreProvider().get());
-                try {
-                    if (saver.saveToGallery(m)) {
-                        callback.success(-1);
-                        return;
+        COPY_TO_DOWNLOAD_EXECUTOR.execute(
+                () -> {
+                    if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                            && getApplication() instanceof Conversations) {
+                        final Conversations application = (Conversations) getApplication();
+                        final AndroidSecureMessageMediaSaver saver =
+                                new AndroidSecureMessageMediaSaver(
+                                        this, application.getSecureContentStoreProvider().get());
+                        try {
+                            if (saver.saveToGallery(m)) {
+                                callback.success(-1);
+                                return;
+                            }
+                        } catch (final Exception e) {
+                            Log.w(Config.LOGTAG, "unable to export secure media to gallery", e);
+                            callback.error(-1, R.string.error_io_exception);
+                            return;
+                        }
                     }
-                } catch (final Exception e) {
-                    Log.w(Config.LOGTAG, "unable to export secure media to gallery", e);
-                    callback.error(-1, R.string.error_io_exception);
-                    return;
-                }
-            }
 
-            try {
-                fileBackend.copyAttachmentToGalleryFolder(m);
-                callback.success(-1);
-            } catch (FileBackend.FileCopyException e) {
-                callback.error(-1, e.getResId());
-            }
-        });
+                    try {
+                        fileBackend.copyAttachmentToGalleryFolder(m);
+                        callback.success(-1);
+                    } catch (FileBackend.FileCopyException e) {
+                        callback.error(-1, e.getResId());
+                    }
+                });
     }
 
     public AppSettings getAppSettings() {
@@ -761,9 +735,9 @@ public class XmppConnectionService extends Service {
     /**
      * Returns the disabled-by-default protected message payload composition point.
      *
-     * The first caller performs Store and publication recovery and must therefore be a background
-     * repository/worker, never a UI render path. Legacy message code receives null while the
-     * rollout gate remains disabled.
+     * <p>The first caller performs Store and publication recovery and must therefore be a
+     * background repository/worker, never a UI render path. Legacy message code receives null while
+     * the rollout gate remains disabled.
      */
     @Nullable
     public SecureMessagePayloadCoordinator getSecureMessagePayloadCoordinator() {
@@ -798,17 +772,16 @@ public class XmppConnectionService extends Service {
                 secureMessagePayloadCoordinator = coordinator;
                 mDatabaseWriterExecutor.execute(this::recoverModeratedMessageRetirements);
                 SecureColdStartPerfTrace.stage(
-                        "secure_text_coordinator_init",
-                        System.nanoTime() - coordinatorStarted);
+                        "secure_text_coordinator_init", System.nanoTime() - coordinatorStarted);
             }
             return secureMessagePayloadCoordinator;
         }
     }
 
     /**
-     * Returns the opt-in U4 protected outgoing-text producer only while the message-payload
-     * rollout remains enabled. This composition point is for a future background repository;
-     * no legacy send, renderer, parser or XMPP wire path calls it.
+     * Returns the opt-in U4 protected outgoing-text producer only while the message-payload rollout
+     * remains enabled. This composition point is for a future background repository; no legacy
+     * send, renderer, parser or XMPP wire path calls it.
      */
     @Nullable
     public SecureOutgoingTextPayloadPublisher getSecureOutgoingTextPayloadPublisher() {
@@ -817,8 +790,8 @@ public class XmppConnectionService extends Service {
     }
 
     /**
-     * Returns the U4.2 full-verification reader for the selected protected outgoing-text class.
-     * It is deliberately not connected to any legacy Message.body renderer.
+     * Returns the U4.2 full-verification reader for the selected protected outgoing-text class. It
+     * is deliberately not connected to any legacy Message.body renderer.
      */
     @Nullable
     public SecureOutgoingTextPayloadReader getSecureOutgoingTextPayloadReader() {
@@ -826,9 +799,7 @@ public class XmppConnectionService extends Service {
         return coordinator == null ? null : new SecureOutgoingTextPayloadReader(coordinator);
     }
 
-    /**
-     * Background-only protected text repository. It is never consulted from adapter binding.
-     */
+    /** Background-only protected text repository. It is never consulted from adapter binding. */
     @Nullable
     public SecureMessageTextRepository getSecureMessageTextRepository() {
         final SecureMessagePayloadCoordinator coordinator = getSecureMessagePayloadCoordinator();
@@ -883,8 +854,8 @@ public class XmppConnectionService extends Service {
     }
 
     /**
-     * Drains account-owned secure-text producers and legacy migration before destructive
-     * account cleanup. New mutations are already rejected by the account cleanup gate.
+     * Drains account-owned secure-text producers and legacy migration before destructive account
+     * cleanup. New mutations are already rejected by the account cleanup gate.
      */
     private void runWithSecureContentMutationsQuiesced(
             final SecureContentCleanupOperation operation) throws Exception {
@@ -934,9 +905,7 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    /**
-     * Replaces an incoming protected body while preserving its logical message ownership.
-     */
+    /** Replaces an incoming protected body while preserving its logical message ownership. */
     public boolean replaceIncomingProtectedMessage(
             final Message message, final String expectedMessageUuid) {
         if (!isSecureContentAccountAvailableForMutation(message)) {
@@ -1004,7 +973,8 @@ public class XmppConnectionService extends Service {
                     // Historical unclassified messages retain their legacy retry semantics.
                     return true;
                 }
-                // Publication completed a verified Store read and hydrated Message.body. Reading the
+                // Publication completed a verified Store read and hydrated Message.body. Reading
+                // the
                 // same large payload again here used to duplicate the entire post-commit hot path.
                 return publishedInThisCall
                         || !message.hasProtectedTextPayload()
@@ -1105,13 +1075,7 @@ public class XmppConnectionService extends Service {
             @Nullable final String mediaGroupId,
             @Nullable final String mediaSendBatchId) {
         attachFileToConversation(
-                conversation,
-                uri,
-                type,
-                callback,
-                mediaGroupId,
-                mediaSendBatchId,
-                null);
+                conversation, uri, type, callback, mediaGroupId, mediaSendBatchId, null);
     }
 
     public void attachFileToConversation(
@@ -1235,13 +1199,7 @@ public class XmppConnectionService extends Service {
             @Nullable final String mediaGroupId,
             @Nullable final String mediaSendBatchId) {
         attachImageToConversation(
-                conversation,
-                uri,
-                type,
-                callback,
-                mediaGroupId,
-                mediaSendBatchId,
-                null);
+                conversation, uri, type, callback, mediaGroupId, mediaSendBatchId, null);
     }
 
     public void attachImageToConversation(
@@ -1294,14 +1252,14 @@ public class XmppConnectionService extends Service {
                         if (Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
                             secureImageStaging =
                                     ImageAttachmentStaging.createTransformedFile(
-                                            this,
-                                            message.getUuid(),
-                                            compressedImageExtension());
+                                            this, message.getUuid(), compressedImageExtension());
                             getFileBackend().copyImageToPrivateStorage(secureImageStaging, uri);
                             final File committedSource = secureImageStaging;
                             final SecureOutgoingAttachmentStagingRetirer stagingRetirer =
                                     ImageAttachmentStaging.combine(
-                                            () -> ImageAttachmentStaging.retire(this, committedSource),
+                                            () ->
+                                                    ImageAttachmentStaging.retire(
+                                                            this, committedSource),
                                             sourceStagingRetirer);
                             new AttachFileToConversationRunnable(
                                             this,
@@ -1353,7 +1311,8 @@ public class XmppConnectionService extends Service {
             final File staging, final UiCallback<Message> delegate) {
         return new UiCallback<Message>() {
             @Override
-            public void userInputRequired(final PendingIntent pendingIntent, final Message message) {
+            public void userInputRequired(
+                    final PendingIntent pendingIntent, final Message message) {
                 retireFailedImageStaging(staging);
                 delegate.userInputRequired(pendingIntent, message);
             }
@@ -1391,9 +1350,8 @@ public class XmppConnectionService extends Service {
     }
 
     private static String compressedImageMimeType() {
-        return "image/" + ("jpg".equals(compressedImageExtension())
-                ? "jpeg"
-                : compressedImageExtension());
+        return "image/"
+                + ("jpg".equals(compressedImageExtension()) ? "jpeg" : compressedImageExtension());
     }
 
     public boolean supportsMessageAttaching(final Conversation conversation) {
@@ -1413,8 +1371,7 @@ public class XmppConnectionService extends Service {
      * serialized; the coordinator releases the ordinary text only after media dispatch.
      */
     @Nullable
-    public String beginOutgoingMediaCaption(
-            final Conversation conversation, final String body) {
+    public String beginOutgoingMediaCaption(final Conversation conversation, final String body) {
         return outgoingMediaCaptionCoordinator.register(
                 conversation, body, supportsMessageAttaching(conversation));
     }
@@ -1457,9 +1414,7 @@ public class XmppConnectionService extends Service {
             sendPreparedMediaMessagesAtomically(
                     Collections.singletonList(message),
                     takeMediaCaption(
-                            mediaCaptionId,
-                            message,
-                            isMediaSendBatchMime(message.getMimeType())));
+                            mediaCaptionId, message, isMediaSendBatchMime(message.getMimeType())));
             return;
         }
         final MediaSendBatch batch = mediaSendBatches.get(batchId);
@@ -1569,16 +1524,14 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    private void removeCompletedMediaSendBatch(
-            final String batchId, final MediaSendBatch batch) {
+    private void removeCompletedMediaSendBatch(final String batchId, final MediaSendBatch batch) {
         if (batch.isComplete()) {
             mediaSendBatches.remove(batchId, batch);
         }
     }
 
     private static boolean isMediaSendBatchMime(@Nullable final String mimeType) {
-        return mimeType != null
-                && (mimeType.startsWith("image/") || mimeType.startsWith("video/"));
+        return mimeType != null && (mimeType.startsWith("image/") || mimeType.startsWith("video/"));
     }
 
     private static void configureLocalMediaGroup(
@@ -1593,7 +1546,6 @@ public class XmppConnectionService extends Service {
     public List<Conversation> findAll(final Account account, final Jid jid) {
         return findAll(getConversations(), account, jid);
     }
-
 
     public boolean isMuc(final Account account, final Jid jid) {
         final Conversation c = find(account, jid, null);
@@ -1627,14 +1579,17 @@ public class XmppConnectionService extends Service {
             case QuickConversationsService.SMS_RETRIEVED_ACTION:
                 mQuickConversationsService.handleSmsReceived(intent);
                 break;
-            case ConnectivityManager.CONNECTIVITY_ACTION: {
-                final ConnectivityManager connectivityManager =
-                        ContextCompat.getSystemService(this, ConnectivityManager.class);
-                final Network activeNetwork =
-                        connectivityManager == null ? null : connectivityManager.getActiveNetwork();
-                handleActiveNetworkChange(activeNetwork, "broadcast");
-                break;
-            }
+            case ConnectivityManager.CONNECTIVITY_ACTION:
+                {
+                    final ConnectivityManager connectivityManager =
+                            ContextCompat.getSystemService(this, ConnectivityManager.class);
+                    final Network activeNetwork =
+                            connectivityManager == null
+                                    ? null
+                                    : connectivityManager.getActiveNetwork();
+                    handleActiveNetworkChange(activeNetwork, "broadcast");
+                    break;
+                }
             case Intent.ACTION_SHUTDOWN:
                 logoutAndSave(true);
                 return START_NOT_STICKY;
@@ -1897,8 +1852,7 @@ public class XmppConnectionService extends Service {
         }
         scheduleResidentProtectedTextRehydrateAfterCryptoUnlock();
         final var accountSecretMigration =
-                new AccountSecretMigrationCoordinatorV1(
-                        getApplicationContext(), databaseBackend);
+                new AccountSecretMigrationCoordinatorV1(getApplicationContext(), databaseBackend);
         final HashSet<Account> accountsWithUnavailableSecrets = new HashSet<>();
         for (final Account account : accounts) {
             if (!account.isSecretVaultHydrated()) {
@@ -2044,8 +1998,7 @@ public class XmppConnectionService extends Service {
         }
 
         final long cursor = legacyBackgroundMigrationAccountCursor.getAndIncrement();
-        final int start =
-                (int) Math.floorMod(cursor, (long) eligibleAccounts.size());
+        final int start = (int) Math.floorMod(cursor, (long) eligibleAccounts.size());
         final LegacyPlaintextMessageMigrator migrator =
                 new LegacyPlaintextMessageMigrator(databaseBackend, coordinator);
         for (int offset = 0; offset < eligibleAccounts.size(); ++offset) {
@@ -2104,8 +2057,7 @@ public class XmppConnectionService extends Service {
 
         // Message plaintext is exhausted for enabled accounts. Retire legacy conversation
         // secrets next; this includes archived/not-opened rows and is bounded independently.
-        final int conversationSecrets =
-                databaseBackend.migrateLegacyConversationSecretsBatch(32);
+        final int conversationSecrets = databaseBackend.migrateLegacyConversationSecretsBatch(32);
         if (conversationSecrets > 0) {
             Log.d(
                     Config.LOGTAG,
@@ -2119,7 +2071,8 @@ public class XmppConnectionService extends Service {
             return;
         }
 
-        // No message/conversation-secret/private-crypto candidate remains. Run the normal message residue scrub and a
+        // No message/conversation-secret/private-crypto candidate remains. Run the normal message
+        // residue scrub and a
         // second one-shot scrub for pages that previously contained OMEMO private state.
         maybeRunLegacyPlaintextSqliteCleanup();
         maybeRunPrivateCryptoSqliteCleanup();
@@ -2137,12 +2090,9 @@ public class XmppConnectionService extends Service {
             if (account == null) {
                 continue;
             }
-            final int migrated =
-                    databaseBackend.migrateLegacyPrivateCryptoStateBatch(account, 32);
+            final int migrated = databaseBackend.migrateLegacyPrivateCryptoStateBatch(account, 32);
             if (migrated > 0) {
-                Log.d(
-                        Config.LOGTAG,
-                        "background private crypto migration migrated=" + migrated);
+                Log.d(Config.LOGTAG, "background private crypto migration migrated=" + migrated);
                 return true;
             }
         }
@@ -2153,8 +2103,7 @@ public class XmppConnectionService extends Service {
         final SharedPreferences prefs =
                 getApplicationContext()
                         .getSharedPreferences(
-                                "private_crypto_sqlite_cleanup_v1",
-                                Context.MODE_PRIVATE);
+                                "private_crypto_sqlite_cleanup_v1", Context.MODE_PRIVATE);
         if (prefs.getBoolean("completed", false)) {
             return;
         }
@@ -2336,7 +2285,8 @@ public class XmppConnectionService extends Service {
                         == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED;
     }
 
-    public Map<Integer, Integer> getMessagesCountGroupByDay(String conversationUuid, int year, int month) {
+    public Map<Integer, Integer> getMessagesCountGroupByDay(
+            String conversationUuid, int year, int month) {
         return databaseBackend.getMessagesCountGroupByDay(conversationUuid, year, month);
     }
 
@@ -2344,7 +2294,8 @@ public class XmppConnectionService extends Service {
             final Conversation conversation,
             final String body,
             final String lastMessageUuid,
-            final boolean dismissAfterReply) {final Message inReplyTo =
+            final boolean dismissAfterReply) {
+        final Message inReplyTo =
                 lastMessageUuid == null ? null : conversation.findMessageWithUuid(lastMessageUuid);
         Message message = new Message(conversation, body, conversation.getNextEncryption());
         if (inReplyTo != null) {
@@ -2526,9 +2477,7 @@ public class XmppConnectionService extends Service {
 
         mNetworkLossGraceUntil.set(0L);
         final long delay =
-                isNetworkValidated(activeNetwork)
-                        ? 0L
-                        : Config.NETWORK_PROVISIONAL_READY_GRACE_MS;
+                isNetworkValidated(activeNetwork) ? 0L : Config.NETWORK_PROVISIONAL_READY_GRACE_MS;
         scheduleActiveNetworkRecovery(activeNetwork, generation, reason, delay);
     }
 
@@ -2544,8 +2493,7 @@ public class XmppConnectionService extends Service {
             @NonNull final String reason,
             final long delayMs) {
         scheduleNetworkTask(
-                () -> recoverOnActiveNetwork(network, generation, reason),
-                Math.max(0L, delayMs));
+                () -> recoverOnActiveNetwork(network, generation, reason), Math.max(0L, delayMs));
     }
 
     private void scheduleNetworkTask(final Runnable task, final long delayMs) {
@@ -2557,9 +2505,7 @@ public class XmppConnectionService extends Service {
     }
 
     private void recoverOnActiveNetwork(
-            @NonNull final Network network,
-            final long generation,
-            @NonNull final String reason) {
+            @NonNull final Network network, final long generation, @NonNull final String reason) {
         if (generation != mNetworkTransitionGeneration.get()
                 || !Objects.equal(mActiveNetwork.get(), network)) {
             Log.d(Config.LOGTAG, "ignoring superseded network recovery for " + network);
@@ -2724,19 +2670,23 @@ public class XmppConnectionService extends Service {
                     }
                 };
 
-        this.mDrawableCache = new LruCache<String, Drawable>(cacheSize) {
-            @Override
-            protected int sizeOf(final String key, final Drawable drawable) {
-                if (drawable instanceof BitmapDrawable) {
-                    Bitmap bitmap =  ((BitmapDrawable) drawable).getBitmap();
-                    if (bitmap == null) return 1024;
+        this.mDrawableCache =
+                new LruCache<String, Drawable>(cacheSize) {
+                    @Override
+                    protected int sizeOf(final String key, final Drawable drawable) {
+                        if (drawable instanceof BitmapDrawable) {
+                            Bitmap bitmap = ((BitmapDrawable) drawable).getBitmap();
+                            if (bitmap == null) return 1024;
 
-                    return bitmap.getByteCount() / 1024;
-                } else {
-                    return drawable.getIntrinsicWidth() * drawable.getIntrinsicHeight() * 40 / 1024;
-                }
-            }
-        };
+                            return bitmap.getByteCount() / 1024;
+                        } else {
+                            return drawable.getIntrinsicWidth()
+                                    * drawable.getIntrinsicHeight()
+                                    * 40
+                                    / 1024;
+                        }
+                    }
+                };
         if (mLastActivity == 0) {
             mLastActivity =
                     getPreferences().getLong(SETTING_LAST_ACTIVITY_TS, System.currentTimeMillis());
@@ -2854,8 +2804,7 @@ public class XmppConnectionService extends Service {
             return;
         }
         final long start = SystemClock.elapsedRealtime();
-        final List<FilePathInfo> relativeFilePaths =
-                databaseBackend.getFilePathInfo();
+        final List<FilePathInfo> relativeFilePaths = databaseBackend.getFilePathInfo();
         final List<FilePathInfo> changed = new ArrayList<>();
         for (final FilePathInfo filePath : relativeFilePaths) {
             if (destroyed) {
@@ -2984,11 +2933,7 @@ public class XmppConnectionService extends Service {
             if (ongoing != null) {
                 notification = this.mNotificationService.getOngoingCallNotification(ongoing);
                 id = NotificationService.ONGOING_CALL_NOTIFICATION_ID;
-                startForegroundOrCatch(
-                        id,
-                        notification,
-                        true,
-                        ongoing.media.contains(Media.VIDEO));
+                startForegroundOrCatch(id, notification, true, ongoing.media.contains(Media.VIDEO));
             } else if (ongoingVideoTranscoding) {
                 notification = this.mNotificationService.getIndeterminateVideoTranscoding();
                 id = NotificationService.ONGOING_VIDEO_TRANSCODING_NOTIFICATION_ID;
@@ -3041,8 +2986,7 @@ public class XmppConnectionService extends Service {
                 if (foregroundServiceType == 0) {
                     if (getSystemService(PowerManager.class)
                             .isIgnoringBatteryOptimizations(getPackageName())) {
-                        foregroundServiceType =
-                                ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED;
+                        foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED;
                     } else if (ContextCompat.checkSelfPermission(
                                     this, Manifest.permission.RECORD_AUDIO)
                             == PackageManager.PERMISSION_GRANTED) {
@@ -3052,9 +2996,7 @@ public class XmppConnectionService extends Service {
                         foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
                     } else {
                         foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
-                        Log.w(
-                                Config.LOGTAG,
-                                "falling back to special use foreground service type");
+                        Log.w(Config.LOGTAG, "falling back to special use foreground service type");
                     }
                 }
                 startForeground(id, notification, foregroundServiceType);
@@ -3316,7 +3258,8 @@ public class XmppConnectionService extends Service {
 
         if (!resend && message.getEncryption() != Message.ENCRYPTION_OTR) {
             conversation.endOtrIfNeeded();
-            conversation.findUnsentMessagesWithEncryption(Message.ENCRYPTION_OTR,
+            conversation.findUnsentMessagesWithEncryption(
+                    Message.ENCRYPTION_OTR,
                     message1 -> markMessage(message1, Message.STATUS_SEND_FAILED));
         }
 
@@ -3346,9 +3289,11 @@ public class XmppConnectionService extends Service {
                     break;
                 case Message.ENCRYPTION_OTR:
                     SessionImpl otrSession = conversation.getOtrSession();
-                    if (otrSession != null && otrSession.getSessionStatus() == SessionStatus.ENCRYPTED) {
+                    if (otrSession != null
+                            && otrSession.getSessionStatus() == SessionStatus.ENCRYPTED) {
                         try {
-                            message.setCounterpart(OtrJidHelper.fromSessionID(otrSession.getSessionID()));
+                            message.setCounterpart(
+                                    OtrJidHelper.fromSessionID(otrSession.getSessionID()));
                         } catch (IllegalArgumentException e) {
                             break;
                         }
@@ -3359,13 +3304,25 @@ public class XmppConnectionService extends Service {
                         }
                     } else if (otrSession == null) {
                         if (message.fixCounterpart()) {
-                            conversation.startOtrSession(message.getCounterpart().getResource(), true);
+                            conversation.startOtrSession(
+                                    message.getCounterpart().getResource(), true);
                         } else {
-                            Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": could not fix counterpart for OTR message to contact " + message.getCounterpart());
+                            Log.d(
+                                    Config.LOGTAG,
+                                    account.getJid().asBareJid()
+                                            + ": could not fix counterpart for OTR message to"
+                                            + " contact "
+                                            + message.getCounterpart());
                             break;
                         }
                     } else {
-                        Log.d(Config.LOGTAG, account.getJid().asBareJid() + " OTR session with " + message.getContact() + " is in wrong state: " + otrSession.getSessionStatus().toString());
+                        Log.d(
+                                Config.LOGTAG,
+                                account.getJid().asBareJid()
+                                        + " OTR session with "
+                                        + message.getContact()
+                                        + " is in wrong state: "
+                                        + otrSession.getSessionStatus().toString());
                     }
                     break;
                 case Message.ENCRYPTION_AXOLOTL:
@@ -3414,7 +3371,11 @@ public class XmppConnectionService extends Service {
                     break;
                 case Message.ENCRYPTION_OTR:
                     if (!conversation.hasValidOtrSession() && message.getCounterpart() != null) {
-                        Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": create otr session without starting for " + message.getContact().getJid());
+                        Log.d(
+                                Config.LOGTAG,
+                                account.getJid().asBareJid()
+                                        + ": create otr session without starting for "
+                                        + message.getContact().getJid());
                         conversation.startOtrSession(message.getCounterpart().getResource(), false);
                     }
                     break;
@@ -3465,8 +3426,7 @@ public class XmppConnectionService extends Service {
                     packet.addChild(ChatState.toElement(conversation.getOutgoingChatState()));
                 }
             }
-            final long connectionSendStartedAt =
-                    secureText ? SystemClock.elapsedRealtime() : 0;
+            final long connectionSendStartedAt = secureText ? SystemClock.elapsedRealtime() : 0;
             sendMessagePacket(account, packet);
             if (secureText) {
                 SecureTextPayload.logStage(
@@ -3573,8 +3533,7 @@ public class XmppConnectionService extends Service {
                     || member.getStatus() == Message.STATUS_SEND_FAILED) {
                 return false;
             }
-            if (member.needsUploading()
-                    && member.getStatus() < Message.STATUS_SEND_RECEIVED) {
+            if (member.needsUploading() && member.getStatus() < Message.STATUS_SEND_RECEIVED) {
                 return false;
             }
         }
@@ -3649,16 +3608,13 @@ public class XmppConnectionService extends Service {
         }
 
         final Element resultCommand = response.findChild("command", Namespace.COMMANDS);
-        final String status =
-                resultCommand == null ? null : resultCommand.getAttribute("status");
+        final String status = resultCommand == null ? null : resultCommand.getAttribute("status");
 
         // XEP-0401#create-account is a two-step ad-hoc command. A compliant server may first
         // return status='executing' with a data form and only return the invite URI after the
         // client completes that form. The old NeoCont code tried to parse an URI immediately,
         // which produced "Unable to parse invitation" on standard ejabberd mod_invites.
-        if (!formAlreadySubmitted
-                && resultCommand != null
-                && "executing".equals(status)) {
+        if (!formAlreadySubmitted && resultCommand != null && "executing".equals(status)) {
             final Element formElement = resultCommand.findChild("x", Namespace.DATA);
             final String sessionId = resultCommand.getAttribute("sessionid");
             if (formElement != null && !Strings.isNullOrEmpty(sessionId)) {
@@ -3878,7 +3834,8 @@ public class XmppConnectionService extends Service {
             processDeletedBookmarks(account, previousBookmarks);
         }
         account.setBookmarks(bookmarks);
-        // Retire pre-existing server-side password copies after the local protected copy is verified.
+        // Retire pre-existing server-side password copies after the local protected copy is
+        // verified.
         for (final Bookmark bookmark : passwordBearingBookmarks) {
             createBookmark(account, bookmark);
         }
@@ -3935,8 +3892,7 @@ public class XmppConnectionService extends Service {
         Conversation conversation = find(bookmark.getAccount(), bookmark.getJid(), null);
         if (conversation == null) {
             final Conversation archived =
-                    databaseBackend.findConversation(
-                            account, bookmark.getJid().asBareJid(), null);
+                    databaseBackend.findConversation(account, bookmark.getJid().asBareJid(), null);
             if (archived != null && archived.isMucExplicitlyLeft()) {
                 rememberMucExplicitLeave(account, bookmark.getJid());
                 bookmark.setConversation(null);
@@ -4010,8 +3966,7 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    private void hydrateBookmarkPassword(
-            final Conversation conversation, final Bookmark bookmark) {
+    private void hydrateBookmarkPassword(final Conversation conversation, final Bookmark bookmark) {
         if (conversation == null || bookmark == null) {
             return;
         }
@@ -4102,7 +4057,8 @@ public class XmppConnectionService extends Service {
             Log.d(
                     Config.LOGTAG,
                     account.getJid().asBareJid()
-                            + ": bookmark removed locally; server retract deferred until reconnect");
+                            + ": bookmark removed locally; server retract deferred until"
+                            + " reconnect");
             return;
         }
         if (connection.getFeatures().bookmarks2()) {
@@ -4255,7 +4211,7 @@ public class XmppConnectionService extends Service {
             }
 
             for (Iterator<Conversation> iterator = conversations.listIterator();
-                    iterator.hasNext();) {
+                    iterator.hasNext(); ) {
                 Conversation conversation = iterator.next();
                 Account account = accountLookupTable.get(conversation.getAccountUuid());
                 if (account != null) {
@@ -4273,171 +4229,179 @@ public class XmppConnectionService extends Service {
                     Config.LOGTAG,
                     "finished restoring conversations in " + diffConversationsRestore + "ms");
             SecureColdStartPerfTrace.stage(
-                    "conversations_restore",
-                    System.nanoTime() - coldStartConversationsRestore);
-            SecureColdStartPerfTrace.increment(
-                    "conversations_loaded", this.conversations.size());
+                    "conversations_restore", System.nanoTime() - coldStartConversationsRestore);
+            SecureColdStartPerfTrace.increment("conversations_loaded", this.conversations.size());
             Runnable runnable =
                     () -> {
                         try {
                             final long restorePrepStarted = System.nanoTime();
                             DatabaseBackend backend = DatabaseBackendProvider.getInstance(this);
-                        if (backend.requiresMessageIndexRebuild()) {
-                            backend.rebuildMessagesIndex();
-                        }
-                        final long deletionDate = getAutomaticMessageDeletionDate();
-                        mLastExpiryRun.set(SystemClock.elapsedRealtime());
-                        if (deletionDate > 0) {
-                            Log.d(
-                                    Config.LOGTAG,
-                                    "deleting messages that are older than "
-                                            + AbstractGenerator.getTimestamp(deletionDate));
-                            databaseBackend.expireOldMessages(deletionDate);
-                        }
-                        Log.d(Config.LOGTAG, "restoring roster...");
-                        for (final Account account : accounts) {
-                            try {
-                                databaseBackend.readRoster(account.getRoster());
-                            } catch (final RuntimeException | AssertionError e) {
-                                Log.e(
-                                        Config.LOGTAG,
-                                        "roster restore failed for one account; continuing startup",
-                                        e);
+                            if (backend.requiresMessageIndexRebuild()) {
+                                backend.rebuildMessagesIndex();
                             }
-                            try {
-                                account.initAccountServices(
-                                        XmppConnectionService
-                                                .this); // roster needs to be loaded at this stage
-                            } catch (final RuntimeException | AssertionError e) {
-                                Log.e(
-                                        Config.LOGTAG,
-                                        "crypto service init failed for one account; continuing message restore",
-                                        e);
-                            }
-                        }
-                        getBitmapCache().evictAll();
-                        loadPhoneContacts();
-                        SecureColdStartPerfTrace.stage(
-                                "restore_pre_messages",
-                                System.nanoTime() - restorePrepStarted);
-                        Log.d(Config.LOGTAG, "restoring messages...");
-                        final long startMessageRestore = SystemClock.elapsedRealtime();
-                        final long coldStartMessageRestore = System.nanoTime();
-
-                        // Restore only the latest row for every conversation first. The overview
-                        // adapter uses getLatestMessage() for text/media preview, timestamp and
-                        // ordering, so this makes the visible chat list useful before full pages
-                        // (and their protected text payloads) are hydrated.
-                        final long previewRestoreStarted = System.nanoTime();
-                        final Map<Conversation, Message> previewsByConversation = new HashMap<>();
-                        final List<Message> previewMessages = new ArrayList<>();
-                        for (final Conversation conversation : this.conversations) {
-                            try {
-                                final Message preview = loadConversationPreview(conversation);
-                                if (preview != null) {
-                                    previewsByConversation.put(conversation, preview);
-                                    previewMessages.add(preview);
-                                }
-                            } catch (final RuntimeException | AssertionError e) {
-                                Log.e(
-                                        Config.LOGTAG,
-                                        "conversation preview restore failed; continuing with remaining previews",
-                                        e);
-                            }
-                        }
-
-                        final long previewHydrateStarted = System.nanoTime();
-                        hydrateProtectedTextConversationPreviews(previewMessages);
-                        SecureColdStartPerfTrace.stage(
-                                "conversation_preview_hydrate",
-                                System.nanoTime() - previewHydrateStarted);
-
-                        int previewsLoaded = 0;
-                        for (final Map.Entry<Conversation, Message> entry :
-                                previewsByConversation.entrySet()) {
-                            final Conversation conversation = entry.getKey();
-                            conversation.addAll(0, List.of(entry.getValue()), false);
-                            if (conversation.countMessages() > 0) {
-                                previewsLoaded++;
-                            }
-                        }
-
-                        SecureColdStartPerfTrace.stage(
-                                "conversation_previews_total",
-                                System.nanoTime() - previewRestoreStarted);
-                        SecureColdStartPerfTrace.increment(
-                                "conversation_previews_loaded", previewsLoaded);
-                        updateConversationUi();
-                        SecureColdStartPerfTrace.milestone("conversation_list_previews_visible");
-
-                        final boolean quickLoadWasInMemory = QuickLoader.hasInMemoryTarget();
-                        final Conversation quickLoad =
-                                QuickLoader.get(getApplicationContext(), this.conversations);
-                        if (quickLoad != null) {
-                            SecureColdStartPerfTrace.increment("quick_loader_hits", 1);
-                            SecureColdStartPerfTrace.increment(
-                                    quickLoadWasInMemory
-                                            ? "quick_loader_in_memory_hits"
-                                            : "quick_loader_persisted_hits",
-                                    1);
-                            final long quickRestoreStarted = System.nanoTime();
-                            try {
-                                restoreMessages(quickLoad, true);
-                                SecureColdStartPerfTrace.stage(
-                                        "quick_loader_restore",
-                                        System.nanoTime() - quickRestoreStarted);
-                                updateConversationUi();
-                                SecureColdStartPerfTrace.milestone("first_message_batch_visible");
-                                final long diffMessageRestore =
-                                        SystemClock.elapsedRealtime() - startMessageRestore;
+                            final long deletionDate = getAutomaticMessageDeletionDate();
+                            mLastExpiryRun.set(SystemClock.elapsedRealtime());
+                            if (deletionDate > 0) {
                                 Log.d(
                                         Config.LOGTAG,
-                                        "quickly restored "
-                                                + quickLoad.getName()
-                                                + " after "
-                                                + diffMessageRestore
-                                                + "ms");
-                            } catch (final RuntimeException | AssertionError e) {
-                                SecureColdStartPerfTrace.stage(
-                                        "quick_loader_restore",
-                                        System.nanoTime() - quickRestoreStarted);
-                                Log.e(
-                                        Config.LOGTAG,
-                                        "quick conversation restore failed; continuing with remaining history",
-                                        e);
+                                        "deleting messages that are older than "
+                                                + AbstractGenerator.getTimestamp(deletionDate));
+                                databaseBackend.expireOldMessages(deletionDate);
                             }
-                        } else {
-                            SecureColdStartPerfTrace.increment("quick_loader_misses", 1);
-                        }
-                        for (Conversation conversation : this.conversations) {
-                            if (quickLoad != conversation) {
+                            Log.d(Config.LOGTAG, "restoring roster...");
+                            for (final Account account : accounts) {
                                 try {
-                                    restoreMessages(conversation, false);
+                                    databaseBackend.readRoster(account.getRoster());
                                 } catch (final RuntimeException | AssertionError e) {
                                     Log.e(
                                             Config.LOGTAG,
-                                            "conversation restore failed; continuing with remaining history",
+                                            "roster restore failed for one account; continuing"
+                                                    + " startup",
+                                            e);
+                                }
+                                try {
+                                    account.initAccountServices(
+                                            XmppConnectionService
+                                                    .this); // roster needs to be loaded at this
+                                    // stage
+                                } catch (final RuntimeException | AssertionError e) {
+                                    Log.e(
+                                            Config.LOGTAG,
+                                            "crypto service init failed for one account; continuing"
+                                                    + " message restore",
                                             e);
                                 }
                             }
-                        }
-                        mNotificationService.finishBacklog();
-                        restoredFromDatabaseLatch.countDown();
-                        messageRestoreCompletedAt.compareAndSet(
-                                0L, SystemClock.elapsedRealtime());
-                        final long diffMessageRestore =
-                                SystemClock.elapsedRealtime() - startMessageRestore;
-                        SecureColdStartPerfTrace.stage(
-                                "message_restore_total",
-                                System.nanoTime() - coldStartMessageRestore);
-                        SecureColdStartPerfTrace.milestone("messages_restore_complete");
-                        Log.d(
-                                Config.LOGTAG,
-                                "finished restoring messages in " + diffMessageRestore + "ms");
-                        updateConversationUi();
-                        SecureColdStartPerfTrace.milestone("first_message_batch_visible");
-                        SecureColdStartPerfTrace.finish();
-                        scheduleSecureContentRelationBackfill();
+                            getBitmapCache().evictAll();
+                            loadPhoneContacts();
+                            SecureColdStartPerfTrace.stage(
+                                    "restore_pre_messages", System.nanoTime() - restorePrepStarted);
+                            Log.d(Config.LOGTAG, "restoring messages...");
+                            final long startMessageRestore = SystemClock.elapsedRealtime();
+                            final long coldStartMessageRestore = System.nanoTime();
+
+                            // Restore only the latest row for every conversation first. The
+                            // overview
+                            // adapter uses getLatestMessage() for text/media preview, timestamp and
+                            // ordering, so this makes the visible chat list useful before full
+                            // pages
+                            // (and their protected text payloads) are hydrated.
+                            final long previewRestoreStarted = System.nanoTime();
+                            final Map<Conversation, Message> previewsByConversation =
+                                    new HashMap<>();
+                            final List<Message> previewMessages = new ArrayList<>();
+                            for (final Conversation conversation : this.conversations) {
+                                try {
+                                    final Message preview = loadConversationPreview(conversation);
+                                    if (preview != null) {
+                                        previewsByConversation.put(conversation, preview);
+                                        previewMessages.add(preview);
+                                    }
+                                } catch (final RuntimeException | AssertionError e) {
+                                    Log.e(
+                                            Config.LOGTAG,
+                                            "conversation preview restore failed; continuing with"
+                                                    + " remaining previews",
+                                            e);
+                                }
+                            }
+
+                            final long previewHydrateStarted = System.nanoTime();
+                            hydrateProtectedTextConversationPreviews(previewMessages);
+                            SecureColdStartPerfTrace.stage(
+                                    "conversation_preview_hydrate",
+                                    System.nanoTime() - previewHydrateStarted);
+
+                            int previewsLoaded = 0;
+                            for (final Map.Entry<Conversation, Message> entry :
+                                    previewsByConversation.entrySet()) {
+                                final Conversation conversation = entry.getKey();
+                                conversation.addAll(0, List.of(entry.getValue()), false);
+                                if (conversation.countMessages() > 0) {
+                                    previewsLoaded++;
+                                }
+                            }
+
+                            SecureColdStartPerfTrace.stage(
+                                    "conversation_previews_total",
+                                    System.nanoTime() - previewRestoreStarted);
+                            SecureColdStartPerfTrace.increment(
+                                    "conversation_previews_loaded", previewsLoaded);
+                            updateConversationUi();
+                            SecureColdStartPerfTrace.milestone(
+                                    "conversation_list_previews_visible");
+
+                            final boolean quickLoadWasInMemory = QuickLoader.hasInMemoryTarget();
+                            final Conversation quickLoad =
+                                    QuickLoader.get(getApplicationContext(), this.conversations);
+                            if (quickLoad != null) {
+                                SecureColdStartPerfTrace.increment("quick_loader_hits", 1);
+                                SecureColdStartPerfTrace.increment(
+                                        quickLoadWasInMemory
+                                                ? "quick_loader_in_memory_hits"
+                                                : "quick_loader_persisted_hits",
+                                        1);
+                                final long quickRestoreStarted = System.nanoTime();
+                                try {
+                                    restoreMessages(quickLoad, true);
+                                    SecureColdStartPerfTrace.stage(
+                                            "quick_loader_restore",
+                                            System.nanoTime() - quickRestoreStarted);
+                                    updateConversationUi();
+                                    SecureColdStartPerfTrace.milestone(
+                                            "first_message_batch_visible");
+                                    final long diffMessageRestore =
+                                            SystemClock.elapsedRealtime() - startMessageRestore;
+                                    Log.d(
+                                            Config.LOGTAG,
+                                            "quickly restored "
+                                                    + quickLoad.getName()
+                                                    + " after "
+                                                    + diffMessageRestore
+                                                    + "ms");
+                                } catch (final RuntimeException | AssertionError e) {
+                                    SecureColdStartPerfTrace.stage(
+                                            "quick_loader_restore",
+                                            System.nanoTime() - quickRestoreStarted);
+                                    Log.e(
+                                            Config.LOGTAG,
+                                            "quick conversation restore failed; continuing with"
+                                                    + " remaining history",
+                                            e);
+                                }
+                            } else {
+                                SecureColdStartPerfTrace.increment("quick_loader_misses", 1);
+                            }
+                            for (Conversation conversation : this.conversations) {
+                                if (quickLoad != conversation) {
+                                    try {
+                                        restoreMessages(conversation, false);
+                                    } catch (final RuntimeException | AssertionError e) {
+                                        Log.e(
+                                                Config.LOGTAG,
+                                                "conversation restore failed; continuing with"
+                                                        + " remaining history",
+                                                e);
+                                    }
+                                }
+                            }
+                            mNotificationService.finishBacklog();
+                            restoredFromDatabaseLatch.countDown();
+                            messageRestoreCompletedAt.compareAndSet(
+                                    0L, SystemClock.elapsedRealtime());
+                            final long diffMessageRestore =
+                                    SystemClock.elapsedRealtime() - startMessageRestore;
+                            SecureColdStartPerfTrace.stage(
+                                    "message_restore_total",
+                                    System.nanoTime() - coldStartMessageRestore);
+                            SecureColdStartPerfTrace.milestone("messages_restore_complete");
+                            Log.d(
+                                    Config.LOGTAG,
+                                    "finished restoring messages in " + diffMessageRestore + "ms");
+                            updateConversationUi();
+                            SecureColdStartPerfTrace.milestone("first_message_batch_visible");
+                            SecureColdStartPerfTrace.finish();
+                            scheduleSecureContentRelationBackfill();
                         } finally {
                             // Keep coordination correct even if an unexpected restore defect is
                             // allowed to surface through the executor's uncaught-exception path.
@@ -4462,8 +4426,7 @@ public class XmppConnectionService extends Service {
             final Conversation conversation, final boolean hydrateWholeProtectedPage) {
         final long pageReadStarted = System.nanoTime();
         final List<Message> loaded = databaseBackend.getMessages(conversation, Config.PAGE_SIZE);
-        SecureColdStartPerfTrace.stage(
-                "message_db_read", System.nanoTime() - pageReadStarted);
+        SecureColdStartPerfTrace.stage("message_db_read", System.nanoTime() - pageReadStarted);
         SecureColdStartPerfTrace.increment("message_pages", 1);
         SecureColdStartPerfTrace.increment("messages_loaded", loaded.size());
 
@@ -4487,8 +4450,7 @@ public class XmppConnectionService extends Service {
 
         final long replyRestoreStarted = System.nanoTime();
         restoreRepliesForMessages(conversation, messages);
-        SecureColdStartPerfTrace.stage(
-                "reply_restore", System.nanoTime() - replyRestoreStarted);
+        SecureColdStartPerfTrace.stage("reply_restore", System.nanoTime() - replyRestoreStarted);
 
         final List<Message> additions = new ArrayList<>(messages.size());
         for (final Message message : messages) {
@@ -4502,21 +4464,18 @@ public class XmppConnectionService extends Service {
         conversation.findUnsentTextMessages(
                 message -> markMessage(message, Message.STATUS_WAITING));
         conversation.findUnreadMessagesAndCalls(mNotificationService::pushFromBacklog);
-        SecureColdStartPerfTrace.stage(
-                "message_page_apply", System.nanoTime() - pageApplyStarted);
+        SecureColdStartPerfTrace.stage("message_page_apply", System.nanoTime() - pageApplyStarted);
     }
-
 
     /**
      * Closed conversations need durable classification and notification/resend plaintext, but they
      * do not need every historical protected body materialized during process start.
      *
-     * Modes are loaded for the whole resident page so opening the conversation can immediately
-     * render the protected placeholder and schedule bounded rehydrate. Only unread rows (notification
-     * text / MUC highlight) and unsent outgoing rows are decrypted on cold start.
+     * <p>Modes are loaded for the whole resident page so opening the conversation can immediately
+     * render the protected placeholder and schedule bounded rehydrate. Only unread rows
+     * (notification text / MUC highlight) and unsent outgoing rows are decrypted on cold start.
      */
-    private void hydrateProtectedTextRequiredForClosedConversation(
-            final List<Message> messages) {
+    private void hydrateProtectedTextRequiredForClosedConversation(final List<Message> messages) {
         if (!Config.SECURE_MESSAGE_PAYLOAD_ROLLOUT || messages.isEmpty()) {
             return;
         }
@@ -4569,7 +4528,8 @@ public class XmppConnectionService extends Service {
                 // until secure storage becomes readable again.
                 Log.e(
                         Config.LOGTAG,
-                        "protected text hydration failed for loaded page; continuing history restore",
+                        "protected text hydration failed for loaded page; continuing history"
+                                + " restore",
                         e);
             }
         }
@@ -4594,7 +4554,6 @@ public class XmppConnectionService extends Service {
         }
     }
 
-
     /**
      * Builds only the non-authoritative message -> content routing accelerator for stores that
      * predate it. This is intentionally off the serial database restore path and runs at most once
@@ -4617,10 +4576,7 @@ public class XmppConnectionService extends Service {
                                         .getSecureContentStoreProvider()
                                         .backfillMessageRelationIndexIfNeeded();
                     } catch (final Exception | AssertionError e) {
-                        Log.w(
-                                Config.LOGTAG,
-                                "secure content relation backfill deferred",
-                                e);
+                        Log.w(Config.LOGTAG, "secure content relation backfill deferred", e);
                     } finally {
                         secureContentRelationBackfillInFlight.set(false);
                     }
@@ -4636,10 +4592,9 @@ public class XmppConnectionService extends Service {
      * <p>Normal read-cache eviction does not invalidate a verified live Message. This repair path
      * remains for genuine transient misses (for example a page restored while crypto was
      * unavailable) and is kept off RecyclerView binding because UI binding must never open the
-     * Store.</p>
+     * Store.
      */
-    public void scheduleProtectedTextRehydrateForConversation(
-            final Conversation conversation) {
+    public void scheduleProtectedTextRehydrateForConversation(final Conversation conversation) {
         if (!Config.SECURE_MESSAGE_PAYLOAD_ROLLOUT
                 || conversation == null
                 || destroyed
@@ -4654,8 +4609,7 @@ public class XmppConnectionService extends Service {
             return;
         }
 
-        final String key =
-                conversation.getAccount().getUuid() + ":" + conversation.getUuid();
+        final String key = conversation.getAccount().getUuid() + ":" + conversation.getUuid();
         if (!protectedTextConversationRehydrateInFlight.add(key)) {
             // Do not drop a refresh request that races with an active MUC catch-up pass. The
             // in-flight snapshot may predate a later LRU eviction, so remember one coalesced
@@ -4678,8 +4632,7 @@ public class XmppConnectionService extends Service {
                         // budget, below the protected-text LRU capacity.
                         final List<Message> latest = new ArrayList<>();
                         conversation.populateWithMessages(latest);
-                        final List<Message> candidates =
-                                missingProtectedTextCandidates(latest);
+                        final List<Message> candidates = missingProtectedTextCandidates(latest);
                         if (candidates.isEmpty()) {
                             return;
                         }
@@ -4691,10 +4644,7 @@ public class XmppConnectionService extends Service {
                             }
                         }
                     } catch (final RuntimeException | AssertionError e) {
-                        Log.w(
-                                Config.LOGTAG,
-                                "visible protected text rehydrate failed",
-                                e);
+                        Log.w(Config.LOGTAG, "visible protected text rehydrate failed", e);
                     } finally {
                         protectedTextConversationRehydrateInFlight.remove(key);
                         if (protectedTextConversationRehydratePending.remove(key)) {
@@ -4717,9 +4667,9 @@ public class XmppConnectionService extends Service {
     /**
      * Repairs a protected-text miss for a Message that is actually being bound on screen.
      *
-     * <p>This is a fallback for a genuine missing verified presentation, not normal cache
-     * eviction. Adapter binding must not open secure storage, so it only schedules this per-message
-     * background repair. Requests are coalesced by message identity and remain fail-closed.</p>
+     * <p>This is a fallback for a genuine missing verified presentation, not normal cache eviction.
+     * Adapter binding must not open secure storage, so it only schedules this per-message
+     * background repair. Requests are coalesced by message identity and remain fail-closed.
      */
     public void scheduleProtectedTextRehydrateForVisibleMessage(final Message message) {
         if (!Config.SECURE_MESSAGE_PAYLOAD_ROLLOUT
@@ -4738,8 +4688,7 @@ public class XmppConnectionService extends Service {
             return;
         }
 
-        final String key =
-                conversation.getAccount().getUuid() + ":" + message.getUuid();
+        final String key = conversation.getAccount().getUuid() + ":" + message.getUuid();
         if (!protectedTextVisibleMessageRehydrateInFlight.add(key)) {
             return;
         }
@@ -4764,10 +4713,7 @@ public class XmppConnectionService extends Service {
                         }
                         restored = repository.hydrate(message);
                     } catch (final IOException | RuntimeException | AssertionError e) {
-                        Log.w(
-                                Config.LOGTAG,
-                                "visible protected text targeted rehydrate failed",
-                                e);
+                        Log.w(Config.LOGTAG, "visible protected text targeted rehydrate failed", e);
                     } finally {
                         protectedTextVisibleMessageRehydrateInFlight.remove(key);
                     }
@@ -4779,13 +4725,11 @@ public class XmppConnectionService extends Service {
     }
 
     private static boolean hasMissingProtectedText(final List<Message> messages) {
-        final int start =
-                Math.max(0, messages.size() - Config.PAGE_SIZE * Config.MAX_NUM_PAGES);
+        final int start = Math.max(0, messages.size() - Config.PAGE_SIZE * Config.MAX_NUM_PAGES);
         for (int i = start; i < messages.size(); i++) {
             final Message message = messages.get(i);
             if (message != null
-                    && message.getSecureMessagePayloadMode()
-                            == SecureMessagePayloadMode.PROTECTED
+                    && message.getSecureMessagePayloadMode() == SecureMessagePayloadMode.PROTECTED
                     && !message.hasVerifiedProtectedBody()) {
                 return true;
             }
@@ -4793,16 +4737,13 @@ public class XmppConnectionService extends Service {
         return false;
     }
 
-    private static List<Message> missingProtectedTextCandidates(
-            final List<Message> messages) {
-        final int start =
-                Math.max(0, messages.size() - Config.PAGE_SIZE * Config.MAX_NUM_PAGES);
+    private static List<Message> missingProtectedTextCandidates(final List<Message> messages) {
+        final int start = Math.max(0, messages.size() - Config.PAGE_SIZE * Config.MAX_NUM_PAGES);
         final List<Message> candidates = new ArrayList<>();
         for (int i = start; i < messages.size(); i++) {
             final Message message = messages.get(i);
             if (message != null
-                    && message.getSecureMessagePayloadMode()
-                            == SecureMessagePayloadMode.PROTECTED
+                    && message.getSecureMessagePayloadMode() == SecureMessagePayloadMode.PROTECTED
                     && !message.hasVerifiedProtectedBody()) {
                 candidates.add(message);
             }
@@ -4811,20 +4752,19 @@ public class XmppConnectionService extends Service {
     }
 
     /**
-     * Cold start may restore Message rows while High Security is still LOCKED. Those protected
-     * rows intentionally remain body-less because the AMK is unavailable at that point. After a
+     * Cold start may restore Message rows while High Security is still LOCKED. Those protected rows
+     * intentionally remain body-less because the AMK is unavailable at that point. After a
      * successful crypto unlock, rehydrate only Message objects already resident in conversations.
      *
-     * This runs on the same serial database reader as cold-start restore. If unlock wins the race,
-     * the task naturally executes after restore without a second DB page read or duplicate Message
-     * objects.
+     * <p>This runs on the same serial database reader as cold-start restore. If unlock wins the
+     * race, the task naturally executes after restore without a second DB page read or duplicate
+     * Message objects.
      */
     private void scheduleResidentProtectedTextRehydrateAfterCryptoUnlock() {
         if (!Config.SECURE_MESSAGE_PAYLOAD_ROLLOUT) {
             return;
         }
-        final var snapshot =
-                SecureContentCryptoSessionRuntimeV1.snapshot(getApplicationContext());
+        final var snapshot = SecureContentCryptoSessionRuntimeV1.snapshot(getApplicationContext());
         if (snapshot.getState() != SecureContentCryptoSessionStateV1.ACTIVE) {
             return;
         }
@@ -4868,7 +4808,7 @@ public class XmppConnectionService extends Service {
     /**
      * Schedules a tiny migration batch only from Messages already loaded for actual chat reading.
      *
-     * This method must not be called by cold-start conversation restoration. It performs no
+     * <p>This method must not be called by cold-start conversation restoration. It performs no
      * account-wide scan: candidate identities and plaintext come exclusively from the supplied
      * resident page, and duplicate in-flight message identities are suppressed.
      */
@@ -4879,7 +4819,8 @@ public class XmppConnectionService extends Service {
         final List<Message> candidates = new ArrayList<>();
         final List<String> keys = new ArrayList<>();
         for (final Message message : loadedPage) {
-            if (candidates.size() >= SecureMessageTextRepository.DEFAULT_LAZY_MIGRATION_BATCH_SIZE) {
+            if (candidates.size()
+                    >= SecureMessageTextRepository.DEFAULT_LAZY_MIGRATION_BATCH_SIZE) {
                 break;
             }
             if (message == null
@@ -4935,8 +4876,7 @@ public class XmppConnectionService extends Service {
     }
 
     /** Schedules migration only for the page currently resident in an opened conversation. */
-    public void scheduleLegacyPlaintextMigrationForConversation(
-            final Conversation conversation) {
+    public void scheduleLegacyPlaintextMigrationForConversation(final Conversation conversation) {
         if (conversation == null) {
             return;
         }
@@ -5082,19 +5022,22 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    public void jumpToMessage(final Conversation conversation, final String uuid, JumpToMessageListener listener) {
-        final Runnable runnable = () -> {
-            List<Message> messages = databaseBackend.getMessagesNearUuid(conversation, 30, uuid);
-            hydrateProtectedTextMessages(messages);
-            restoreRepliesForMessages(conversation, messages);
-            if (messages != null && !messages.isEmpty()) {
-                conversation.jumpToHistoryPart(messages);
-                scheduleLegacyPlaintextMigrationForLoadedPage(messages);
-                listener.onSuccess();
-            } else {
-                listener.onNotFound();
-            }
-        };
+    public void jumpToMessage(
+            final Conversation conversation, final String uuid, JumpToMessageListener listener) {
+        final Runnable runnable =
+                () -> {
+                    List<Message> messages =
+                            databaseBackend.getMessagesNearUuid(conversation, 30, uuid);
+                    hydrateProtectedTextMessages(messages);
+                    restoreRepliesForMessages(conversation, messages);
+                    if (messages != null && !messages.isEmpty()) {
+                        conversation.jumpToHistoryPart(messages);
+                        scheduleLegacyPlaintextMigrationForLoadedPage(messages);
+                        listener.onSuccess();
+                    } else {
+                        listener.onNotFound();
+                    }
+                };
 
         mDatabaseReaderExecutor.execute(runnable);
     }
@@ -5122,7 +5065,7 @@ public class XmppConnectionService extends Service {
             Message replyMessage = null;
 
             for (Message rep : messages) {
-                if (StringUtils.equals(replyId,rep.getServerMsgId())) {
+                if (StringUtils.equals(replyId, rep.getServerMsgId())) {
                     replyMessage = rep;
                     break;
                 }
@@ -5149,7 +5092,8 @@ public class XmppConnectionService extends Service {
                     notFoundReplies = new HashMap<>();
                 }
 
-                ArrayList<Message> list = notFoundReplies.computeIfAbsent(replyId, id -> new ArrayList<>());
+                ArrayList<Message> list =
+                        notFoundReplies.computeIfAbsent(replyId, id -> new ArrayList<>());
                 list.add(m);
             }
         }
@@ -5189,7 +5133,11 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    public void loadMoreMessages(final Conversation conversation, final long timestamp, boolean isForward, final OnMoreMessagesLoaded callback) {
+    public void loadMoreMessages(
+            final Conversation conversation,
+            final long timestamp,
+            boolean isForward,
+            final OnMoreMessagesLoaded callback) {
         if (XmppConnectionService.this
                 .getMessageArchiveService()
                 .queryInProgress(conversation, callback)) {
@@ -5199,46 +5147,66 @@ public class XmppConnectionService extends Service {
         }
 
         if (isForward) {
-            Log.d(Config.LOGTAG, "load more messages for " + conversation.getName() + " after " + MessageGenerator.getTimestamp(timestamp));
+            Log.d(
+                    Config.LOGTAG,
+                    "load more messages for "
+                            + conversation.getName()
+                            + " after "
+                            + MessageGenerator.getTimestamp(timestamp));
         } else {
-            Log.d(Config.LOGTAG, "load more messages for " + conversation.getName() + " prior to " + MessageGenerator.getTimestamp(timestamp));
+            Log.d(
+                    Config.LOGTAG,
+                    "load more messages for "
+                            + conversation.getName()
+                            + " prior to "
+                            + MessageGenerator.getTimestamp(timestamp));
         }
 
-        final Runnable runnable = () -> {
-            final Account account = conversation.getAccount();
-            List<Message> messages = databaseBackend.getMessages(conversation, Config.PAGE_SIZE, timestamp, isForward);
-            hydrateProtectedTextMessages(messages);
+        final Runnable runnable =
+                () -> {
+                    final Account account = conversation.getAccount();
+                    List<Message> messages =
+                            databaseBackend.getMessages(
+                                    conversation, Config.PAGE_SIZE, timestamp, isForward);
+                    hydrateProtectedTextMessages(messages);
 
-            if (messages.size() > 0) {
-                restoreRepliesForMessages(conversation, messages);
+                    if (messages.size() > 0) {
+                        restoreRepliesForMessages(conversation, messages);
 
-                if (isForward) {
-                    conversation.addAll(-1, messages, true);
-                } else {
-                    conversation.addAll(0, messages, true);
-                }
-                scheduleLegacyPlaintextMigrationForLoadedPage(messages);
+                        if (isForward) {
+                            conversation.addAll(-1, messages, true);
+                        } else {
+                            conversation.addAll(0, messages, true);
+                        }
+                        scheduleLegacyPlaintextMigrationForLoadedPage(messages);
 
-                callback.onMoreMessagesLoaded(messages.size(), conversation);
-            } else if (!isForward &&
-                    conversation.hasMessagesLeftOnServer()
-                    && account.isOnlineAndConnected()
-                    && conversation.getLastClearHistory().getTimestamp() == 0) {
-                final boolean mamAvailable;
-                if (conversation.getMode() == Conversation.MODE_SINGLE) {
-                    mamAvailable = account.getXmppConnection().getFeatures().mam() && !conversation.getContact().isBlocked();
-                } else {
-                    mamAvailable = conversation.getMucOptions().mamSupport();
-                }
-                if (mamAvailable) {
-                    MessageArchiveService.Query query = getMessageArchiveService().query(conversation, new MamReference(0), timestamp, false);
-                    if (query != null) {
-                        query.setCallback(callback);
+                        callback.onMoreMessagesLoaded(messages.size(), conversation);
+                    } else if (!isForward
+                            && conversation.hasMessagesLeftOnServer()
+                            && account.isOnlineAndConnected()
+                            && conversation.getLastClearHistory().getTimestamp() == 0) {
+                        final boolean mamAvailable;
+                        if (conversation.getMode() == Conversation.MODE_SINGLE) {
+                            mamAvailable =
+                                    account.getXmppConnection().getFeatures().mam()
+                                            && !conversation.getContact().isBlocked();
+                        } else {
+                            mamAvailable = conversation.getMucOptions().mamSupport();
+                        }
+                        if (mamAvailable) {
+                            MessageArchiveService.Query query =
+                                    getMessageArchiveService()
+                                            .query(
+                                                    conversation,
+                                                    new MamReference(0),
+                                                    timestamp,
+                                                    false);
+                            if (query != null) {
+                                query.setCallback(callback);
+                            }
+                        }
                     }
-
-                }
-            }
-        };
+                };
         mDatabaseReaderExecutor.execute(runnable);
     }
 
@@ -5249,15 +5217,14 @@ public class XmppConnectionService extends Service {
     /**
      * Retires the removed LibreSpan-to-LibreSpan device-confirmation experiment.
      *
-     * Old builds may have left an ongoing notification, a notification channel, and account-scoped
-     * preference markers. They no longer influence OMEMO trust; normal device-list and QR/manual
-     * verification remain authoritative.
+     * <p>Old builds may have left an ongoing notification, a notification channel, and
+     * account-scoped preference markers. They no longer influence OMEMO trust; normal device-list
+     * and QR/manual verification remain authoritative.
      */
     private void retireLegacyDeviceConfirmationState() {
         final SharedPreferences preferences = getPreferences();
         final Map<String, ?> snapshot = preferences.getAll();
-        final NotificationManager notificationManager =
-                getSystemService(NotificationManager.class);
+        final NotificationManager notificationManager = getSystemService(NotificationManager.class);
 
         if (accounts != null && notificationManager != null) {
             for (final Account account : accounts) {
@@ -5283,8 +5250,7 @@ public class XmppConnectionService extends Service {
         final SharedPreferences.Editor editor = preferences.edit();
         boolean changed = false;
         for (final String key : snapshot.keySet()) {
-            if (key.startsWith("device_approval_")
-                    || key.startsWith("device_recovery_prompt_")) {
+            if (key.startsWith("device_approval_") || key.startsWith("device_recovery_prompt_")) {
                 editor.remove(key);
                 changed = true;
             }
@@ -5343,7 +5309,11 @@ public class XmppConnectionService extends Service {
         return null;
     }
 
-    private Conversation find(final Iterable<Conversation> haystack, final Account account, final Jid jid, final Jid counterpart) {
+    private Conversation find(
+            final Iterable<Conversation> haystack,
+            final Account account,
+            final Jid jid,
+            final Jid counterpart) {
         if (jid == null) {
             return null;
         }
@@ -5353,8 +5323,7 @@ public class XmppConnectionService extends Service {
                 if ((account == null || conversation.getAccount() == account)
                         && (conversation.getJid().asBareJid().equals(jid.asBareJid()))
                         && Objects.equal(conversation.getNextCounterpart(), counterpart)
-                        && conversation.hasPermanentCounterpart()
-                ) {
+                        && conversation.hasPermanentCounterpart()) {
                     return conversation;
                 }
             }
@@ -5362,8 +5331,8 @@ public class XmppConnectionService extends Service {
             for (final Conversation conversation : haystack) {
                 if ((account == null || conversation.getAccount() == account)
                         && (conversation.getJid().asBareJid().equals(jid.asBareJid()))
-                        && (conversation.getNextCounterpart() == null || !conversation.hasPermanentCounterpart())
-                ) {
+                        && (conversation.getNextCounterpart() == null
+                                || !conversation.hasPermanentCounterpart())) {
                     return conversation;
                 }
             }
@@ -5372,7 +5341,8 @@ public class XmppConnectionService extends Service {
         return null;
     }
 
-    private List<Conversation> findAll(final Iterable<Conversation> haystack, final Account account, final Jid jid) {
+    private List<Conversation> findAll(
+            final Iterable<Conversation> haystack, final Account account, final Jid jid) {
         if (jid == null) {
             return null;
         }
@@ -5381,8 +5351,7 @@ public class XmppConnectionService extends Service {
 
         for (final Conversation conversation : haystack) {
             if ((account == null || conversation.getAccount() == account)
-                    && (conversation.getJid().asBareJid().equals(jid.asBareJid()))
-            ) {
+                    && (conversation.getJid().asBareJid().equals(jid.asBareJid()))) {
                 res.add(conversation);
             }
         }
@@ -5409,17 +5378,11 @@ public class XmppConnectionService extends Service {
     }
 
     private String mucExplicitLeavePreferenceKey(final Account account, final Jid jid) {
-        return MUC_EXPLICIT_LEAVE_PREF_PREFIX
-                + account.getUuid()
-                + "|"
-                + jid.asBareJid();
+        return MUC_EXPLICIT_LEAVE_PREF_PREFIX + account.getUuid() + "|" + jid.asBareJid();
     }
 
     private String mucForgottenPreferenceKey(final Account account, final Jid jid) {
-        return MUC_FORGOTTEN_PREF_PREFIX
-                + account.getUuid()
-                + "|"
-                + jid.asBareJid();
+        return MUC_FORGOTTEN_PREF_PREFIX + account.getUuid() + "|" + jid.asBareJid();
     }
 
     public boolean isMucForgotten(final Account account, final Jid jid) {
@@ -5434,8 +5397,7 @@ public class XmppConnectionService extends Service {
             return false;
         }
         return mucExplicitLeaveGuard.contains(account.getUuid(), jid)
-                || getPreferences()
-                        .getBoolean(mucExplicitLeavePreferenceKey(account, jid), false)
+                || getPreferences().getBoolean(mucExplicitLeavePreferenceKey(account, jid), false)
                 || isMucForgotten(account, jid);
     }
 
@@ -5482,8 +5444,7 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    public boolean checkIsArchived(
-            Account account, Jid jid, Jid counterpart) {
+    public boolean checkIsArchived(Account account, Jid jid, Jid counterpart) {
         if (counterpart == null && isMucExplicitlyLeft(account, jid)) {
             return true;
         }
@@ -5499,8 +5460,11 @@ public class XmppConnectionService extends Service {
     public Conversation findOrCreateConversation(
             final Account account,
             final Jid jid,
-            final MessageArchiveService.Query query, final boolean muc, final boolean joinAfterCreate,
-            final boolean async, Jid counterpart) {
+            final MessageArchiveService.Query query,
+            final boolean muc,
+            final boolean joinAfterCreate,
+            final boolean async,
+            Jid counterpart) {
         if (muc && counterpart == null && joinAfterCreate) {
             // joinAfterCreate is reserved for an explicit user action (Join / Return to channel).
             // Only that intent may clear a durable explicit-leave marker.
@@ -5536,14 +5500,19 @@ public class XmppConnectionService extends Service {
                 if (muc) {
                     conversation =
                             new Conversation(
-                                    conversationName, account, jid, Conversation.MODE_MULTI, counterpart);
+                                    conversationName,
+                                    account,
+                                    jid,
+                                    Conversation.MODE_MULTI,
+                                    counterpart);
                 } else {
                     conversation =
                             new Conversation(
                                     conversationName,
                                     account,
                                     jid.asBareJid(),
-                                    Conversation.MODE_SINGLE, counterpart);
+                                    Conversation.MODE_SINGLE,
+                                    counterpart);
                 }
                 this.databaseBackend.createConversation(conversation);
                 loadMessagesFromDb = false;
@@ -5563,7 +5532,6 @@ public class XmppConnectionService extends Service {
                 postProcessConversation(conversation, loadMessagesFromDb, joinAfterCreate, query);
             }
             this.conversations.add(conversation);
-
 
             if (counterpart != null) {
                 Conversation parent = find(account, jid, null);
@@ -5710,28 +5678,35 @@ public class XmppConnectionService extends Service {
 
     public void destroyConversation(Conversation conversation) {
         archiveConversation(conversation);
-        final Runnable runnable = () -> {
-            if (!retireSecureMessageContentForConversation(conversation)) {
-                return;
-            }
-            databaseBackend.deleteMessagesInConversation(conversation);
-            ScopedAccountSecretVaultV1.storeString(
-                    getApplicationContext(),
-                    conversation.getAccount().getUuid(),
-                    "DRAFT_TEXT",
-                    conversation.getUuid(),
-                    null);
-            ScopedAccountSecretVaultV1.storeString(
-                    getApplicationContext(),
-                    conversation.getAccount().getUuid(),
-                    "MUC_PASSWORD",
-                    conversation.getUuid(),
-                    null);
+        final Runnable runnable =
+                () -> {
+                    if (!retireSecureMessageContentForConversation(conversation)) {
+                        return;
+                    }
+                    databaseBackend.deleteMessagesInConversation(conversation);
+                    ScopedAccountSecretVaultV1.storeString(
+                            getApplicationContext(),
+                            conversation.getAccount().getUuid(),
+                            "DRAFT_TEXT",
+                            conversation.getUuid(),
+                            null);
+                    ScopedAccountSecretVaultV1.storeString(
+                            getApplicationContext(),
+                            conversation.getAccount().getUuid(),
+                            "MUC_PASSWORD",
+                            conversation.getUuid(),
+                            null);
 
-            if (!databaseBackend.deleteConversation(conversation.getAccount(), conversation.getContactJid().asBareJid(), conversation.getNextCounterpart())) {
-                Log.d(Config.LOGTAG, conversation.getJid().asBareJid() + ": unable to delete conversation");
-            }
-        };
+                    if (!databaseBackend.deleteConversation(
+                            conversation.getAccount(),
+                            conversation.getContactJid().asBareJid(),
+                            conversation.getNextCounterpart())) {
+                        Log.d(
+                                Config.LOGTAG,
+                                conversation.getJid().asBareJid()
+                                        + ": unable to delete conversation");
+                    }
+                };
         mDatabaseWriterExecutor.execute(runnable);
     }
 
@@ -5747,8 +5722,7 @@ public class XmppConnectionService extends Service {
                     final Bookmark bookmark = conversation.getBookmark();
                     if (maySynchronizeWithBookmarks && bookmark != null) {
                         if (conversation.getMucOptions().getError() == MucOptions.Error.DESTROYED
-                                && conversation.getAccount().getStatus()
-                                        == Account.State.ONLINE) {
+                                && conversation.getAccount().getStatus() == Account.State.ONLINE) {
                             Account account = bookmark.getAccount();
                             bookmark.setConversation(null);
                             deleteBookmark(account, bookmark);
@@ -5794,8 +5768,7 @@ public class XmppConnectionService extends Service {
         databaseBackend.createAccount(account);
 
         final var secretOutcome =
-                new AccountSecretMigrationCoordinatorV1(
-                                getApplicationContext(), databaseBackend)
+                new AccountSecretMigrationCoordinatorV1(getApplicationContext(), databaseBackend)
                         .migrateNewAccount(account);
         if (!AccountSecretConnectionPolicyV1.permitsConnection(secretOutcome)) {
             Log.w(Config.LOGTAG, "new account secret migration not committed; blocking reconnect");
@@ -6013,8 +5986,7 @@ public class XmppConnectionService extends Service {
 
     public void unregisterAccount(final Account account, final Consumer<Boolean> callback) {
         unregisterAccountForRemoval(
-                account,
-                result -> callback.accept(result == ServerAccountRemovalResult.SUCCESS));
+                account, result -> callback.accept(result == ServerAccountRemovalResult.SUCCESS));
     }
 
     public void unregisterAccountForRemoval(
@@ -6047,12 +6019,11 @@ public class XmppConnectionService extends Service {
     /**
      * Removes one local account without exposing a false-success UI.
      *
-     * With Secure Content enabled, crypto-first local-data retirement runs while the account is
+     * <p>With Secure Content enabled, crypto-first local-data retirement runs while the account is
      * still registered and account-owned media writers are gated. The Account row and runtime
      * registry are removed only after that retirement succeeds.
      */
-    public void deleteAccount(
-            final Account account, @Nullable final OnAccountRemoved callback) {
+    public void deleteAccount(final Account account, @Nullable final OnAccountRemoved callback) {
         if (account == null) {
             completeAccountRemoval(callback, AccountRemovalResult.FAILED);
             return;
@@ -6114,8 +6085,7 @@ public class XmppConnectionService extends Service {
                             }
                         }
                         if (!retireAndDeleteAccountPersistence(account)) {
-                            throw new IllegalStateException(
-                                    "Unable to retire account persistence");
+                            throw new IllegalStateException("Unable to retire account persistence");
                         }
                         prepareAccountRuntimeForRemoval(account);
                         releaseDeletedAccountRuntime(account);
@@ -6478,9 +6448,7 @@ public class XmppConnectionService extends Service {
                                 + ": background ping interval="
                                 + (backgroundPingInterval / 1000L)
                                 + "s");
-                scheduleWakeUpCall(
-                        backgroundPingInterval,
-                        account.getUuid().hashCode());
+                scheduleWakeUpCall(backgroundPingInterval, account.getUuid().hashCode());
             }
         }
     }
@@ -6669,8 +6637,7 @@ public class XmppConnectionService extends Service {
         if (conversation != null
                 && conversation.getNextCounterpart() == null
                 && (conversation.isMucExplicitlyLeft()
-                        || isMucExplicitlyLeft(
-                                conversation.getAccount(), conversation.getJid()))) {
+                        || isMucExplicitlyLeft(conversation.getAccount(), conversation.getJid()))) {
             Log.d(
                     Config.LOGTAG,
                     conversation.getAccount().getJid().asBareJid()
@@ -6705,8 +6672,7 @@ public class XmppConnectionService extends Service {
         // by Join / Return to channel, which goes through joinMucExplicitly() or joinAfterCreate.
         if (conversation.getNextCounterpart() == null
                 && (conversation.isMucExplicitlyLeft()
-                        || isMucExplicitlyLeft(
-                                conversation.getAccount(), conversation.getJid()))) {
+                        || isMucExplicitlyLeft(conversation.getAccount(), conversation.getJid()))) {
             Log.d(
                     Config.LOGTAG,
                     conversation.getAccount().getJid().asBareJid()
@@ -6736,8 +6702,7 @@ public class XmppConnectionService extends Service {
         if (conversation != null
                 && conversation.getNextCounterpart() == null
                 && (conversation.isMucExplicitlyLeft()
-                        || isMucExplicitlyLeft(
-                                conversation.getAccount(), conversation.getJid()))) {
+                        || isMucExplicitlyLeft(conversation.getAccount(), conversation.getJid()))) {
             Log.d(
                     Config.LOGTAG,
                     conversation.getAccount().getJid().asBareJid()
@@ -6917,8 +6882,7 @@ public class XmppConnectionService extends Service {
                     public void accept(Iq response) {
                         final boolean omemoEnabled =
                                 conversation.getNextEncryption() == Message.ENCRYPTION_AXOLOTL;
-                        final Element query =
-                                response.findChild("query", Namespace.MUC_ADMIN);
+                        final Element query = response.findChild("query", Namespace.MUC_ADMIN);
                         if (response.getType() == Iq.Type.RESULT && query != null) {
                             for (Element child : query.getChildren()) {
                                 if ("item".equals(child.getName())) {
@@ -6993,8 +6957,7 @@ public class XmppConnectionService extends Service {
                 account.getJid().asBareJid() + ": fetching members for " + conversation.getName());
     }
 
-    public boolean rememberMucPassword(
-            final Conversation conversation, final String password) {
+    public boolean rememberMucPassword(final Conversation conversation, final String password) {
         if (conversation == null || conversation.getMode() != Conversation.MODE_MULTI) {
             return false;
         }
@@ -7096,8 +7059,7 @@ public class XmppConnectionService extends Service {
         if (conversation == null || conversation.getAccount() == null) {
             return false;
         }
-        final String normalized =
-                value == null || value.trim().isEmpty() ? null : value;
+        final String normalized = value == null || value.trim().isEmpty() ? null : value;
         if (!ScopedAccountSecretVaultV1.storeString(
                 getApplicationContext(),
                 conversation.getAccount().getUuid(),
@@ -7149,7 +7111,8 @@ public class XmppConnectionService extends Service {
                 if (coordinator == null) {
                     Log.e(
                             Config.LOGTAG,
-                            "secure message payload coordinator is unavailable during conversation delete");
+                            "secure message payload coordinator is unavailable during conversation"
+                                    + " delete");
                     return false;
                 }
                 final List<String> messageUuids =
@@ -7163,7 +7126,9 @@ public class XmppConnectionService extends Service {
                 return true;
             }
             if (!(getApplication() instanceof Conversations)) {
-                Log.e(Config.LOGTAG, "secure media store is unavailable during conversation delete");
+                Log.e(
+                        Config.LOGTAG,
+                        "secure media store is unavailable during conversation delete");
                 return false;
             }
             final Conversations application = (Conversations) getApplication();
@@ -7173,7 +7138,8 @@ public class XmppConnectionService extends Service {
             boundary.retireConversation(
                     accountUuid,
                     conversation.getUuid(),
-                    databaseBackend.getMessageUuidsForConversation(accountUuid, conversation.getUuid()));
+                    databaseBackend.getMessageUuidsForConversation(
+                            accountUuid, conversation.getUuid()));
             return true;
         } catch (final Exception exception) {
             Log.e(
@@ -7189,35 +7155,47 @@ public class XmppConnectionService extends Service {
     }
 
     /** The IQ result only acknowledges the request; only the room event changes the timeline. */
-    public void moderateMessage(final Conversation conversation, final Message message,
+    public void moderateMessage(
+            final Conversation conversation,
+            final Message message,
             final java.util.function.Consumer<Boolean> callback) {
         if (!canModerateMessage(conversation, message)) {
             callback.accept(false);
             return;
         }
-        final Iq request = mIqGenerator.moderateMessage(
-                conversation, message.getRoomStanzaId(), null);
-        sendIqPacket(conversation.getAccount(), request, response -> {
-            final boolean accepted = MucModerationProtocol.requestAccepted(response);
-            if (!accepted) {
-                Log.w(Config.LOGTAG, "MUC moderation request rejected");
-            }
-            callback.accept(accepted);
-        });
+        final Iq request =
+                mIqGenerator.moderateMessage(conversation, message.getRoomStanzaId(), null);
+        sendIqPacket(
+                conversation.getAccount(),
+                request,
+                response -> {
+                    final boolean accepted = MucModerationProtocol.requestAccepted(response);
+                    if (!accepted) {
+                        Log.w(Config.LOGTAG, "MUC moderation request rejected");
+                    }
+                    callback.accept(accepted);
+                });
     }
 
     /** Called only after the parser has verified the bare-room service sender. */
-    public void applyMessageModeration(final Conversation conversation, final String roomStanzaId,
-            final String by, final String reason, final long stamp) {
-        if (conversation == null || conversation.getMode() != Conversation.MODE_MULTI
-                || roomStanzaId == null || roomStanzaId.isEmpty()) return;
+    public void applyMessageModeration(
+            final Conversation conversation,
+            final String roomStanzaId,
+            final String by,
+            final String reason,
+            final long stamp) {
+        if (conversation == null
+                || conversation.getMode() != Conversation.MODE_MULTI
+                || roomStanzaId == null
+                || roomStanzaId.isEmpty()) return;
         final Message resident = conversation.findMessageForModerationId(roomStanzaId);
         Message target = resident;
         if (target == null) {
             target = databaseBackend.getMessageWithRoomStanzaId(conversation, roomStanzaId);
         }
         if (target == null) {
-            final Message legacy = databaseBackend.getMessageWithServerMsgId(conversation, roomStanzaId);
+            final Message legacy =
+                    databaseBackend.getMessageWithServerMsgId(conversation, roomStanzaId);
             if (legacy != null && legacy.getRoomStanzaId() == null) {
                 target = legacy;
             }
@@ -7236,21 +7214,39 @@ public class XmppConnectionService extends Service {
     }
 
     /** An archived tombstone can replace an existing row by archive identity. */
-    public void applyArchivedMessageModeration(final Conversation conversation, final Message target,
-            final String roomStanzaId, final String by, final String reason, final long stamp) {
-        if (conversation == null || target == null || conversation.getMode() != Conversation.MODE_MULTI) return;
-        if (roomStanzaId != null && !roomStanzaId.isEmpty()
-                && !databaseBackend.recordMessageModeration(conversation, roomStanzaId, by, reason, stamp)) {
+    public void applyArchivedMessageModeration(
+            final Conversation conversation,
+            final Message target,
+            final String roomStanzaId,
+            final String by,
+            final String reason,
+            final long stamp) {
+        if (conversation == null
+                || target == null
+                || conversation.getMode() != Conversation.MODE_MULTI) return;
+        if (roomStanzaId != null
+                && !roomStanzaId.isEmpty()
+                && !databaseBackend.recordMessageModeration(
+                        conversation, roomStanzaId, by, reason, stamp)) {
             Log.w(Config.LOGTAG, "unable to persist archived moderation marker");
             return;
         }
-        retireModeratedMessage(conversation, target,
+        retireModeratedMessage(
+                conversation,
+                target,
                 conversation.findMessageWithRoomStanzaId(target.getRoomStanzaId()) == target,
-                by, reason, stamp);
+                by,
+                reason,
+                stamp);
     }
 
-    private void retireModeratedMessage(final Conversation conversation, final Message target,
-            final boolean resident, final String by, final String reason, final long stamp) {
+    private void retireModeratedMessage(
+            final Conversation conversation,
+            final Message target,
+            final boolean resident,
+            final String by,
+            final String reason,
+            final long stamp) {
         final boolean changed = !target.isModerated();
         final String accountUuid = conversation.getAccount().getUuid();
         final boolean retired =
@@ -7285,7 +7281,8 @@ public class XmppConnectionService extends Service {
         if (Config.SECURE_MESSAGE_PAYLOAD_ROLLOUT) {
             final SecureMessagePayloadCoordinator coordinator =
                     getSecureMessagePayloadCoordinator();
-            if (coordinator == null) throw new IllegalStateException("payload coordinator unavailable");
+            if (coordinator == null)
+                throw new IllegalStateException("payload coordinator unavailable");
             coordinator.retire(accountUuid, messageUuid);
         } else if (Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
             if (!(getApplication() instanceof Conversations)) {
@@ -7293,7 +7290,7 @@ public class XmppConnectionService extends Service {
             }
             final Conversations application = (Conversations) getApplication();
             new SecureMessageRetirementBoundary(
-                    null, application.getSecureContentStoreProvider().get())
+                            null, application.getSecureContentStoreProvider().get())
                     .retireMessage(accountUuid, messageUuid);
         }
     }
@@ -7320,8 +7317,7 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    public void deleteMessageLocally(
-            final Conversation conversation, final Message message) {
+    public void deleteMessageLocally(final Conversation conversation, final Message message) {
         deleteMessagesLocally(conversation, Collections.singletonList(message));
     }
 
@@ -7360,7 +7356,8 @@ public class XmppConnectionService extends Service {
                             if (coordinator == null) {
                                 Log.e(
                                         Config.LOGTAG,
-                                        "secure message payload coordinator is unavailable during local delete");
+                                        "secure message payload coordinator is unavailable during"
+                                                + " local delete");
                                 return;
                             }
                             final SecureMessageTextRepository repository =
@@ -7521,8 +7518,7 @@ public class XmppConnectionService extends Service {
                     if (message == null) {
                         final ArrayList<Message> loaded =
                                 databaseBackend.getMessagesByLocalUuids(
-                                        conversation,
-                                        Collections.singleton(messageUuid));
+                                        conversation, Collections.singleton(messageUuid));
                         message = loaded.isEmpty() ? null : loaded.get(0);
                     }
                     callback.accept(message);
@@ -7546,11 +7542,7 @@ public class XmppConnectionService extends Service {
                                             application.getSecureContentStoreProvider().get());
                             callback.onAttachmentPageLoaded(
                                     repository.loadPage(
-                                            accountUuid,
-                                            jid.asBareJid(),
-                                            category,
-                                            cursor,
-                                            limit));
+                                            accountUuid, jid.asBareJid(), category, cursor, limit));
                         },
                         "attachment-browser")
                 .start();
@@ -7902,9 +7894,13 @@ public class XmppConnectionService extends Service {
                                                 archiveConversation(conversation);
                                                 if (callback != null) {
                                                     if (serverFormOtherAccount) {
-                                                        callback.error(R.string.no_conference_server_found, conversation);
+                                                        callback.error(
+                                                                R.string.no_conference_server_found,
+                                                                conversation);
                                                     } else {
-                                                        callback.error(R.string.conference_creation_failed, conversation);
+                                                        callback.error(
+                                                                R.string.conference_creation_failed,
+                                                                conversation);
                                                     }
                                                 }
                                             }
@@ -7934,7 +7930,10 @@ public class XmppConnectionService extends Service {
         fetchConferenceConfiguration(conversation, null);
     }
 
-    public void checkIfMuc(final Account account, final Jid jid, eu.siacs.conversations.utils.Consumer<Boolean> cb) {
+    public void checkIfMuc(
+            final Account account,
+            final Jid jid,
+            eu.siacs.conversations.utils.Consumer<Boolean> cb) {
         if (jid.isDomainJid()) {
             // Spec basically says MUC needs to have a node
             // And also specifies that MUC and MUC service should have the same identity...
@@ -7943,13 +7942,15 @@ public class XmppConnectionService extends Service {
         }
 
         Iq request = mIqGenerator.queryDiscoInfo(jid.asBareJid());
-        sendIqPacket(account, request, (reply) -> {
-            ServiceDiscoveryResult result = new ServiceDiscoveryResult(reply);
-            cb.accept(
-                    result.getFeatures().contains("http://jabber.org/protocol/muc") &&
-                            result.hasIdentity("conference", null)
-            );
-        });
+        sendIqPacket(
+                account,
+                request,
+                (reply) -> {
+                    ServiceDiscoveryResult result = new ServiceDiscoveryResult(reply);
+                    cb.accept(
+                            result.getFeatures().contains("http://jabber.org/protocol/muc")
+                                    && result.hasIdentity("conference", null));
+                });
     }
 
     public void fetchConferenceConfiguration(
@@ -8150,8 +8151,6 @@ public class XmppConnectionService extends Service {
         return true;
     }
 
-
-
     public void refreshMucOwnerAdminAffiliations(final Conversation conference) {
         if (conference == null || conference.getMode() != Conversation.MODE_MULTI) {
             return;
@@ -8180,9 +8179,7 @@ public class XmppConnectionService extends Service {
                     }
                     final Element query = response.findChild("query", Namespace.MUC_ADMIN);
                     if (query == null) {
-                        Log.w(
-                                Config.LOGTAG,
-                                "MUC affiliation result missing muc#admin query");
+                        Log.w(Config.LOGTAG, "MUC affiliation result missing muc#admin query");
                         return;
                     }
                     final List<MucOptions.User> snapshot = new ArrayList<>();
@@ -8191,8 +8188,7 @@ public class XmppConnectionService extends Service {
                             continue;
                         }
                         final MucOptions.User user = AbstractParser.parseItem(conference, child);
-                        if (user.getRealJid() != null
-                                && user.getAffiliation() == affiliation) {
+                        if (user.getRealJid() != null && user.getAffiliation() == affiliation) {
                             snapshot.add(user);
                         }
                     }
@@ -8347,9 +8343,11 @@ public class XmppConnectionService extends Service {
                         leaveMuc(conversation, true);
                     } else {
                         if (conversation.endOtrIfNeeded()) {
-                            Log.d(Config.LOGTAG, account.getJid().asBareJid()
-                                    + ": ended otr session with "
-                                    + conversation.getJid());
+                            Log.d(
+                                    Config.LOGTAG,
+                                    account.getJid().asBareJid()
+                                            + ": ended otr session with "
+                                            + conversation.getJid());
                         }
                     }
                 }
@@ -8420,35 +8418,42 @@ public class XmppConnectionService extends Service {
     public void onOtrSessionEstablished(Conversation conversation) {
         final Account account = conversation.getAccount();
         final Session otrSession = conversation.getOtrSession();
-        Log.d(Config.LOGTAG,
-                account.getJid().asBareJid() + " otr session established with "
-                        + conversation.getJid() + "/"
+        Log.d(
+                Config.LOGTAG,
+                account.getJid().asBareJid()
+                        + " otr session established with "
+                        + conversation.getJid()
+                        + "/"
                         + otrSession.getSessionID().getUserID());
-        conversation.findUnsentMessagesWithEncryption(Message.ENCRYPTION_OTR, new Conversation.OnMessageFound() {
+        conversation.findUnsentMessagesWithEncryption(
+                Message.ENCRYPTION_OTR,
+                new Conversation.OnMessageFound() {
 
-            @Override
-            public void onMessageFound(Message message) {
-                SessionID id = otrSession.getSessionID();
-                try {
-                    message.setCounterpart(Jid.of(id.getAccountID() + "/" + id.getUserID()));
-                } catch (IllegalArgumentException e) {
-                    return;
-                }
-                if (message.needsUploading()) {
-                    mJingleConnectionManager.startJingleFileTransfer(message);
-                } else {
-                    im.conversations.android.xmpp.model.stanza.Message outPacket = mMessageGenerator.generateOtrChat(message);
-                    if (outPacket != null) {
-                        mMessageGenerator.addDelay(outPacket, message.getTimeSent());
-                        message.setStatus(Message.STATUS_SEND);
-                        databaseBackend.updateMessage(message, false);
-                        markTimelineChanged(message);
-                        sendMessagePacket(account, outPacket);
+                    @Override
+                    public void onMessageFound(Message message) {
+                        SessionID id = otrSession.getSessionID();
+                        try {
+                            message.setCounterpart(
+                                    Jid.of(id.getAccountID() + "/" + id.getUserID()));
+                        } catch (IllegalArgumentException e) {
+                            return;
+                        }
+                        if (message.needsUploading()) {
+                            mJingleConnectionManager.startJingleFileTransfer(message);
+                        } else {
+                            im.conversations.android.xmpp.model.stanza.Message outPacket =
+                                    mMessageGenerator.generateOtrChat(message);
+                            if (outPacket != null) {
+                                mMessageGenerator.addDelay(outPacket, message.getTimeSent());
+                                message.setStatus(Message.STATUS_SEND);
+                                databaseBackend.updateMessage(message, false);
+                                markTimelineChanged(message);
+                                sendMessagePacket(account, outPacket);
+                            }
+                        }
+                        updateConversationUi();
                     }
-                }
-                updateConversationUi();
-            }
-        });
+                });
     }
 
     public void pushContactToServer(final Contact contact) {
@@ -8757,7 +8762,8 @@ public class XmppConnectionService extends Service {
                             final Avatar serverAvatar = parseAvatar(packet);
                             if (serverAvatar == null && account.getAvatar() != null) {
                                 final Avatar avatar =
-                                        fileBackend.getStoredPepAvatar(account, account.getAvatar());
+                                        fileBackend.getStoredPepAvatar(
+                                                account, account.getAvatar());
                                 if (avatar != null) {
                                     Log.d(
                                             Config.LOGTAG,
@@ -8767,7 +8773,8 @@ public class XmppConnectionService extends Service {
                                     // republication) likely doesn't support access models anyway
                                     publishAvatar(
                                             account,
-                                            fileBackend.getStoredPepAvatar(account, account.getAvatar()),
+                                            fileBackend.getStoredPepAvatar(
+                                                    account, account.getAvatar()),
                                             true,
                                             null);
                                 } else {
@@ -9436,7 +9443,11 @@ public class XmppConnectionService extends Service {
     public Conversation findUniqueConversationByJid(XmppUri xmppUri) {
         List<Conversation> findings = new ArrayList<>();
         for (Conversation c : getConversations()) {
-            if (c.getAccount().isEnabled() && c.getJid().asBareJid().equals(xmppUri.getJid()) && c.getNextCounterpart() == null && ((c.getMode() == Conversational.MODE_MULTI) == xmppUri.isAction(XmppUri.ACTION_JOIN))) {
+            if (c.getAccount().isEnabled()
+                    && c.getJid().asBareJid().equals(xmppUri.getJid())
+                    && c.getNextCounterpart() == null
+                    && ((c.getMode() == Conversational.MODE_MULTI)
+                            == xmppUri.isAction(XmppUri.ACTION_JOIN))) {
                 findings.add(c);
             }
         }
@@ -9799,7 +9810,8 @@ public class XmppConnectionService extends Service {
         sendIqPacket(account, packet, callback, null);
     }
 
-    public void sendIqPacket(final Account account, final Iq packet, final Consumer<Iq> callback, Long timeout) {
+    public void sendIqPacket(
+            final Account account, final Iq packet, final Consumer<Iq> callback, Long timeout) {
         final XmppConnection connection = account.getXmppConnection();
         if (connection != null) {
             connection.sendIqPacket(packet, callback, timeout);
@@ -9935,7 +9947,10 @@ public class XmppConnectionService extends Service {
 
     public Conversation findFirstMuc(Jid jid) {
         for (Conversation conversation : getConversations()) {
-            if (conversation.getAccount().isEnabled() && conversation.getJid().asBareJid().equals(jid.asBareJid()) && conversation.getNextCounterpart() == null && conversation.getMode() == Conversation.MODE_MULTI) {
+            if (conversation.getAccount().isEnabled()
+                    && conversation.getJid().asBareJid().equals(jid.asBareJid())
+                    && conversation.getNextCounterpart() == null
+                    && conversation.getMode() == Conversation.MODE_MULTI) {
                 return conversation;
             }
         }
@@ -10008,8 +10023,7 @@ public class XmppConnectionService extends Service {
         final Conversations application = (Conversations) getApplication();
         final var store = application.getSecureContentStoreProvider().get();
         final SecureMessageRetirementBoundary retirement =
-                new SecureMessageRetirementBoundary(
-                        getSecureMessagePayloadCoordinator(), store);
+                new SecureMessageRetirementBoundary(getSecureMessagePayloadCoordinator(), store);
         retirement.retireAccount(accountUuid);
 
         for (final String path : snapshot.getLegacyMediaPaths()) {
@@ -10048,8 +10062,8 @@ public class XmppConnectionService extends Service {
         }
         final Map<String, LocalAccountDataSnapshot.ConversationClearMarker> markers =
                 new HashMap<>();
-        for (final LocalAccountDataSnapshot.ConversationClearMarker marker
-                : snapshot.getConversations()) {
+        for (final LocalAccountDataSnapshot.ConversationClearMarker marker :
+                snapshot.getConversations()) {
             markers.put(marker.getConversationUuid(), marker);
         }
         for (final Conversation conversation : getConversations()) {
@@ -10206,7 +10220,8 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    public void fetchFromGateway(Account account, final Jid jid, final String input, final OnGatewayResult callback) {
+    public void fetchFromGateway(
+            Account account, final Jid jid, final String input, final OnGatewayResult callback) {
         Iq request = new Iq(input == null ? Iq.Type.GET : Iq.Type.SET);
         request.setTo(jid);
         Element query = request.query("jabber:iq:gateway");
@@ -10214,14 +10229,20 @@ public class XmppConnectionService extends Service {
             Element prompt = query.addChild("prompt");
             prompt.setContent(input);
         }
-        sendIqPacket(account, request, (Iq packet) -> {
-            if (packet.getType() == Iq.Type.RESULT) {
-                callback.onGatewayResult(packet.query().findChildContent(input == null ? "prompt" : "jid"), null);
-            } else {
-                Element error = packet.findChild("error");
-                callback.onGatewayResult(null, error == null ? null : error.findChildContent("text"));
-            }
-        });
+        sendIqPacket(
+                account,
+                request,
+                (Iq packet) -> {
+                    if (packet.getType() == Iq.Type.RESULT) {
+                        callback.onGatewayResult(
+                                packet.query().findChildContent(input == null ? "prompt" : "jid"),
+                                null);
+                    } else {
+                        Element error = packet.findChild("error");
+                        callback.onGatewayResult(
+                                null, error == null ? null : error.findChildContent("text"));
+                    }
+                });
     }
 
     public void fetchCaps(final Account account, final Jid jid, final Presence presence) {
@@ -10229,8 +10250,10 @@ public class XmppConnectionService extends Service {
     }
 
     public void fetchCaps(Account account, final Jid jid, final Presence presence, Runnable cb) {
-        final Pair<String, String> key = presence == null ? null : new Pair<>(presence.getHash(), presence.getVer());
-        final ServiceDiscoveryResult disco = key == null ? null : getCachedServiceDiscoveryResult(key);
+        final Pair<String, String> key =
+                presence == null ? null : new Pair<>(presence.getHash(), presence.getVer());
+        final ServiceDiscoveryResult disco =
+                key == null ? null : getCachedServiceDiscoveryResult(key);
         if (disco != null) {
             presence.setServiceDiscoveryResult(disco);
             final Contact contact = account.getRoster().getContact(jid);
@@ -10252,7 +10275,8 @@ public class XmppConnectionService extends Service {
                     Config.LOGTAG,
                     account.getJid().asBareJid()
                             + ": making disco request for "
-                            + (key == null ? "" : key.second) + " to "
+                            + (key == null ? "" : key.second)
+                            + " to "
                             + jid);
             sendIqPacket(
                     account,
@@ -10261,12 +10285,19 @@ public class XmppConnectionService extends Service {
                         if (response.getType() == Iq.Type.RESULT) {
                             final ServiceDiscoveryResult discoveryResult =
                                     new ServiceDiscoveryResult(response);
-                            if (presence == null || presence.getVer() == null || presence.getVer().equals(discoveryResult.getVer())) {
-                        databaseBackend.insertDiscoveryResult(discoveryResult);
-                        injectServiceDiscoveryResult(account.getRoster(), presence == null ? null : presence.getHash(), presence == null ? null : presence.getVer(), jid.getResource(), discoveryResult);
+                            if (presence == null
+                                    || presence.getVer() == null
+                                    || presence.getVer().equals(discoveryResult.getVer())) {
+                                databaseBackend.insertDiscoveryResult(discoveryResult);
+                                injectServiceDiscoveryResult(
+                                        account.getRoster(),
+                                        presence == null ? null : presence.getHash(),
+                                        presence == null ? null : presence.getVer(),
+                                        jid.getResource(),
+                                        discoveryResult);
 
-                        updateConversationUi(true);
-                        if (cb != null) cb.run();
+                                updateConversationUi(true);
+                                if (cb != null) cb.run();
                             } else {
                                 Log.d(
                                         Config.LOGTAG,
@@ -10294,7 +10325,8 @@ public class XmppConnectionService extends Service {
         sendIqPacket(account, request, iq -> callback.onIqPacketReceived(iq), 5L);
     }
 
-    private void injectServiceDiscoveryResult(Roster roster, String hash, String ver, String resource, ServiceDiscoveryResult disco) {
+    private void injectServiceDiscoveryResult(
+            Roster roster, String hash, String ver, String resource, ServiceDiscoveryResult disco) {
         boolean rosterNeedsSync = false;
         for (final Contact contact : roster.getContacts()) {
             boolean serviceDiscoverySet = false;
@@ -10481,6 +10513,7 @@ public class XmppConnectionService extends Service {
 
     public interface JumpToMessageListener {
         void onSuccess();
+
         void onNotFound();
     }
 
@@ -10507,8 +10540,13 @@ public class XmppConnectionService extends Service {
     }
 
     public interface OnConversationUpdate {
-        default void onConversationUpdate() { onConversationUpdate(false); }
-        default void onConversationUpdate(boolean newCaps) { onConversationUpdate(); }
+        default void onConversationUpdate() {
+            onConversationUpdate(false);
+        }
+
+        default void onConversationUpdate(boolean newCaps) {
+            onConversationUpdate();
+        }
     }
 
     public interface OnJingleRtpConnectionUpdate {
