@@ -26,6 +26,7 @@ import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.format.DateUtils;
 import android.text.style.ClickableSpan;
+import android.text.style.URLSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.LeadingMarginSpan;
 import android.text.style.RelativeSizeSpan;
@@ -2244,7 +2245,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
         viewHolder.messageBody.setOnLongClickListener(
                 v -> viewHolder.message_box.performLongClick());
         viewHolder.messageBody.setOnTouchListener(
-                new PlainTextBubbleTouchBridge(viewHolder.message_box));
+                new PlainTextBubbleTouchBridge(viewHolder.message_box, selectionStatusProvider));
     }
 
     private View.OnLongClickListener messageActionLongClickListener(final Message message) {
@@ -2260,13 +2261,55 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
     private static final class PlainTextBubbleTouchBridge implements View.OnTouchListener {
         private final View messageBox;
         private final int touchSlop;
+        private final SelectionStatusProvider selectionStatusProvider;
+        private URLSpan pressedUrl;
         private float downX;
         private float downY;
         private boolean moved;
 
-        private PlainTextBubbleTouchBridge(final View messageBox) {
+        private PlainTextBubbleTouchBridge(
+                final View messageBox,
+                final SelectionStatusProvider selectionStatusProvider) {
             this.messageBox = messageBox;
+            this.selectionStatusProvider = selectionStatusProvider;
             this.touchSlop = ViewConfiguration.get(messageBox.getContext()).getScaledTouchSlop();
+        }
+
+        private static URLSpan touchedUrl(final View view, final MotionEvent event) {
+            if (!(view instanceof TextView textView)
+                    || !(textView.getText() instanceof Spanned text)) {
+                return null;
+            }
+
+            final Layout layout = textView.getLayout();
+            if (layout == null) {
+                return null;
+            }
+
+            final float x = event.getX() - textView.getTotalPaddingLeft()
+                    + textView.getScrollX();
+            final float y = event.getY() - textView.getTotalPaddingTop()
+                    + textView.getScrollY();
+
+            if (y < 0 || y >= layout.getHeight()) {
+                return null;
+            }
+
+            final int line = layout.getLineForVertical((int) y);
+            final float left = layout.getLineLeft(line);
+            final float right = layout.getLineRight(line);
+            if (x < Math.min(left, right) || x > Math.max(left, right)) {
+                return null;
+            }
+
+            final int offset = layout.getOffsetForHorizontal(line, x);
+            for (final URLSpan url : text.getSpans(offset, offset, URLSpan.class)) {
+                if (offset >= text.getSpanStart(url)
+                        && offset < text.getSpanEnd(url)) {
+                    return url;
+                }
+            }
+            return null;
         }
 
         @Override
@@ -2276,6 +2319,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                     downX = event.getX();
                     downY = event.getY();
                     moved = false;
+                    pressedUrl = touchedUrl(view, event);
                     return false;
                 case MotionEvent.ACTION_MOVE:
                     if (Math.abs(event.getX() - downX) > touchSlop
@@ -2283,24 +2327,40 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                         moved = true;
                     }
                     return false;
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    moved = true;
+                    return false;
                 case MotionEvent.ACTION_UP:
                     final boolean wasMoved = moved;
                     final boolean wasLongPress =
                             event.getEventTime() - event.getDownTime()
                                     >= ViewConfiguration.getLongPressTimeout();
-                    final boolean shouldClickBubble = !wasMoved && !wasLongPress;
+                    final boolean shouldHandleTap = !wasMoved && !wasLongPress;
+                    final URLSpan downUrl = pressedUrl;
 
                     moved = false;
+                    pressedUrl = null;
 
-                    if (shouldClickBubble) {
-                        // Message actions own a normal tap across the whole text bubble. A URL
-                        // ClickableSpan must not steal the ACTION_UP and launch externally.
+                    if (shouldHandleTap) {
+                        final boolean selecting = selectionStatusProvider != null
+                                && selectionStatusProvider.isSomethingSelected();
+
+                        // Open only when down and up hit the same URL.
+                        // Selection mode always owns the tap instead.
+                        if (!selecting && downUrl != null
+                                && downUrl == touchedUrl(view, event)) {
+                            downUrl.onClick(view);
+                            return true;
+                        }
+
+                        // Non-link text keeps its existing message actions.
                         messageBox.performClick();
                     }
 
-                    return shouldClickBubble || wasMoved || wasLongPress;
+                    return shouldHandleTap || wasMoved || wasLongPress;
                 case MotionEvent.ACTION_CANCEL:
                     moved = false;
+                    pressedUrl = null;
                     return false;
                 default:
                     return false;
@@ -2655,7 +2715,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                     }
                 });
         viewHolder.mediaCaption.setOnTouchListener(
-                new PlainTextBubbleTouchBridge(viewHolder.mediaCaption));
+                new PlainTextBubbleTouchBridge(viewHolder.mediaCaption, selectionStatusProvider));
         viewHolder.mediaCaptionDivider.setVisibility(View.VISIBLE);
         viewHolder.mediaCaption.setVisibility(View.VISIBLE);
     }
@@ -3744,7 +3804,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                 viewHolder.mediaCaption.setOnLongClickListener(mediaLongClickListener);
 
                 viewHolder.mediaCaption.setOnTouchListener(
-                        new PlainTextBubbleTouchBridge(viewHolder.mediaCaption));
+                        new PlainTextBubbleTouchBridge(viewHolder.mediaCaption, selectionStatusProvider));
             }
 
             if (viewHolder.mediaCaptionDivider != null) {
