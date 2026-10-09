@@ -1918,7 +1918,7 @@
     <string name="neocont_delivery_notifications">Benachrichtigungszustellung</string>
     <string name="neocont_background_connection">Hintergrundverbindung</string>
     <string name="neocont_background_connection_summary">Hilft der App, im Hintergrund verbunden zu bleiben</string>
-    <string name="neocont_push_settings">Push-Benachrichtigungen</string>
+    <string name="neocont_push_settings">Unified Push</string>
     <string name="neocont_push_settings_summary">Einstellungen für die Zustellung von Benachrichtigungen im Hintergrund</string>
     <string name="neocont_presence_settings">Status und Verfügbarkeit</string>
     <string name="neocont_presence_settings_summary">Wie sich dein Status ändert, wenn das Gerät gesperrt oder stummgeschaltet ist</string>

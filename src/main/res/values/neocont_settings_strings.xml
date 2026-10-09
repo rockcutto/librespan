@@ -259,7 +259,7 @@
     <string name="neocont_delivery_notifications">Notification delivery</string>
     <string name="neocont_background_connection">Background connection</string>
     <string name="neocont_background_connection_summary">Helps the app stay connected in the background</string>
-    <string name="neocont_push_settings">Push notifications</string>
+    <string name="neocont_push_settings">Unified Push</string>
     <string name="neocont_push_settings_summary">Background notification delivery settings</string>
     <string name="neocont_presence_settings">Status and availability</string>
     <string name="neocont_presence_settings_summary">How your status changes when the device is locked or silent</string>

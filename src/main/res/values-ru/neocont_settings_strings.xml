@@ -261,7 +261,7 @@
     <string name="neocont_delivery_notifications">Доставка уведомлений</string>
     <string name="neocont_background_connection">Фоновое соединение</string>
     <string name="neocont_background_connection_summary">Помогает приложению оставаться подключённым в фоне</string>
-    <string name="neocont_push_settings">Push-уведомления</string>
+    <string name="neocont_push_settings">Unified Push</string>
     <string name="neocont_push_settings_summary">Настройки доставки уведомлений в фоне</string>
     <string name="neocont_local_history">Локальная история</string>
     <string name="neocont_message_retention">Автоудаление сообщений</string>
