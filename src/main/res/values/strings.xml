@@ -1778,4 +1778,5 @@ Your server administrator may then be able to read message contents in transit o
     <string name="network_diagnostics_quality_fair">Fair</string>
     <string name="network_diagnostics_quality_poor">Poor</string>
     <string name="network_diagnostics_copied">Network report copied</string>
+    <string name="reply_original_unavailable">Original message unavailable</string>
 </resources>
