@@ -1504,7 +1504,7 @@
     <string name="start_conversation_no_results_title">Ничего не найдено</string>
     <string name="start_conversation_no_results_text">Попробуйте другое имя или адрес.</string>
     <string name="start_conversation_jid_title">Начать беседу</string>
-    <string name="start_conversation_jid_text">Сохранённого контакта с таким адресом нет.</string>
+    <string name="start_conversation_jid_text">Этого адреса пока нет в контактах. Вы всё равно можете начать беседу.</string>
     <string name="start_conversation_start_jid">Начать беседу</string>
     <string name="start_conversation_add_jid">Добавить в контакты</string>
     <string name="start_conversation_online_empty_title">Сейчас никто не в сети</string>

@@ -1562,7 +1562,7 @@
     <string name="start_conversation_empty_text">Finde jemanden nach Name oder Adresse, füge einen Kontakt hinzu oder scanne einen QR-Code.</string>
     <string name="start_conversation_empty_title">Noch keine Unterhaltungen</string>
     <string name="start_conversation_group_action">Gruppe</string>
-    <string name="start_conversation_jid_text">Kein gespeicherter Kontakt entspricht dieser Adresse.</string>
+    <string name="start_conversation_jid_text">Diese Adresse ist noch nicht in deinen Kontakten. Du kannst trotzdem eine Unterhaltung starten.</string>
     <string name="start_conversation_jid_title">Unterhaltung starten</string>
     <string name="start_conversation_new_group">Neue Gruppe</string>
     <string name="start_conversation_no_results_text">Versuche einen anderen Namen oder eine andere Adresse.</string>
