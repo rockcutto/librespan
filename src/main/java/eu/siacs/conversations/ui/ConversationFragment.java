@@ -200,6 +200,7 @@ import eu.siacs.conversations.worker.SendMessageWorker;
 import eu.siacs.conversations.xml.Element;
 import eu.siacs.conversations.xml.Namespace;
 import eu.siacs.conversations.xmpp.Jid;
+import eu.siacs.conversations.xmpp.OnKeyStatusUpdated;
 import eu.siacs.conversations.xmpp.XmppConnection;
 import eu.siacs.conversations.xmpp.chatstate.ChatState;
 import eu.siacs.conversations.xmpp.jingle.JingleFileTransferConnection;
@@ -231,6 +232,7 @@ public class ConversationFragment extends XmppFragment
 
     public static final int REQUEST_TRUST_KEYS_TEXT = 0x0208;
     public static final int REQUEST_TRUST_KEYS_ATTACHMENTS = 0x0209;
+    private static final int REQUEST_TRUST_KEYS_CHAT_UI = 0x0216;
     public static final int REQUEST_START_DOWNLOAD = 0x0210;
     public static final int REQUEST_ADD_EDITOR_CONTENT = 0x0211;
     public static final int REQUEST_COMMIT_ATTACHMENTS = 0x0212;
@@ -252,6 +254,9 @@ public class ConversationFragment extends XmppFragment
     private static final int TEXT_ACTION_PASTE = 0x0403;
     private static final int TEXT_ACTION_SELECT_ALL = 0x0404;
     private static final int TEXT_ACTION_PASTE_AS_QUOTE = 0x0405;
+
+    private final OnKeyStatusUpdated omemoChatKeyListener = this::onOmemoChatKeysUpdated;
+    private XmppConnectionService omemoChatListenerService;
 
     public static final String RECENTLY_USED_QUICK_ACTION = "recently_used_quick_action";
     public static final String STATE_CONVERSATION_UUID =
@@ -3246,6 +3251,9 @@ public class ConversationFragment extends XmppFragment
         switch (requestCode) {
             case REQUEST_TRUST_KEYS_TEXT:
                 sendMessage();
+                break;
+            case REQUEST_TRUST_KEYS_CHAT_UI:
+                updateOmemoTrustBanner(conversation);
                 break;
             case REQUEST_TRUST_KEYS_ATTACHMENTS:
                 commitAttachmentsAfterPendingGate();
@@ -6592,6 +6600,9 @@ public class ConversationFragment extends XmppFragment
     @Override
     public void onResume() {
         super.onResume();
+        if (conversation != null) {
+            updateOmemoTrustBanner(conversation);
+        }
         applyMessageTypographyPreferenceChanges();
         binding.messagesView.post(this::fireReadEvent);
         updateChatBG();
@@ -7220,6 +7231,7 @@ public class ConversationFragment extends XmppFragment
     @Override
     public void onStart() {
         super.onStart();
+        registerOmemoChatKeyListener();
         if (this.reInitRequiredOnStart && this.conversation != null) {
             final Bundle extras = pendingExtras.pop();
             this.reInitRequiredOnStart =
@@ -7257,6 +7269,7 @@ public class ConversationFragment extends XmppFragment
 
     @Override
     public void onStop() {
+        unregisterOmemoChatKeyListener();
         hideStickyDateOverlayImmediately();
         super.onStop();
         final Activity activity = getActivity();
@@ -7997,6 +8010,125 @@ public class ConversationFragment extends XmppFragment
         return uris;
     }
 
+    private void onOmemoChatKeysUpdated(final AxolotlService.FetchStatus report) {
+        final ConversationsActivity host = activity;
+        if (host == null) {
+            return;
+        }
+        host.runOnUiThread(
+                () -> {
+                    if (isResumed() && binding != null && conversation != null) {
+                        updateOmemoTrustBanner(conversation);
+                    }
+                });
+    }
+
+    private void registerOmemoChatKeyListener() {
+        final XmppConnectionService service =
+                activity == null ? null : activity.xmppConnectionService;
+        if (service == omemoChatListenerService) {
+            return;
+        }
+        unregisterOmemoChatKeyListener();
+        if (service != null) {
+            service.setOnKeyStatusUpdatedListener(omemoChatKeyListener);
+            omemoChatListenerService = service;
+        }
+    }
+
+    private void unregisterOmemoChatKeyListener() {
+        if (omemoChatListenerService != null) {
+            omemoChatListenerService.removeOnNewKeysAvailableListener(omemoChatKeyListener);
+            omemoChatListenerService = null;
+        }
+    }
+
+    private void openOmemoTrustKeysFromChat() {
+        if (activity == null
+                || conversation == null
+                || conversation.getMode() != Conversation.MODE_SINGLE) {
+            return;
+        }
+        final Intent intent = new Intent(activity, TrustKeysActivity.class);
+        intent.putExtra("contacts", new String[] {conversation.getJid().asBareJid().toString()});
+        intent.putExtra(EXTRA_ACCOUNT, conversation.getAccount().getJid().asBareJid().toString());
+        intent.putExtra("conversation", conversation.getUuid());
+        intent.putExtra(TrustKeysActivity.EXTRA_CHAT_TRUST_REVIEW, true);
+        // Separate request code: returning must not send the current draft.
+        startActivityForResult(intent, REQUEST_TRUST_KEYS_CHAT_UI);
+    }
+
+    private void updateOmemoTrustBanner(final Conversation target) {
+        if (binding == null || target == null) {
+            return;
+        }
+
+        OmemoTrustChatState state = resolveOmemoTrustChatState(target);
+        if (voiceRecordingActive
+                || binding.composerBlockingState.getVisibility() == View.VISIBLE
+                || (state == OmemoTrustChatState.FETCHING
+                        && !target.getAccount().isOnlineAndConnected())) {
+            state = OmemoTrustChatState.HIDDEN;
+        }
+
+        if (state == OmemoTrustChatState.HIDDEN) {
+            binding.omemoTrustBanner.setVisibility(View.GONE);
+            binding.omemoTrustAction.setOnClickListener(null);
+            return;
+        }
+
+        final boolean trustRequired = state == OmemoTrustChatState.TRUST_REQUIRED;
+        binding.omemoTrustMessage.setText(
+                trustRequired
+                        ? R.string.omemo_chat_trust_required
+                        : R.string.omemo_chat_fetching_keys);
+        binding.omemoTrustAction.setVisibility(trustRequired ? View.VISIBLE : View.GONE);
+        if (trustRequired) {
+            binding.omemoTrustAction.setOnClickListener(v -> openOmemoTrustKeysFromChat());
+        } else {
+            binding.omemoTrustAction.setOnClickListener(null);
+        }
+        binding.omemoTrustBanner.setVisibility(View.VISIBLE);
+    }
+
+    private OmemoTrustChatState resolveOmemoTrustChatState(final Conversation conversation) {
+        if (conversation == null
+                || conversation.getMode() != Conversation.MODE_SINGLE
+                || conversation.withSelf()
+                || conversation.getNextEncryption() != Message.ENCRYPTION_AXOLOTL) {
+            return OmemoTrustChatState.HIDDEN;
+        }
+
+        final AxolotlService axolotl = conversation.getAccount().getAxolotlService();
+        if (axolotl == null) {
+            return OmemoTrustChatState.HIDDEN;
+        }
+
+        final Contact contact = conversation.getContact();
+        final boolean verifiedOnly =
+                axolotl.hasVerifiedKeys(contact.getJid().asBareJid().toString());
+
+        boolean hasUsableSession = false;
+        boolean hasKnownActiveSession = false;
+
+        for (final var session : axolotl.findSessionsForContact(contact)) {
+            final FingerprintStatus trust = session.getTrust();
+            if (!trust.isActive()) {
+                continue;
+            }
+
+            hasKnownActiveSession = true;
+            if (trust.isTrustedAndActive() && (!verifiedOnly || trust.isVerified())) {
+                hasUsableSession = true;
+            }
+        }
+
+        final boolean fetching =
+                axolotl.hasPendingKeyFetches(axolotl.getCryptoTargets(conversation));
+
+        return OmemoTrustChatState.resolve(true, hasUsableSession, hasKnownActiveSession, fetching);
+    }
+
     private void updateComposerBlockingState(final Conversation conversation) {
         if (binding == null || conversation == null) {
             return;
@@ -8453,6 +8585,7 @@ public class ConversationFragment extends XmppFragment
                             });
                 }
                 updateComposerBlockingState(conversation);
+                updateOmemoTrustBanner(conversation);
                 updateChatMsgHint();
                 if (notifyConversationRead && activity != null) {
                     binding.messagesView.post(this::fireReadEvent);
@@ -9428,6 +9561,7 @@ public class ConversationFragment extends XmppFragment
     @Override
     public void onBackendConnected() {
         Log.d(Config.LOGTAG, "ConversationFragment.onBackendConnected()");
+        registerOmemoChatKeyListener();
         String uuid = pendingConversationsUuid.pop();
         if (uuid != null) {
             if (!findAndReInitByUuidOrArchive(uuid)) {

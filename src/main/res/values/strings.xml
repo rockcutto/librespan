@@ -1779,4 +1779,7 @@ Your server administrator may then be able to read message contents in transit o
     <string name="network_diagnostics_quality_poor">Poor</string>
     <string name="network_diagnostics_copied">Network report copied</string>
     <string name="reply_original_unavailable">Original message unavailable</string>
-</resources>
+    <string name="omemo_chat_trust_required">Confirm the OMEMO key to send messages.</string>
+    <string name="omemo_chat_fetching_keys">Fetching OMEMO keys…</string>
+    <string name="omemo_chat_verify_keys">Check keys</string>
+    <string name="omemo_chat_no_active_keys">No active OMEMO device keys are available yet.</string>\n</resources>

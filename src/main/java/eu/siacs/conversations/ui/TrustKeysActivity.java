@@ -9,27 +9,17 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Toast;
-
 import androidx.appcompat.app.ActionBar;
-import androidx.appcompat.app.AlertDialog;
 import androidx.databinding.DataBindingUtil;
-
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-
-import org.whispersystems.libsignal.IdentityKey;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import eu.siacs.conversations.Config;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.crypto.OmemoSetting;
 import eu.siacs.conversations.crypto.axolotl.AxolotlService;
+import eu.siacs.conversations.crypto.axolotl.ContactFingerprintVerification;
 import eu.siacs.conversations.crypto.axolotl.FingerprintStatus;
+import eu.siacs.conversations.crypto.axolotl.OmemoTrustUxStore;
+import eu.siacs.conversations.crypto.axolotl.XmppAxolotlSession;
 import eu.siacs.conversations.databinding.ActivityTrustKeysBinding;
 import eu.siacs.conversations.databinding.KeysCardBinding;
 import eu.siacs.conversations.entities.Account;
@@ -41,8 +31,22 @@ import eu.siacs.conversations.utils.IrregularUnicodeDetector;
 import eu.siacs.conversations.utils.XmppUri;
 import eu.siacs.conversations.xmpp.Jid;
 import eu.siacs.conversations.xmpp.OnKeyStatusUpdated;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.whispersystems.libsignal.IdentityKey;
 
 public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdated {
+    public static final String EXTRA_CHAT_TRUST_REVIEW = "chat_trust_review";
+
+    private boolean chatTrustReview;
+    private OmemoTrustUxStore chatTrustUxStore;
+    private int reviewQrDeviceId;
+    private String reviewQrFingerprint;
+    private String reviewQrAccountUuid;
     private final Map<String, Boolean> ownKeysToTrust = new HashMap<>();
     private final Map<Jid, Map<String, Boolean>> foreignKeysToTrust = new HashMap<>();
     private final OnClickListener mCancelButtonListener =
@@ -75,6 +79,10 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
         this.binding = DataBindingUtil.setContentView(this, R.layout.activity_trust_keys);
         this.contactJids = new ArrayList<>();
         final var intent = getIntent();
+        chatTrustReview = intent != null && intent.getBooleanExtra(EXTRA_CHAT_TRUST_REVIEW, false);
+        if (chatTrustReview) {
+            chatTrustUxStore = new OmemoTrustUxStore(this);
+        }
         final String[] contacts = intent == null ? null : intent.getStringArrayExtra("contacts");
         for (final String jid : (contacts == null ? new String[0] : contacts)) {
             try {
@@ -84,19 +92,26 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
         }
 
         binding.cancelButton.setOnClickListener(mCancelButtonListener);
-        binding.saveButton.setOnClickListener(mSaveButtonListener);
+        binding.saveButton.setOnClickListener(
+                chatTrustReview ? v -> finishOk(false) : mSaveButtonListener);
 
         setSupportActionBar(binding.toolbar);
         configureActionBar(getSupportActionBar());
 
         if (savedInstanceState != null) {
             mUseCameraHintShown.set(savedInstanceState.getBoolean("camera_hint_shown", false));
+            reviewQrDeviceId = savedInstanceState.getInt("review_qr_device_id");
+            reviewQrFingerprint = savedInstanceState.getString("review_qr_fingerprint");
+            reviewQrAccountUuid = savedInstanceState.getString("review_qr_account");
         }
     }
 
     @Override
     public void onSaveInstanceState(Bundle savedInstanceState) {
         savedInstanceState.putBoolean("camera_hint_shown", mUseCameraHintShown.get());
+        savedInstanceState.putInt("review_qr_device_id", reviewQrDeviceId);
+        savedInstanceState.putString("review_qr_fingerprint", reviewQrFingerprint);
+        savedInstanceState.putString("review_qr_account", reviewQrAccountUuid);
         super.onSaveInstanceState(savedInstanceState);
     }
 
@@ -104,7 +119,7 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.trust_keys, menu);
         MenuItem scanQrCode = menu.findItem(R.id.action_scan_qr_code);
-        scanQrCode.setVisible(isCameraFeatureAvailable());
+        scanQrCode.setVisible(!chatTrustReview && isCameraFeatureAvailable());
         return super.onCreateOptionsMenu(menu);
     }
 
@@ -137,6 +152,10 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
 
     @Override
     protected void processFingerprintVerification(XmppUri uri) {
+        if (chatTrustReview) {
+            processChatReviewQr(uri);
+            return;
+        }
         if (mConversation != null
                 && mAccount != null
                 && uri.hasFingerprints()
@@ -177,7 +196,151 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
         populateView();
     }
 
+    @Override
+    protected void scanContactFingerprint(
+            Account account, Jid contactJid, int deviceId, String fingerprint) {
+        if (!chatTrustReview) {
+            super.scanContactFingerprint(account, contactJid, deviceId, fingerprint);
+            return;
+        }
+        reviewQrAccountUuid = account.getUuid();
+        reviewQrDeviceId = deviceId;
+        reviewQrFingerprint = fingerprint;
+        ScanActivity.scan(this);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        super.onActivityResult(requestCode, resultCode, intent);
+        if (chatTrustReview
+                && requestCode == ScanActivity.REQUEST_SCAN_QR_CODE
+                && resultCode != RESULT_OK) {
+            clearReviewQrSelection();
+        }
+    }
+
+    private void clearReviewQrSelection() {
+        reviewQrDeviceId = 0;
+        reviewQrFingerprint = null;
+        reviewQrAccountUuid = null;
+    }
+
+    private void processChatReviewQr(final XmppUri uri) {
+        try {
+            if (mAccount == null
+                    || mConversation == null
+                    || uri == null
+                    || uri.getJid() == null
+                    || !uri.hasFingerprints()
+                    || reviewQrDeviceId <= 0
+                    || reviewQrFingerprint == null
+                    || !mAccount.getUuid().equals(reviewQrAccountUuid)) {
+                Toast.makeText(this, R.string.invalid_barcode, Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            final Jid contactJid = mConversation.getJid().asBareJid();
+            final AxolotlService axolotl = mAccount.getAxolotlService();
+            if (axolotl == null) {
+                Toast.makeText(this, R.string.invalid_barcode, Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            for (final XmppUri.Fingerprint fp : uri.getFingerprints()) {
+                if (fp.type != XmppUri.FingerprintType.OMEMO
+                        || fp.getDeviceId() != reviewQrDeviceId) {
+                    continue;
+                }
+
+                final String fingerprint =
+                        ContactFingerprintVerification.normalizedQrFingerprint(fp.fingerprint);
+                final boolean matches =
+                        ContactFingerprintVerification.matchesTarget(
+                                        contactJid.toString(),
+                                        uri.getJid().asBareJid().toString(),
+                                        fp.getDeviceId(),
+                                        fp.fingerprint,
+                                        reviewQrDeviceId,
+                                        reviewQrFingerprint)
+                                && axolotl.matchesContactFingerprint(
+                                        contactJid, fp.getDeviceId(), fingerprint);
+
+                if (!matches
+                        || !axolotl.verifyContactFingerprint(
+                                contactJid, fp.getDeviceId(), fingerprint)) {
+                    Toast.makeText(this, R.string.could_not_verify_fingerprint, Toast.LENGTH_SHORT)
+                            .show();
+                    return;
+                }
+
+                chatTrustUxStore.markVerified(mAccount, contactJid, fp.getDeviceId(), fingerprint);
+                Toast.makeText(this, R.string.verified_fingerprints, Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            Toast.makeText(this, R.string.invalid_barcode, Toast.LENGTH_SHORT).show();
+        } finally {
+            clearReviewQrSelection();
+            refreshUi();
+        }
+    }
+
+    private void populateChatTrustReview() {
+        binding.keyErrorMessageCard.setVisibility(View.GONE);
+        binding.ownKeysCard.setVisibility(View.GONE);
+        binding.foreignKeys.removeAllViews();
+        binding.foreignKeys.setVisibility(View.VISIBLE);
+        binding.cancelButton.setVisibility(View.GONE);
+        binding.saveButton.setEnabled(true);
+        binding.saveButton.setText(R.string.done);
+
+        if (mAccount == null || contactJids.isEmpty()) {
+            binding.foreignKeys.setVisibility(View.GONE);
+            return;
+        }
+
+        for (final Jid jid : contactJids) {
+            final Contact contact = mAccount.getRoster().getContact(jid);
+            final KeysCardBinding card =
+                    DataBindingUtil.inflate(
+                            getLayoutInflater(), R.layout.keys_card, binding.foreignKeys, false);
+            card.foreignKeysTitle.setText(IrregularUnicodeDetector.style(this, jid));
+            card.verifyContactDevices.setVisibility(View.GONE);
+
+            boolean hasActiveDevices = false;
+            for (final XmppAxolotlSession session :
+                    mAccount.getAxolotlService().findSessionsForContact(contact)) {
+                final FingerprintStatus status = session.getTrust();
+                if (!status.isActive() || status.isCompromised()) {
+                    continue;
+                }
+                hasActiveDevices = true;
+                final OmemoTrustUxStore.State state =
+                        chatTrustUxStore.observe(mAccount, jid.asBareJid(), session);
+                addContactFingerprintRow(
+                        card.foreignKeysDetails,
+                        mAccount,
+                        jid.asBareJid(),
+                        session,
+                        state,
+                        false,
+                        chatTrustUxStore);
+            }
+
+            card.noKeysToAccept.setVisibility(hasActiveDevices ? View.GONE : View.VISIBLE);
+            if (!hasActiveDevices) {
+                card.noKeysToAccept.setText(R.string.omemo_chat_no_active_keys);
+            }
+            binding.foreignKeys.addView(card.foreignKeysCard);
+        }
+    }
+
     private void populateView() {
+        if (chatTrustReview) {
+            setTitle(R.string.trust_omemo_fingerprints);
+            populateChatTrustReview();
+            return;
+        }
         setTitle(getString(R.string.trust_omemo_fingerprints));
         binding.ownKeysDetails.removeAllViews();
         binding.foreignKeys.removeAllViews();
@@ -392,6 +555,15 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
         if (this.mAccount != null && intent != null) {
             String uuid = intent.getStringExtra("conversation");
             this.mConversation = xmppConnectionService.findConversationByUuid(uuid);
+            if (chatTrustReview) {
+                if (mPendingFingerprintVerificationUri != null) {
+                    processFingerprintVerification(mPendingFingerprintVerificationUri);
+                    mPendingFingerprintVerificationUri = null;
+                }
+                populateView();
+                invalidateOptionsMenu();
+                return;
+            }
             if (this.mPendingFingerprintVerificationUri != null) {
                 processFingerprintVerification(this.mPendingFingerprintVerificationUri);
                 this.mPendingFingerprintVerificationUri = null;
@@ -422,6 +594,10 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
 
     @Override
     public void onKeyStatusUpdated(final AxolotlService.FetchStatus report) {
+        if (chatTrustReview) {
+            runOnUiThread(this::refreshUi);
+            return;
+        }
         final boolean keysToTrust = reloadFingerprints();
         if (report != null) {
             lastFetchReport = report;

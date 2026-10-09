@@ -1812,4 +1812,7 @@
     <string name="network_diagnostics_quality_poor">Плохо</string>
     <string name="network_diagnostics_copied">Отчёт о сети скопирован</string>
     <string name="reply_original_unavailable">Исходное сообщение недоступно</string>
-</resources>
+    <string name="omemo_chat_trust_required">Для отправки подтвердите ключ OMEMO.</string>
+    <string name="omemo_chat_fetching_keys">Получаем ключи OMEMO…</string>
+    <string name="omemo_chat_verify_keys">Проверить ключи</string>
+    <string name="omemo_chat_no_active_keys">Активные ключи устройств OMEMO пока недоступны.</string>\n</resources>
