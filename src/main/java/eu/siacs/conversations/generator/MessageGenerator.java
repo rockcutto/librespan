@@ -171,6 +171,31 @@ public class MessageGenerator extends AbstractGenerator {
         return packet;
     }
 
+
+    public im.conversations.android.xmpp.model.stanza.Message generateMucRetraction(
+            final Conversation room, final String roomStanzaId) {
+        if (room == null
+                || room.getMode() != Conversation.MODE_MULTI
+                || roomStanzaId == null
+                || roomStanzaId.isEmpty()) {
+            throw new IllegalArgumentException("Missing MUC retraction target");
+        }
+
+        final var packet = new im.conversations.android.xmpp.model.stanza.Message();
+        packet.setType(im.conversations.android.xmpp.model.stanza.Message.Type.GROUPCHAT);
+        packet.setTo(room.getJid().asBareJid());
+        packet.setFrom(room.getAccount().getJid());
+        packet.setId(java.util.UUID.randomUUID().toString());
+
+        packet.addChild("retract", Namespace.MESSAGE_RETRACT)
+                .setAttribute("id", roomStanzaId);
+        packet.addChild("fallback", "urn:xmpp:fallback:0")
+                .setAttribute("for", Namespace.MESSAGE_RETRACT);
+        packet.setBody("/me retracted a previous message.");
+        packet.addChild("store", "urn:xmpp:hints");
+        return packet;
+    }
+
     public im.conversations.android.xmpp.model.stanza.Message requestVoice(
             final Conversation conversation) {
         final im.conversations.android.xmpp.model.stanza.Message packet =

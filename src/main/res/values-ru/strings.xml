@@ -1815,4 +1815,8 @@
     <string name="omemo_chat_trust_required">Для отправки подтвердите ключ OMEMO.</string>
     <string name="omemo_chat_fetching_keys">Получаем ключи OMEMO…</string>
     <string name="omemo_chat_verify_keys">Проверить ключи</string>
-    <string name="omemo_chat_no_active_keys">Активные ключи устройств OMEMO пока недоступны.</string>\n</resources>
+    <string name="omemo_chat_no_active_keys">Активные ключи устройств OMEMO пока недоступны.</string>\n
+    <string name="muc_retract_for_everyone">Удалить для всех</string>
+    <string name="muc_retract_confirmation">Отправить запрос на удаление сообщения у участников комнаты? Сохранённые копии могут остаться.</string>
+    <string name="muc_retract_failed">Не удалось отправить запрос на удаление</string>
+</resources>

@@ -771,6 +771,8 @@ public class XmppConnectionService extends Service {
                         System.nanoTime() - retirementRecoveryStarted);
                 secureMessagePayloadCoordinator = coordinator;
                 mDatabaseWriterExecutor.execute(this::recoverModeratedMessageRetirements);
+                mDatabaseWriterExecutor.execute(this::recoverMucRetractionRetirements);
+                mDatabaseWriterExecutor.execute(this::recoverVerifiedMucRetractions);
                 SecureColdStartPerfTrace.stage(
                         "secure_text_coordinator_init", System.nanoTime() - coordinatorStarted);
             }
@@ -2724,6 +2726,8 @@ public class XmppConnectionService extends Service {
 
         restoreFromDatabase();
         mDatabaseWriterExecutor.execute(this::recoverModeratedMessageRetirements);
+                mDatabaseWriterExecutor.execute(this::recoverMucRetractionRetirements);
+                mDatabaseWriterExecutor.execute(this::recoverVerifiedMucRetractions);
 
         if (QuickConversationsService.isContactListIntegration(this)
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
@@ -3162,6 +3166,44 @@ public class XmppConnectionService extends Service {
             final var packet = mMessageGenerator.generateChatState(conversation);
             sendMessagePacket(conversation.getAccount(), packet);
         }
+    }
+
+
+    public boolean retractOwnMucMessage(
+            final Conversation room, final Message original) {
+        if (room == null
+                || original == null
+                || original.getConversation() != room
+                || room.getMode() != Conversation.MODE_MULTI
+                || original.isPrivateMessage()
+                || original.isModerated()) {
+            return false;
+        }
+
+        final int status = original.getStatus();
+        if (status != Message.STATUS_SEND_RECEIVED
+                && status != Message.STATUS_SEND_DISPLAYED) {
+            return false;
+        }
+
+        final String targetId = original.getRoomStanzaId();
+        if (targetId == null || targetId.isEmpty()) {
+            return false;
+        }
+
+        final Account account = room.getAccount();
+        if (account == null
+                || account.getStatus() != Account.State.ONLINE
+                || account.getXmppConnection() == null
+                || !room.getMucOptions().online()
+                || !room.getMucOptions().participating()) {
+            return false;
+        }
+
+        final var packet =
+                mMessageGenerator.generateMucRetraction(room, targetId);
+        sendMessagePacket(account, packet);
+        return true;
     }
 
     private void sendFileMessage(
@@ -7313,6 +7355,186 @@ public class XmppConnectionService extends Service {
                         databaseBackend::markMessageModerationRetired);
         if (recovered < pending.size()) {
             Log.w(Config.LOGTAG, "MUC moderation retirement recovery deferred");
+        }
+    }
+
+    /**
+     * Retry durable XEP-0424 retirement jobs after startup or
+     * protected-content coordinator initialization.
+     * A failure leaves SQLCipher state at RETIRE_PENDING.
+     */
+    /**
+     * Apply only an already verified XEP-0424 event.
+     * The SQLCipher transaction must succeed before resident
+     * plaintext is retired or the message is removed from the UI.
+     */
+    public void applyVerifiedMucRetraction(
+            final Conversation room, final String requestId) {
+        if (room == null
+                || room.getMode() != Conversation.MODE_MULTI
+                || room.getAccount() == null
+                || requestId == null
+                || requestId.isBlank()) {
+            return;
+        }
+
+        mDatabaseWriterExecutor.execute(() -> {
+            final boolean[] applied = {false};
+
+            try {
+                runWithSecureContentMutationsQuiesced(() -> {
+                    if (!databaseBackend
+                            .beginVerifiedMucRetractionRetirement(
+                                    room, requestId)) {
+                        return;
+                    }
+
+                    applied[0] = true;
+
+                    final String accountUuid =
+                            room.getAccount().getUuid();
+                    final String roomUuid = room.getUuid();
+
+                    for (final DatabaseBackend.PendingRetractionRetirement job :
+                            databaseBackend.getPendingMucRetractionRetirements()) {
+                        if (!accountUuid.equals(job.accountUuid)
+                                || !roomUuid.equals(job.conversationUuid)
+                                || !requestId.equals(job.requestId)) {
+                            continue;
+                        }
+
+                        final Message resident =
+                                room.findResidentMessageWithUuid(
+                                        job.messageUuid);
+
+                        if (resident != null) {
+                            resident.markRetracted();
+                            room.refreshModeratedReplyReferences(resident);
+                            room.removeRetractedMessageFromTimeline(resident);
+                        }
+                    }
+                });
+            } catch (final Exception | AssertionError e) {
+                Log.w(
+                        Config.LOGTAG,
+                        "XEP-0424 verified retirement deferred",
+                        e);
+            }
+
+            if (applied[0]) {
+                mBitmapCache.evictAll();
+                updateConversationUi();
+                getNotificationService().updateNotification();
+                recoverMucRetractionRetirements();
+            }
+        });
+    }
+
+    /**
+     * Replay verified author retractions that were interrupted
+     * before their SQLCipher RETIRE_PENDING transition.
+     */
+    private void recoverVerifiedMucRetractions() {
+        if (databaseBackend == null) return;
+
+        final List<DatabaseBackend.PendingRetractionRetirement> jobs =
+                databaseBackend.getVerifiedMucRetractionsToResume();
+
+        int scheduled = 0;
+
+        for (final DatabaseBackend.PendingRetractionRetirement job : jobs) {
+            if (job == null) continue;
+
+            Conversation room = null;
+
+            for (final Conversation candidate : conversations) {
+                if (job.conversationUuid.equals(candidate.getUuid())
+                        && candidate.getAccount() != null
+                        && job.accountUuid.equals(
+                                candidate.getAccount().getUuid())) {
+                    room = candidate;
+                    break;
+                }
+            }
+
+            if (room == null) {
+                final Conversation stored =
+                        databaseBackend.findConversation(job.conversationUuid);
+
+                if (stored != null
+                        && job.accountUuid.equals(stored.getAccountUuid())) {
+                    for (final Account account : accounts) {
+                        if (job.accountUuid.equals(account.getUuid())) {
+                            stored.setAccount(account);
+                            room = stored;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (room != null
+                    && room.getMode() == Conversation.MODE_MULTI
+                    && job.requestId != null
+                    && !job.requestId.isBlank()) {
+                applyVerifiedMucRetraction(room, job.requestId);
+                scheduled++;
+            }
+        }
+
+        if (scheduled < jobs.size()) {
+            Log.w(
+                    Config.LOGTAG,
+                    "XEP-0424 VERIFIED recovery partially deferred");
+        }
+
+        // All scheduled jobs are queued on the same serial writer.
+        // Rescan after they have had a chance to transition.
+        if (jobs.size() == 128
+                && scheduled == jobs.size()
+                && !destroyed) {
+            mDatabaseWriterExecutor.execute(
+                    this::recoverVerifiedMucRetractions);
+        }
+    }
+
+    private void recoverMucRetractionRetirements() {
+        if (databaseBackend == null) return;
+
+        final List<DatabaseBackend.PendingRetractionRetirement> pending =
+                databaseBackend.getPendingMucRetractionRetirements();
+
+        if (pending.isEmpty()) return;
+
+        final int[] completed = {0};
+        try {
+            runWithSecureContentMutationsQuiesced(
+                    () -> completed[0] =
+                            MucRetractionRetirement.recoverPending(
+                                    pending,
+                                    this::retireModeratedContent,
+                                    this::invalidateModeratedMessageCache,
+                                    databaseBackend::completeMucRetractionRetirement));
+        } catch (final Exception | AssertionError e) {
+            Log.w(
+                    Config.LOGTAG,
+                    "XEP-0424 SCS retirement recovery deferred",
+                    e);
+            return;
+        }
+
+        if (completed[0] < pending.size()) {
+            Log.w(
+                    Config.LOGTAG,
+                    "XEP-0424 content retirement recovery deferred");
+            return;
+        }
+
+        // The DB returns at most 128 jobs. Drain further batches
+        // without blocking this worker indefinitely.
+        if (pending.size() == 128 && !destroyed) {
+            mDatabaseWriterExecutor.execute(
+                    this::recoverMucRetractionRetirements);
         }
     }
 

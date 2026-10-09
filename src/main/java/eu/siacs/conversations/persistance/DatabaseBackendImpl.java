@@ -62,6 +62,7 @@ import eu.siacs.conversations.entities.Conversation;
 import eu.siacs.conversations.entities.Conversational;
 import eu.siacs.conversations.entities.IndividualMessage;
 import eu.siacs.conversations.entities.Message;
+import eu.siacs.conversations.entities.MucOptions;
 import eu.siacs.conversations.entities.PresenceTemplate;
 import eu.siacs.conversations.entities.Roster;
 import eu.siacs.conversations.entities.ServiceDiscoveryResult;
@@ -89,6 +90,7 @@ import eu.siacs.conversations.utils.FtsUtils;
 import eu.siacs.conversations.utils.MimeUtils;
 import eu.siacs.conversations.utils.Resolver;
 import eu.siacs.conversations.xmpp.Jid;
+import eu.siacs.conversations.xmpp.MessageRetractionPolicy;
 import eu.siacs.conversations.xmpp.mam.MamReference;
 
 import org.jxmpp.jid.parts.Localpart;
@@ -99,7 +101,7 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
     private final Context applicationContext;
 
     private static final String DATABASE_NAME = "history";
-    private static final int DATABASE_VERSION = 62;
+    private static final int DATABASE_VERSION = 64;
     private static final int MAX_LEGACY_PLAINTEXT_MIGRATION_BATCH = 50;
 
     private static final String MODERATION_TABLENAME = "message_moderation";
@@ -128,6 +130,52 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
                         + " INTEGER NOT NULL DEFAULT 0",
                 CREATE_ROOM_STANZA_INDEX,
                 CREATE_MODERATION_TABLE);
+    }
+
+    // XEP-0424 journal. No message bodies or media locations.
+    // State: 0=UNVERIFIED, 1=VERIFIED,
+    //        2=RETIRE_PENDING, 3=RETIRED.
+    private static final String RETRACTION_TABLENAME =
+            "message_retraction";
+
+    private static final String CREATE_RETRACTION_TABLE =
+            "CREATE TABLE IF NOT EXISTS " + RETRACTION_TABLENAME
+                    + " (account_uuid TEXT NOT NULL,"
+                    + " conversation_uuid TEXT NOT NULL,"
+                    + " retraction_request_id TEXT NOT NULL,"
+                    + " target_room_stanza_id TEXT NOT NULL,"
+                    + " target_message_uuid TEXT,"
+                    + " sender_full_jid TEXT NOT NULL,"
+                    + " sender_occupant_id TEXT,"
+                    + " event_time INTEGER NOT NULL,"
+                    + " state INTEGER NOT NULL DEFAULT 0"
+                    + " CHECK(state IN (0,1,2,3)),"
+                    + " PRIMARY KEY(account_uuid, conversation_uuid,"
+                    + " retraction_request_id),"
+                    + " FOREIGN KEY(conversation_uuid) REFERENCES "
+                    + Conversation.TABLENAME + "(" + Conversation.UUID
+                    + ") ON DELETE CASCADE)";
+
+    private static final String CREATE_RETRACTION_TARGET_INDEX =
+            "CREATE INDEX IF NOT EXISTS message_retraction_target_idx ON "
+                    + RETRACTION_TABLENAME
+                    + "(account_uuid, conversation_uuid,"
+                    + " target_room_stanza_id)";
+
+    static List<String> retractionMigrationStatements() {
+        return Arrays.asList(
+                CREATE_RETRACTION_TABLE,
+                CREATE_RETRACTION_TARGET_INDEX);
+    }
+
+    static List<String> retractionMessageMigrationStatements() {
+        return Arrays.asList(
+                "ALTER TABLE " + Message.TABLENAME
+                        + " ADD COLUMN " + Message.RETRACTED
+                        + " INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE " + Message.TABLENAME
+                        + " ADD COLUMN " + Message.RETRACTION_RETIRED
+                        + " INTEGER NOT NULL DEFAULT 0");
     }
 
     private static final String SECURE_CONTENT_TABLENAME = "secure_content";
@@ -717,6 +765,8 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
                         + Message.MODERATED_BY + " TEXT, "
                         + Message.MODERATED_AT + " INTEGER NOT NULL DEFAULT 0, "
                         + Message.MODERATION_RETIRED + " INTEGER NOT NULL DEFAULT 0, "
+                        + Message.RETRACTED + " INTEGER NOT NULL DEFAULT 0, "
+                        + Message.RETRACTION_RETIRED + " INTEGER NOT NULL DEFAULT 0, "
                         + Message.FINGERPRINT
                         + " TEXT, "
                         + Message.CARBON
@@ -760,6 +810,9 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
         db.execSQL(CREATE_MESSAGE_TYPE_INDEX);
         db.execSQL(CREATE_ROOM_STANZA_INDEX);
         db.execSQL(CREATE_MODERATION_TABLE);
+        for (final String statement : retractionMigrationStatements()) {
+            db.execSQL(statement);
+        }
         db.execSQL(CREATE_SECURE_CONTENT_STATEMENT);
         db.execSQL(CREATE_SECURE_MESSAGE_PAYLOAD_REFERENCE_STATEMENT);
         db.execSQL(CREATE_SECURE_MESSAGE_PAYLOAD_PUBLICATION_STATEMENT);
@@ -1407,6 +1460,17 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
                 db.execSQL(statement);
             }
         }
+        if (oldVersion < 63 && newVersion >= 63) {
+            for (final String statement : retractionMigrationStatements()) {
+                db.execSQL(statement);
+            }
+        }
+        if (oldVersion < 64 && newVersion >= 64) {
+            for (final String statement :
+                    retractionMessageMigrationStatements()) {
+                db.execSQL(statement);
+            }
+        }
         if (oldVersion < 61 && newVersion >= 61) {
             // Historical databases can contain intact legacy message bodies while the external
             // FTS4 content table is empty or stale. Rebuild exactly once after upgrade; protected
@@ -1845,7 +1909,7 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
 
         String[] selectionArgs = {conversation.getUuid(), uuid, uuid, uuid};
         Cursor cursor = db.query(Message.TABLENAME, null, Message.CONVERSATION
-                + "=? and " + Message.MODERATED + "=0 and (" + Message.SERVER_MSG_ID + "=? or " + Message.REMOTE_MSG_ID +  "=? or " + Message.UUID + "=?)", selectionArgs, null, null, Message.TIME_SENT
+                + "=? and " + Message.MODERATED + "=0 and " + Message.RETRACTED + "=0" + verifiedRetractionVisibilityFilter() + " and (" + Message.SERVER_MSG_ID + "=? or " + Message.REMOTE_MSG_ID +  "=? or " + Message.UUID + "=?)", selectionArgs, null, null, Message.TIME_SENT
                 + " DESC", String.valueOf(1));
         CursorUtils.upgradeCursorWindowSize(cursor);
         Message anchorMessage = null;
@@ -1977,35 +2041,35 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
             if (conversation.getNextCounterpart() != null && conversation.hasPermanentCounterpart() && conversation.getMode() == Conversational.MODE_MULTI) {
                 String[] selectionArgs = {conversation.getUuid(), String.valueOf(Message.TYPE_PRIVATE), String.valueOf(Message.TYPE_PRIVATE_FILE), conversation.getNextCounterpart().toString()};
                 cursor = db.query(Message.TABLENAME, null, Message.CONVERSATION
-                    + "=? and " + Message.MODERATED + "=0 and (" + Message.TYPE + "=? or " + Message.TYPE + "=?) and " + Message.COUNTERPART + "=?" , selectionArgs, null, null, Message.TIME_SENT
+                    + "=? and " + Message.MODERATED + "=0 AND " + Message.RETRACTED + "=0" + verifiedRetractionVisibilityFilter() + " and (" + Message.TYPE + "=? or " + Message.TYPE + "=?) and " + Message.COUNTERPART + "=?" , selectionArgs, null, null, Message.TIME_SENT
                     + sorting, String.valueOf(limit));
             } else if (conversation.getNextCounterpart() != null && conversation.hasPermanentCounterpart()) {
                 String[] selectionArgs = {conversation.getUuid(), String.valueOf(Message.ENCRYPTION_OTR), conversation.getNextCounterpart().toString()};
                 cursor = db.query(Message.TABLENAME, null, Message.CONVERSATION
-                        + "=? and " + Message.MODERATED + "=0 and " + Message.ENCRYPTION + "=? and " + Message.COUNTERPART + "=?" , selectionArgs, null, null, Message.TIME_SENT
+                        + "=? and " + Message.MODERATED + "=0 AND " + Message.RETRACTED + "=0" + verifiedRetractionVisibilityFilter() + " and " + Message.ENCRYPTION + "=? and " + Message.COUNTERPART + "=?" , selectionArgs, null, null, Message.TIME_SENT
                         + sorting, String.valueOf(limit));
             } else {
                 String[] selectionArgs = {conversation.getUuid()};
                 cursor = db.query(Message.TABLENAME, null, Message.CONVERSATION
-                        + "=? and " + Message.MODERATED + "=0", selectionArgs, null, null, Message.TIME_SENT
+                        + "=? and " + Message.MODERATED + "=0 AND " + Message.RETRACTED + "=0" + verifiedRetractionVisibilityFilter(), selectionArgs, null, null, Message.TIME_SENT
                         + sorting, String.valueOf(limit));
             }
         } else {
             if (conversation.getNextCounterpart() != null && conversation.hasPermanentCounterpart() && conversation.getMode() == Conversational.MODE_MULTI) {
                 String[] selectionArgs = {conversation.getUuid(), String.valueOf(Message.TYPE_PRIVATE), String.valueOf(Message.TYPE_PRIVATE_FILE), conversation.getNextCounterpart().toString(), Long.toString(timestamp)};
                 cursor = db.query(Message.TABLENAME, null, Message.CONVERSATION
-                        + "=? and " + Message.MODERATED + "=0 and (" + Message.TYPE + "=? or " + Message.TYPE + "=?) and " + Message.COUNTERPART + "=? and " + Message.TIME_SENT + comparsionOperation, selectionArgs, null, null, Message.TIME_SENT
+                        + "=? and " + Message.MODERATED + "=0 AND " + Message.RETRACTED + "=0" + verifiedRetractionVisibilityFilter() + " and (" + Message.TYPE + "=? or " + Message.TYPE + "=?) and " + Message.COUNTERPART + "=? and " + Message.TIME_SENT + comparsionOperation, selectionArgs, null, null, Message.TIME_SENT
                         + sorting, String.valueOf(limit));
             } else if (conversation.getNextCounterpart() != null && conversation.hasPermanentCounterpart()) {
                 String[] selectionArgs = {conversation.getUuid(), String.valueOf(Message.ENCRYPTION_OTR), conversation.getNextCounterpart().toString(), Long.toString(timestamp)};
                 cursor = db.query(Message.TABLENAME, null, Message.CONVERSATION
-                        + "=? and " + Message.MODERATED + "=0 and " + Message.ENCRYPTION + "=? and " + Message.COUNTERPART + "=? and " + Message.TIME_SENT + comparsionOperation, selectionArgs, null, null, Message.TIME_SENT
+                        + "=? and " + Message.MODERATED + "=0 AND " + Message.RETRACTED + "=0" + verifiedRetractionVisibilityFilter() + " and " + Message.ENCRYPTION + "=? and " + Message.COUNTERPART + "=? and " + Message.TIME_SENT + comparsionOperation, selectionArgs, null, null, Message.TIME_SENT
                         + sorting, String.valueOf(limit));
             } else {
                 String[] selectionArgs = {conversation.getUuid(),
                         Long.toString(timestamp)};
                 cursor = db.query(Message.TABLENAME, null, Message.CONVERSATION
-                                + "=? and " + Message.MODERATED + "=0 and " + Message.TIME_SENT + comparsionOperation, selectionArgs,
+                                + "=? and " + Message.MODERATED + "=0 AND " + Message.RETRACTED + "=0" + verifiedRetractionVisibilityFilter() + " and " + Message.TIME_SENT + comparsionOperation, selectionArgs,
                         null, null, Message.TIME_SENT + sorting,
                         String.valueOf(limit));
             }
@@ -2473,6 +2537,776 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
         }
     }
 
+    private static final int MAX_PENDING_RETRACTIONS_PER_ACCOUNT = 1024;
+    private static final int MAX_PENDING_RETRACTIONS_PER_ROOM = 128;
+    private static final int MAX_PENDING_RETRACTIONS_PER_SENDER = 32;
+
+    static boolean hasRetractionJournalCapacity(
+            final long accountPending,
+            final long roomPending,
+            final long senderPending) {
+        return accountPending >= 0
+                && accountPending < MAX_PENDING_RETRACTIONS_PER_ACCOUNT
+                && roomPending >= 0
+                && roomPending < MAX_PENDING_RETRACTIONS_PER_ROOM
+                && senderPending >= 0
+                && senderPending < MAX_PENDING_RETRACTIONS_PER_SENDER;
+    }
+
+    private static long countPendingMucRetractions(
+            final SQLiteDatabase db,
+            final String accountUuid,
+            final String conversationUuid,
+            final String senderFullJid) {
+        final StringBuilder sql = new StringBuilder(
+                "SELECT COUNT(*) FROM " + RETRACTION_TABLENAME
+                        + " WHERE account_uuid=? AND state=0");
+        final List<String> args = new ArrayList<>();
+        args.add(accountUuid);
+
+        if (conversationUuid != null) {
+            sql.append(" AND conversation_uuid=?");
+            args.add(conversationUuid);
+        }
+        if (senderFullJid != null) {
+            sql.append(" AND sender_full_jid=?");
+            args.add(senderFullJid);
+        }
+
+        try (final Cursor cursor = db.rawQuery(
+                sql.toString(), args.toArray(new String[0]))) {
+            return cursor.moveToFirst() ? cursor.getLong(0) : Long.MAX_VALUE;
+        }
+    }
+
+    static boolean validUnverifiedMucRetraction(
+            final Conversation room,
+            final String requestId,
+            final String targetRoomStanzaId,
+            final Jid senderFullJid,
+            final String senderOccupantId,
+            final long eventTime) {
+        return room != null
+                && room.getMode() == Conversation.MODE_MULTI
+                && room.getJid() != null
+                && senderFullJid != null
+                && !senderFullJid.isBareJid()
+                && room.getJid().asBareJid()
+                        .equals(senderFullJid.asBareJid())
+                && requestId != null
+                && !requestId.isBlank()
+                && requestId.length() <= 512
+                && targetRoomStanzaId != null
+                && !targetRoomStanzaId.isBlank()
+                && targetRoomStanzaId.length() <= 512
+                && senderFullJid.toString().length() <= 1024
+                && (senderOccupantId == null
+                        || MucOptions.isValidOccupantIdValue(senderOccupantId))
+                && eventTime > 0;
+    }
+
+    @Override
+    public boolean recordUnverifiedMucRetraction(
+            final Conversation room,
+            final String requestId,
+            final String targetRoomStanzaId,
+            final Jid senderFullJid,
+            final String senderOccupantId,
+            final long eventTime) {
+        if (!validUnverifiedMucRetraction(
+                room, requestId, targetRoomStanzaId,
+                senderFullJid, senderOccupantId, eventTime)) {
+            return false;
+        }
+
+        final SQLiteDatabase db = getWritableDatabase();
+        final String accountUuid = room.getAccount().getUuid();
+        final String conversationUuid = room.getUuid();
+
+        final ContentValues values = new ContentValues();
+        values.put("account_uuid", accountUuid);
+        values.put("conversation_uuid", conversationUuid);
+        values.put("retraction_request_id", requestId);
+        values.put("target_room_stanza_id", targetRoomStanzaId);
+        values.put("sender_full_jid", senderFullJid.toString());
+        values.put("sender_occupant_id", senderOccupantId);
+        values.put("event_time", eventTime);
+        values.put("state", 0);
+
+        db.beginTransaction();
+        try {
+            // Check an existing request before enforcing capacity.
+            // Exact replays remain idempotent even when the journal is full.
+            try (final Cursor cursor = db.query(
+                    RETRACTION_TABLENAME,
+                    new String[] {
+                            "target_room_stanza_id",
+                            "sender_full_jid",
+                            "sender_occupant_id"
+                    },
+                    "account_uuid=? AND conversation_uuid=?"
+                            + " AND retraction_request_id=?",
+                    new String[] {
+                            accountUuid, conversationUuid, requestId
+                    },
+                    null, null, null)) {
+                if (cursor.moveToFirst()) {
+                    final boolean same =
+                            targetRoomStanzaId.equals(cursor.getString(0))
+                            && senderFullJid.toString().equals(
+                                    cursor.getString(1))
+                            && java.util.Objects.equals(
+                                    senderOccupantId, cursor.getString(2));
+                    if (same) {
+                        db.setTransactionSuccessful();
+                    }
+                    return same;
+                }
+            }
+
+            final long accountPending = countPendingMucRetractions(
+                    db, accountUuid, null, null);
+            final long roomPending = countPendingMucRetractions(
+                    db, accountUuid, conversationUuid, null);
+            final long senderPending = countPendingMucRetractions(
+                    db, accountUuid, conversationUuid,
+                    senderFullJid.toString());
+
+            if (!hasRetractionJournalCapacity(
+                    accountPending, roomPending, senderPending)) {
+                return false;
+            }
+
+            final long inserted = db.insertWithOnConflict(
+                    RETRACTION_TABLENAME, null, values,
+                    SQLiteDatabase.CONFLICT_IGNORE);
+            if (inserted == -1) {
+                return false;
+            }
+
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    static boolean canVerifyMucRetraction(
+            final Conversation room,
+            final PendingRetraction pending,
+            final Message original) {
+        if (room == null || pending == null || original == null
+                || pending.requestId == null
+                || pending.requestId.isBlank()
+                || pending.targetRoomStanzaId == null
+                || pending.targetRoomStanzaId.isBlank()
+                || pending.senderFullJid == null
+                || pending.eventTime <= 0) {
+            return false;
+        }
+
+        final Jid sender;
+        try {
+            sender = Jid.of(pending.senderFullJid);
+        } catch (final RuntimeException invalidJid) {
+            return false;
+        }
+
+        return MessageRetractionPolicy.isAuthorizedIncomingMucRetraction(
+                room,
+                original,
+                pending.targetRoomStanzaId,
+                sender,
+                pending.senderOccupantId);
+    }
+
+    /**
+     * Select only journal entries still tied to a scrubbed message
+     * in the same account and conversation.
+     */
+    private static String pendingRetractionRetirementSource() {
+        return " FROM " + RETRACTION_TABLENAME + " r"
+                + " JOIN " + Message.TABLENAME + " m"
+                + " ON m." + Message.UUID
+                + "=r.target_message_uuid"
+                + " AND m." + Message.CONVERSATION
+                + "=r.conversation_uuid"
+                + " AND m." + Message.ROOM_STANZA_ID
+                + "=r.target_room_stanza_id"
+                + " JOIN " + Conversation.TABLENAME + " c"
+                + " ON c." + Conversation.UUID
+                + "=r.conversation_uuid"
+                + " AND c." + Conversation.ACCOUNT
+                + "=r.account_uuid"
+                + " WHERE r.state=2"
+                + " AND m." + Message.RETRACTED + "=1"
+                + " AND m." + Message.RETRACTION_RETIRED + "=0"
+                + " AND m." + Message.BODY + "=''"
+                + " AND m." + Message.RELATIVE_FILE_PATH + " IS NULL"
+                + " AND m." + Message.MEDIA_GROUP_ID + " IS NULL"
+                + " AND m." + Message.PAYLOADS + " IS NULL"
+                + " AND m." + Message.REACTIONS + " IS NULL"
+                + " AND m." + Message.OOB + "=0";
+    }
+
+    @Override
+    public List<PendingRetractionRetirement>
+            getVerifiedMucRetractionsToResume() {
+        final List<PendingRetractionRetirement> jobs =
+                new ArrayList<>();
+
+        final String sql =
+                "SELECT r.account_uuid,"
+                        + "r.conversation_uuid,"
+                        + "r.retraction_request_id,"
+                        + "r.target_message_uuid"
+                        + " FROM " + RETRACTION_TABLENAME + " r"
+                        + " JOIN " + Conversation.TABLENAME + " c"
+                        + " ON c." + Conversation.UUID
+                        + "=r.conversation_uuid"
+                        + " AND c." + Conversation.ACCOUNT
+                        + "=r.account_uuid"
+                        + " JOIN " + Message.TABLENAME + " m"
+                        + " ON m." + Message.UUID
+                        + "=r.target_message_uuid"
+                        + " AND m." + Message.CONVERSATION
+                        + "=r.conversation_uuid"
+                        + " AND m." + Message.ROOM_STANZA_ID
+                        + "=r.target_room_stanza_id"
+                        + " WHERE r.state=1"
+                        + " AND m." + Message.RETRACTED + "=0"
+                        + " AND m." + Message.MODERATED + "=0"
+                        + " ORDER BY r.event_time ASC"
+                        + " LIMIT 128";
+
+        try (final Cursor cursor =
+                getReadableDatabase().rawQuery(sql, null)) {
+            while (cursor.moveToNext()) {
+                jobs.add(new PendingRetractionRetirement(
+                        cursor.getString(0),
+                        cursor.getString(1),
+                        cursor.getString(2),
+                        cursor.getString(3)));
+            }
+        }
+
+        return jobs;
+    }
+
+    @Override
+    public List<PendingRetractionRetirement>
+            getPendingMucRetractionRetirements() {
+        final List<PendingRetractionRetirement> jobs =
+                new ArrayList<>();
+        final String sql =
+                "SELECT r.account_uuid,"
+                        + "r.conversation_uuid,"
+                        + "r.retraction_request_id,"
+                        + "r.target_message_uuid"
+                        + pendingRetractionRetirementSource()
+                        + " ORDER BY r.event_time ASC,"
+                        + "r.retraction_request_id ASC LIMIT 128";
+
+        try (final Cursor cursor =
+                getReadableDatabase().rawQuery(sql, null)) {
+            while (cursor.moveToNext()) {
+                jobs.add(new PendingRetractionRetirement(
+                        cursor.getString(0),
+                        cursor.getString(1),
+                        cursor.getString(2),
+                        cursor.getString(3)));
+            }
+        }
+        return jobs;
+    }
+
+    @Override
+    public boolean completeMucRetractionRetirement(
+            final PendingRetractionRetirement job) {
+        if (job == null
+                || job.accountUuid == null
+                || job.accountUuid.isBlank()
+                || job.conversationUuid == null
+                || job.conversationUuid.isBlank()
+                || job.requestId == null
+                || job.requestId.isBlank()
+                || job.messageUuid == null
+                || job.messageUuid.isBlank()) {
+            return false;
+        }
+
+        final SQLiteDatabase db = getWritableDatabase();
+
+        db.beginTransaction();
+        try {
+            final String targetRoomId;
+
+            final String lookup =
+                    "SELECT r.target_room_stanza_id"
+                            + pendingRetractionRetirementSource()
+                            + " AND r.account_uuid=?"
+                            + " AND r.conversation_uuid=?"
+                            + " AND r.retraction_request_id=?"
+                            + " AND r.target_message_uuid=?";
+
+            try (final Cursor cursor = db.rawQuery(
+                    lookup,
+                    new String[] {
+                            job.accountUuid,
+                            job.conversationUuid,
+                            job.requestId,
+                            job.messageUuid
+                    })) {
+                if (!cursor.moveToFirst()) {
+                    return false;
+                }
+                targetRoomId = cursor.getString(0);
+                if (targetRoomId == null || cursor.moveToNext()) {
+                    return false;
+                }
+            }
+
+            final ContentValues messageState =
+                    new ContentValues();
+            messageState.put(Message.RETRACTION_RETIRED, 1);
+
+            final int messageUpdated = db.update(
+                    Message.TABLENAME,
+                    messageState,
+                    Message.UUID + "=? AND "
+                            + Message.CONVERSATION + "=? AND "
+                            + Message.ROOM_STANZA_ID + "=? AND "
+                            + Message.RETRACTED + "=1 AND "
+                            + Message.RETRACTION_RETIRED + "=0",
+                    new String[] {
+                            job.messageUuid,
+                            job.conversationUuid,
+                            targetRoomId
+                    });
+
+            if (messageUpdated != 1) {
+                return false;
+            }
+
+            final ContentValues eventState =
+                    new ContentValues();
+            eventState.put("state", 3);
+
+            final int journalUpdated = db.update(
+                    RETRACTION_TABLENAME,
+                    eventState,
+                    "account_uuid=? AND conversation_uuid=?"
+                            + " AND retraction_request_id=?"
+                            + " AND target_message_uuid=?"
+                            + " AND target_room_stanza_id=?"
+                            + " AND state=2",
+                    new String[] {
+                            job.accountUuid,
+                            job.conversationUuid,
+                            job.requestId,
+                            job.messageUuid,
+                            targetRoomId
+                    });
+
+            if (journalUpdated != 1) {
+                // Both SQL changes are rolled back.
+                return false;
+            }
+
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    static ContentValues retractionScrubValues() {
+        final ContentValues values = new ContentValues();
+        values.put(Message.RETRACTED, 1);
+        values.put(Message.RETRACTION_RETIRED, 0);
+        values.put(Message.BODY, "");
+        values.put(Message.TYPE, Message.TYPE_TEXT);
+        values.putNull(Message.BODY_LANGUAGE);
+        values.putNull(Message.RELATIVE_FILE_PATH);
+        values.putNull(Message.MEDIA_GROUP_ID);
+        values.putNull(Message.PAYLOADS);
+        values.putNull(Message.REACTIONS);
+        values.put(Message.OOB, 0);
+        // Keep roomStanzaId, origin identity, and request deduplication IDs.
+        // Never alter XEP-0425 moderation state here.
+        return values;
+    }
+
+    @Override
+    public boolean beginVerifiedMucRetractionRetirement(
+            final Conversation room, final String requestId) {
+        if (room == null
+                || room.getMode() != Conversation.MODE_MULTI
+                || room.getAccount() == null
+                || requestId == null
+                || requestId.isBlank()
+                || requestId.length() > 512) {
+            return false;
+        }
+
+        final String accountUuid = room.getAccount().getUuid();
+        final String conversationUuid = room.getUuid();
+        final SQLiteDatabase db = getWritableDatabase();
+
+        db.beginTransaction();
+        try {
+            // Ensure that this persisted conversation belongs to the
+            // account for which the journal request was verified.
+            try (final Cursor owner = db.query(
+                    Conversation.TABLENAME,
+                    new String[] {Conversation.ACCOUNT},
+                    Conversation.UUID + "=?",
+                    new String[] {conversationUuid},
+                    null, null, null)) {
+                if (!owner.moveToFirst()
+                        || !accountUuid.equals(owner.getString(0))) {
+                    return false;
+                }
+            }
+
+            final String targetRoomId;
+            final String targetUuid;
+
+            try (final Cursor event = db.query(
+                    RETRACTION_TABLENAME,
+                    new String[] {
+                            "target_room_stanza_id",
+                            "target_message_uuid"
+                    },
+                    "account_uuid=? AND conversation_uuid=?"
+                            + " AND retraction_request_id=? AND state=1",
+                    new String[] {
+                            accountUuid, conversationUuid, requestId
+                    },
+                    null, null, null)) {
+                if (!event.moveToFirst()) {
+                    return false;
+                }
+                targetRoomId = event.getString(0);
+                targetUuid = event.getString(1);
+            }
+
+            if (targetUuid == null || targetUuid.isBlank()
+                    || targetRoomId == null || targetRoomId.isBlank()) {
+                return false;
+            }
+
+            // Recheck identity and uniqueness inside this transaction.
+            // A room stanza ID must resolve to exactly one message.
+            try (final Cursor target = db.query(
+                    Message.TABLENAME,
+                    new String[] {
+                            Message.UUID,
+                            Message.MODERATED,
+                            Message.RETRACTED,
+                            Message.TYPE
+                    },
+                    Message.CONVERSATION + "=? AND "
+                            + Message.ROOM_STANZA_ID + "=?",
+                    new String[] {
+                            conversationUuid, targetRoomId
+                    },
+                    null, null, null, "2")) {
+
+                if (!target.moveToFirst()
+                        || !targetUuid.equals(target.getString(0))
+                        || target.getInt(1) != 0
+                        || target.getInt(2) != 0) {
+                    return false;
+                }
+
+                final int type = target.getInt(3);
+                if (type != Message.TYPE_TEXT
+                        && type != Message.TYPE_IMAGE
+                        && type != Message.TYPE_FILE) {
+                    return false;
+                }
+
+                if (target.moveToNext()) {
+                    // Ambiguous room-assigned ID: never erase either.
+                    return false;
+                }
+            }
+
+            final int messageUpdated = db.update(
+                    Message.TABLENAME,
+                    retractionScrubValues(),
+                    Message.UUID + "=? AND "
+                            + Message.CONVERSATION + "=? AND "
+                            + Message.ROOM_STANZA_ID + "=? AND "
+                            + Message.MODERATED + "=0 AND "
+                            + Message.RETRACTED + "=0",
+                    new String[] {
+                            targetUuid, conversationUuid, targetRoomId
+                    });
+
+            if (messageUpdated != 1) {
+                return false;
+            }
+
+            final ContentValues transition = new ContentValues();
+            transition.put("state", 2);
+
+            final int eventUpdated = db.update(
+                    RETRACTION_TABLENAME,
+                    transition,
+                    "account_uuid=? AND conversation_uuid=?"
+                            + " AND retraction_request_id=?"
+                            + " AND target_room_stanza_id=?"
+                            + " AND target_message_uuid=? AND state=1",
+                    new String[] {
+                            accountUuid, conversationUuid,
+                            requestId, targetRoomId, targetUuid
+                    });
+
+            if (eventUpdated != 1) {
+                // No setTransactionSuccessful(): message scrub rolls back.
+                return false;
+            }
+
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    @Override
+    public boolean verifyUnverifiedMucRetraction(
+            final Conversation room, final String requestId) {
+        if (room == null
+                || room.getMode() != Conversation.MODE_MULTI
+                || requestId == null
+                || requestId.isBlank()
+                || requestId.length() > 512) {
+            return false;
+        }
+
+        final String accountUuid = room.getAccount().getUuid();
+        final String conversationUuid = room.getUuid();
+        final SQLiteDatabase db = getWritableDatabase();
+
+        db.beginTransaction();
+        try {
+            final PendingRetraction pending;
+
+            try (final Cursor cursor = db.query(
+                    RETRACTION_TABLENAME,
+                    new String[] {
+                            "retraction_request_id",
+                            "target_room_stanza_id",
+                            "sender_full_jid",
+                            "sender_occupant_id",
+                            "event_time",
+                            "state",
+                            "target_message_uuid"
+                    },
+                    "account_uuid=? AND conversation_uuid=?"
+                            + " AND retraction_request_id=?",
+                    new String[] {
+                            accountUuid, conversationUuid, requestId
+                    },
+                    null, null, null)) {
+
+                if (!cursor.moveToFirst()
+                        || cursor.getInt(5) != 0
+                        || !cursor.isNull(6)) {
+                    return false;
+                }
+
+                pending = new PendingRetraction(
+                        cursor.getString(0),
+                        cursor.getString(1),
+                        cursor.getString(2),
+                        cursor.getString(3),
+                        cursor.getLong(4));
+            }
+
+            final Message original;
+
+            // Fail closed when room identity is missing or ambiguous.
+            try (final Cursor cursor = db.query(
+                    Message.TABLENAME,
+                    null,
+                    Message.CONVERSATION + "=? AND "
+                            + Message.ROOM_STANZA_ID + "=?",
+                    new String[] {
+                            conversationUuid, pending.targetRoomStanzaId
+                    },
+                    null, null, null, "2")) {
+
+                if (!cursor.moveToFirst()) {
+                    return false;
+                }
+
+                original = Message.fromCursor(cursor, room);
+
+                if (cursor.moveToNext()) {
+                    return false;
+                }
+            }
+
+            if (!canVerifyMucRetraction(room, pending, original)) {
+                return false;
+            }
+
+            final ContentValues values = new ContentValues();
+            values.put("target_message_uuid", original.getUuid());
+            values.put("state", 1);
+
+            final int updated = db.update(
+                    RETRACTION_TABLENAME,
+                    values,
+                    "account_uuid=? AND conversation_uuid=?"
+                            + " AND retraction_request_id=?"
+                            + " AND target_room_stanza_id=?"
+                            + " AND sender_full_jid=?"
+                            + " AND state=0"
+                            + " AND target_message_uuid IS NULL",
+                    new String[] {
+                            accountUuid,
+                            conversationUuid,
+                            requestId,
+                            pending.targetRoomStanzaId,
+                            pending.senderFullJid
+                    });
+
+            if (updated != 1) {
+                return false;
+            }
+
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    @Override
+    public List<PendingRetraction> getUnverifiedMucRetractions(
+            final Conversation room, final String targetRoomStanzaId) {
+        if (room == null
+                || room.getMode() != Conversation.MODE_MULTI
+                || targetRoomStanzaId == null
+                || targetRoomStanzaId.isBlank()) {
+            return Collections.emptyList();
+        }
+
+        final List<PendingRetraction> result = new ArrayList<>();
+
+        try (final Cursor cursor = getReadableDatabase().query(
+                RETRACTION_TABLENAME,
+                new String[] {
+                        "retraction_request_id",
+                        "target_room_stanza_id",
+                        "sender_full_jid",
+                        "sender_occupant_id",
+                        "event_time"
+                },
+                "account_uuid=? AND conversation_uuid=?"
+                        + " AND target_room_stanza_id=? AND state=0",
+                new String[] {
+                        room.getAccount().getUuid(),
+                        room.getUuid(),
+                        targetRoomStanzaId
+                },
+                null, null,
+                "event_time ASC, retraction_request_id ASC",
+                "128")) {
+            while (cursor.moveToNext()) {
+                result.add(new PendingRetraction(
+                        cursor.getString(0),
+                        cursor.getString(1),
+                        cursor.getString(2),
+                        cursor.getString(3),
+                        cursor.getLong(4)));
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public boolean hasVerifiedMucRetractionForRoomStanzaId(
+            final Conversation room, final String roomStanzaId) {
+        if (room == null
+                || room.getAccount() == null
+                || room.getMode() != Conversation.MODE_MULTI
+                || roomStanzaId == null
+                || roomStanzaId.isBlank()) {
+            return false;
+        }
+
+        final String sql =
+                "SELECT 1 FROM " + RETRACTION_TABLENAME + " r"
+                        + " JOIN " + Message.TABLENAME + " m"
+                        + " ON m." + Message.UUID
+                        + "=r.target_message_uuid"
+                        + " AND m." + Message.CONVERSATION
+                        + "=r.conversation_uuid"
+                        + " AND m." + Message.ROOM_STANZA_ID
+                        + "=r.target_room_stanza_id"
+                        + " WHERE r.account_uuid=?"
+                        + " AND r.conversation_uuid=?"
+                        + " AND r.target_room_stanza_id=?"
+                        + " AND r.state BETWEEN 1 AND 3"
+                        + " LIMIT 1";
+
+        try (final Cursor cursor =
+                getReadableDatabase().rawQuery(
+                        sql,
+                        new String[] {
+                                room.getAccount().getUuid(),
+                                room.getUuid(),
+                                roomStanzaId
+                        })) {
+            return cursor.moveToFirst();
+        }
+    }
+
+    /**
+     * A VERIFIED journal entry must not become visible while the
+     * asynchronous SQLCipher/SCS retirement is still pending.
+     */
+    static String verifiedRetractionVisibilityFilter() {
+        return " AND NOT EXISTS (SELECT 1 FROM "
+                + RETRACTION_TABLENAME + " vr"
+                + " WHERE vr.conversation_uuid="
+                + Message.TABLENAME + "." + Message.CONVERSATION
+                + " AND vr.target_message_uuid="
+                + Message.TABLENAME + "." + Message.UUID
+                + " AND vr.state BETWEEN 1 AND 3)";
+    }
+
+    @Override
+    public boolean isMessageRetracted(
+            final String accountUuid, final String messageUuid) {
+        if (accountUuid == null || accountUuid.isBlank()
+                || messageUuid == null || messageUuid.isBlank()) {
+            return false;
+        }
+
+        final String sql =
+                "SELECT m." + Message.RETRACTED
+                        + " FROM " + Message.TABLENAME + " m"
+                        + " JOIN " + Conversation.TABLENAME + " c"
+                        + " ON c." + Conversation.UUID
+                        + "=m." + Message.CONVERSATION
+                        + " WHERE m." + Message.UUID + "=?"
+                        + " AND c." + Conversation.ACCOUNT + "=?"
+                        + " LIMIT 1";
+
+        try (final Cursor cursor =
+                getReadableDatabase().rawQuery(
+                        sql, new String[] {messageUuid, accountUuid})) {
+            return cursor.moveToFirst() && cursor.getInt(0) != 0;
+        }
+    }
+
     @Override
     public Message getMessageWithRoomStanzaId(
             final Conversation conversation, final String roomStanzaId) {
@@ -2867,6 +3701,14 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
         return rows == 1;
     }
 
+    /**
+     * A retired XEP-0424 message must never be rewritten by a stale
+     * resident Message object. Retirement uses separate SQL operations.
+     */
+    static String activeMessageUpdateSelection() {
+        return Message.UUID + "=? AND " + Message.RETRACTED + "=0";
+    }
+
     @Override
     public boolean updateMessage(final Message message, final boolean includeBody) {
         applyModerationMarker(message);
@@ -2879,7 +3721,11 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
         } else {
             removeBodyIfDurablyProtected(message, message.getUuid(), contentValues);
         }
-        final int rows = db.update(Message.TABLENAME, contentValues, Message.UUID + "=?", args);
+        final int rows = db.update(
+                Message.TABLENAME,
+                contentValues,
+                activeMessageUpdateSelection(),
+                args);
         return rows == 1;
     }
 
@@ -2890,7 +3736,11 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
         final String[] args = {uuid};
         final var contentValues = message.getContentValues();
         removeBodyIfDurablyProtected(message, uuid, contentValues);
-        final int rows = db.update(Message.TABLENAME, contentValues, Message.UUID + "=?", args);
+        final int rows = db.update(
+                Message.TABLENAME,
+                contentValues,
+                activeMessageUpdateSelection(),
+                args);
         return rows == 1;
     }
 

@@ -212,7 +212,61 @@ public class DatabaseBackendStub implements DatabaseBackend {
     public void markMessageModerationRetired(String accountUuid, String messageUuid) {}
 
     @Override
+    public boolean isMessageRetracted(String accountUuid, String messageUuid) {
+        return false;
+    }
+
+    @Override
+    public boolean hasVerifiedMucRetractionForRoomStanzaId(
+            Conversation room, String roomStanzaId) {
+        return false;
+    }
+
+    @Override
     public Message getMessageWithRoomStanzaId(Conversation conversation, String roomStanzaId) { return null; }
+
+    @Override
+    public boolean recordUnverifiedMucRetraction(
+            Conversation room, String requestId, String targetRoomStanzaId,
+            Jid senderFullJid, String senderOccupantId, long eventTime) {
+        return false;
+    }
+
+    @Override
+    public boolean verifyUnverifiedMucRetraction(
+            Conversation room, String requestId) {
+        return false;
+    }
+
+    @Override
+    public boolean beginVerifiedMucRetractionRetirement(
+            Conversation room, String requestId) {
+        return false;
+    }
+
+    @Override
+    public List<PendingRetractionRetirement>
+            getVerifiedMucRetractionsToResume() {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public List<PendingRetractionRetirement>
+            getPendingMucRetractionRetirements() {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public boolean completeMucRetractionRetirement(
+            PendingRetractionRetirement job) {
+        return false;
+    }
+
+    @Override
+    public List<PendingRetraction> getUnverifiedMucRetractions(
+            Conversation room, String targetRoomStanzaId) {
+        return Collections.emptyList();
+    }
 
     @Override
     public Message getMessageWithServerMsgId(Conversation conversation, String messageId) {

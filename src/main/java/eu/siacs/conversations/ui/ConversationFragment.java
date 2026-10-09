@@ -4584,12 +4584,50 @@ public class ConversationFragment extends XmppFragment
             case DELETE_LOCALLY:
                 deleteLocally(message);
                 break;
+            case RETRACT_MUC:
+                retractMucMessageFromActionSheet(message);
+                break;
             case MODERATE_MESSAGE:
                 moderateMessageFromActionSheet(message);
                 break;
             default:
                 break;
         }
+    }
+
+    private void retractMucMessageFromActionSheet(final Message message) {
+        final ConversationsActivity hostActivity = this.activity;
+        if (message == null
+                || hostActivity == null
+                || hostActivity.xmppConnectionService == null
+                || !(message.getConversation() instanceof Conversation room)) {
+            return;
+        }
+
+        new MaterialAlertDialogBuilder(hostActivity)
+                .setTitle(R.string.muc_retract_for_everyone)
+                .setMessage(R.string.muc_retract_confirmation)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(
+                        R.string.delete,
+                        (dialog, which) -> {
+                            final ConversationsActivity current = this.activity;
+                            final XmppConnectionService currentService =
+                                    current == null
+                                            ? null
+                                            : current.xmppConnectionService;
+                            if (currentService == null
+                                    || !currentService.retractOwnMucMessage(
+                                            room, message)) {
+                                if (current != null) {
+                                    Toast.makeText(
+                                            current,
+                                            R.string.muc_retract_failed,
+                                            Toast.LENGTH_SHORT).show();
+                                }
+                            }
+                        })
+                .show();
     }
 
     private void moderateMessageFromActionSheet(final Message message) {
@@ -5055,6 +5093,12 @@ public class ConversationFragment extends XmppFragment
             if (m.getReactions() != null) {
                 correctMessage.setVisible(false);
                 retractMessage.setVisible(true);
+            }
+
+            if (m.getConversation() instanceof Conversation c
+                    && c.getMode() == Conversation.MODE_MULTI) {
+                // Never use legacy message correction for MUC retraction.
+                retractMessage.setVisible(false);
             }
 
             if ((m.isFileOrImage() && !deleted && !receiving)

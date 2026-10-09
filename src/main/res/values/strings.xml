@@ -1782,4 +1782,8 @@ Your server administrator may then be able to read message contents in transit o
     <string name="omemo_chat_trust_required">Confirm the OMEMO key to send messages.</string>
     <string name="omemo_chat_fetching_keys">Fetching OMEMO keys…</string>
     <string name="omemo_chat_verify_keys">Check keys</string>
-    <string name="omemo_chat_no_active_keys">No active OMEMO device keys are available yet.</string>\n</resources>
+    <string name="omemo_chat_no_active_keys">No active OMEMO device keys are available yet.</string>\n
+    <string name="muc_retract_for_everyone">Delete for everyone</string>
+    <string name="muc_retract_confirmation">Send a request to remove this message for room participants? Saved copies may remain.</string>
+    <string name="muc_retract_failed">Could not send message retraction</string>
+</resources>

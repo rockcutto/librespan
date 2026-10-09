@@ -111,6 +111,8 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
     public static final String MODERATED_BY = "moderatedBy";
     public static final String MODERATED_AT = "moderatedAt";
     public static final String MODERATION_RETIRED = "moderationRetired";
+    public static final String RETRACTED = "retracted";
+    public static final String RETRACTION_RETIRED = "retractionRetired";
     public static final String RELATIVE_FILE_PATH = "relativeFilePath";
     public static final String FINGERPRINT = "axolotl_fingerprint";
     public static final String READ = "read";
@@ -153,6 +155,8 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
     @Nullable private String moderatedBy;
     private long moderatedAt;
     private boolean moderationRetired;
+    private boolean retracted;
+    private boolean retractionRetired;
     private final Conversational conversation;
     protected Transferable transferable = null;
     private Message mNextMessage = null;
@@ -354,6 +358,8 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
         message.moderatedBy = cursor.getString(cursor.getColumnIndexOrThrow(MODERATED_BY));
         message.moderatedAt = cursor.getLong(cursor.getColumnIndexOrThrow(MODERATED_AT));
         message.moderationRetired = cursor.getInt(cursor.getColumnIndexOrThrow(MODERATION_RETIRED)) != 0;
+        message.retracted = cursor.getInt(cursor.getColumnIndexOrThrow(RETRACTED)) != 0;
+        message.retractionRetired = cursor.getInt(cursor.getColumnIndexOrThrow(RETRACTION_RETIRED)) != 0;
         return message;
     }
 
@@ -418,6 +424,8 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
         values.put(MODERATED_BY, moderatedBy);
         values.put(MODERATED_AT, moderatedAt);
         values.put(MODERATION_RETIRED, moderationRetired ? 1 : 0);
+        values.put(RETRACTED, retracted ? 1 : 0);
+        values.put(RETRACTION_RETIRED, retractionRetired ? 1 : 0);
         values.put(FINGERPRINT, axolotlFingerprint);
         values.put(READ, read ? 1 : 0);
         try {
@@ -584,7 +592,7 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
     }
 
     public synchronized String getBody() {
-        if (moderated) return "";
+        if (moderated || retracted) return "";
         if (secureMessagePayloadMode != null) {
             return verifiedProtectedBody == null ? "" : verifiedProtectedBody;
         }
@@ -599,7 +607,7 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
         if (body == null) {
             throw new Error("You should not set the message body to null");
         }
-        if (moderated) return;
+        if (moderated || retracted) return;
         if (secureMessagePayloadMode == null) {
             this.body = body;
         } else {
@@ -613,6 +621,7 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
     }
 
     public synchronized void appendBody(String append) {
+        if (moderated || retracted) return;
         if (secureMessagePayloadMode == null) {
             this.body += append;
         } else {
@@ -703,6 +712,39 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
 
     public synchronized boolean isModerated() {
         return moderated;
+    }
+
+    public synchronized boolean isRetracted() {
+        return retracted;
+    }
+
+    /** Clear resident content after durable XEP-0424 retirement begins. */
+    public synchronized void markRetracted() {
+        if (!retracted) retractionRetired = false;
+        retracted = true;
+        body = "";
+        encryptedBody = null;
+        verifiedProtectedBody = null;
+        payloads.clear();
+        relativeFilePath = null;
+        mediaGroupId = null;
+        type = TYPE_TEXT;
+        oob = false;
+        transferable = null;
+        reactions = Collections.emptyList();
+        secureMediaMimeType = null;
+        secureMediaFileName = null;
+        secureMediaSizeBytes = null;
+        secureMediaPresentationMetadataResolved = false;
+        replyMessage = null;
+        isGeoUri = null;
+        isEmojisOnly = null;
+        treatAsDownloadable = null;
+        fileParams = null;
+    }
+
+    public synchronized boolean isRetractionRetired() {
+        return retractionRetired;
     }
 
     public synchronized void markModerated(
@@ -1137,7 +1179,7 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
     }
 
     public SpannableStringBuilder getBodyForDisplaying(boolean omitReplyText) {
-        if (isModerated()) return new SpannableStringBuilder();
+        if (isModerated() || isRetracted()) return new SpannableStringBuilder();
         if (replyMessage != null) {
             if (omitReplyText) {
                 return new SpannableStringBuilder(MessageUtils.filterLtrRtl(removeReplyFallback(this).toString()).trim());
@@ -1475,7 +1517,7 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
     }
 
     public synchronized void setVerifiedProtectedBody(final String text) {
-        if (moderated) return;
+        if (moderated || retracted) return;
         if (secureMessagePayloadMode != SecureMessagePayloadMode.PROTECTED) {
             throw new IllegalStateException("Protected text is not readable");
         }
@@ -1492,7 +1534,7 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
      * presentation. The caller must have completed terminal SCS verification before invoking this.
      */
     public synchronized void promoteLegacyToVerifiedProtectedBody(final String text) {
-        if (moderated) return;
+        if (moderated || retracted) return;
         if (text == null) {
             throw new IllegalArgumentException("Verified protected text must not be null");
         }
@@ -1514,7 +1556,7 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
     }
 
     public synchronized String getBodyForSecurePublication() {
-        if (moderated) return "";
+        if (moderated || retracted) return "";
         return secureMessagePayloadMode == null ? body : verifiedProtectedBody;
     }
 

@@ -2,6 +2,7 @@ package eu.siacs.conversations.ui.actions
 
 import android.content.Context
 import eu.siacs.conversations.R
+import eu.siacs.conversations.entities.Account
 import eu.siacs.conversations.entities.Conversation
 import eu.siacs.conversations.entities.Message
 import eu.siacs.conversations.entities.Transferable
@@ -172,6 +173,18 @@ class MessageActionResolver(@Suppress("UNUSED_PARAMETER") context: Context? = nu
                 )
             )
 
+            if (canRetractOwnMucMessage(message)) {
+                add(
+                    MessageAction(
+                        type = MessageActionType.RETRACT_MUC,
+                        title = R.string.muc_retract_for_everyone,
+                        icon = R.drawable.ic_delete_24dp,
+                        group = MessageActionGroup.DANGER,
+                        destructive = true
+                    )
+                )
+            }
+
             if (canModerateMessage) {
                 add(
                     MessageAction(
@@ -256,6 +269,24 @@ class MessageActionResolver(@Suppress("UNUSED_PARAMETER") context: Context? = nu
         val sourceConversation = message.conversation as? Conversation ?: return false
         return canShare(message, transferable, unInitiatedButKnownSize)
                 && !sourceConversation.withSelf()
+    }
+
+    private fun canRetractOwnMucMessage(message: Message): Boolean {
+        val room = message.conversation as? Conversation ?: return false
+        if (room.mode != Conversation.MODE_MULTI) return false
+
+        val sent = message.status == Message.STATUS_SEND_RECEIVED ||
+                message.status == Message.STATUS_SEND_DISPLAYED
+
+        return sent &&
+                !message.isPrivateMessage() &&
+                !message.isModerated() &&
+                !message.isDeleted() &&
+                !message.getRoomStanzaId().isNullOrBlank() &&
+                room.getAccount().getStatus() == Account.State.ONLINE &&
+                room.getAccount().getXmppConnection() != null &&
+                room.getMucOptions().online() &&
+                room.getMucOptions().participating()
     }
 
     private fun canDeleteLocally(message: Message): Boolean {
