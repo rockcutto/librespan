@@ -1655,13 +1655,16 @@ public class StartConversationActivity extends XmppActivity
         binding.results.setVisibility(empty ? View.GONE : View.VISIBLE);
         binding.emptyState.setVisibility(empty ? View.VISIBLE : View.GONE);
         if (!empty) {
+            binding.emptyActions.setVisibility(View.GONE);
             emptyPrimaryAction = EmptyStateAction.NONE;
             emptySecondaryAction = EmptyStateAction.NONE;
             return;
         }
 
+        binding.emptyActions.setVisibility(View.GONE);
         binding.emptyPrimaryAction.setVisibility(View.GONE);
         binding.emptySecondaryAction.setVisibility(View.GONE);
+        binding.emptyStateIcon.setVisibility(View.VISIBLE);
         emptyPrimaryAction = EmptyStateAction.NONE;
         emptySecondaryAction = EmptyStateAction.NONE;
 
@@ -1669,6 +1672,8 @@ public class StartConversationActivity extends XmppActivity
                 mSearchEditText == null ? "" : mSearchEditText.getText().toString().trim();
 
         if (!query.isEmpty() && isValidJid(query)) {
+            binding.emptyStateIcon.setVisibility(View.GONE);
+            binding.emptyActions.setVisibility(View.VISIBLE);
             binding.emptyStateTitle.setText(R.string.start_conversation_jid_title);
             binding.emptyStateText.setText(
                     query + "\n" + getString(R.string.start_conversation_jid_text));
@@ -1688,6 +1693,7 @@ public class StartConversationActivity extends XmppActivity
         }
 
         if (mHideOfflineContacts) {
+            binding.emptyActions.setVisibility(View.VISIBLE);
             binding.emptyStateTitle.setText(R.string.start_conversation_online_empty_title);
             binding.emptyStateText.setText(R.string.start_conversation_online_empty_text);
             binding.emptyPrimaryAction.setText(R.string.start_conversation_show_all);
@@ -1696,6 +1702,7 @@ public class StartConversationActivity extends XmppActivity
             return;
         }
 
+        binding.emptyActions.setVisibility(View.VISIBLE);
         binding.emptyStateTitle.setText(R.string.start_conversation_empty_title);
         binding.emptyStateText.setText(R.string.start_conversation_empty_text);
         binding.emptyPrimaryAction.setText(R.string.start_conversation_contact_action);

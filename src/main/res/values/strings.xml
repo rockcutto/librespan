@@ -1602,7 +1602,7 @@ Your server administrator may then be able to read message contents in transit o
     <string name="start_conversation_no_results_title">Nothing found</string>
     <string name="start_conversation_no_results_text">Try another name or address.</string>
     <string name="start_conversation_jid_title">Start a conversation</string>
-    <string name="start_conversation_jid_text">No saved contact matches this address.</string>
+    <string name="start_conversation_jid_text">Not in your contacts yet. You can still start a conversation.</string>
     <string name="start_conversation_start_jid">Start conversation</string>
     <string name="start_conversation_add_jid">Add to contacts</string>
     <string name="start_conversation_online_empty_title">No contacts are online</string>
