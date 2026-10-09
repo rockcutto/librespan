@@ -4927,6 +4927,15 @@ public class ConversationFragment extends XmppFragment
                                     } else {
                                         hideFetchHistoryDialog();
                                         pendingSelectionUuid = null;
+
+                                        if (populateFromMam && isAdded() && activity != null) {
+                                            Toast.makeText(
+                                                            activity,
+                                                            R.string.reply_original_unavailable,
+                                                            Toast.LENGTH_SHORT)
+                                                    .show();
+                                            previousClickedReply = null;
+                                        }
                                     }
                                 });
                     }

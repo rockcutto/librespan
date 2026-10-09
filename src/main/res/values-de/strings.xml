@@ -2114,4 +2114,5 @@
     <string name="network_diagnostics_quality_fair">Mittel</string>
     <string name="network_diagnostics_quality_poor">Schlecht</string>
     <string name="network_diagnostics_copied">Netzwerkbericht kopiert</string>
+    <string name="reply_original_unavailable">Ursprüngliche Nachricht nicht verfügbar</string>
 </resources>

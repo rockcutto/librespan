@@ -33,9 +33,16 @@ configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configu
 }
 
 spotless {
-    ratchetFrom 'a7bd7509d8fabcdb1c69570235c097368d219419'
+    ratchetFrom 'cb32e1669afb622a5c5a4540676fc1a11b86a277'
     java {
         target '**/*.java'
+
+        // TODO: Remove exclusions after dedicated legacy Java formatting cleanup.
+        targetExclude(
+            'src/main/java/eu/siacs/conversations/services/XmppConnectionService.java',
+            'src/main/java/eu/siacs/conversations/ui/ConversationFragment.java'
+        )
+
         googleJavaFormat().aosp().reflowLongStrings()
     }
 }

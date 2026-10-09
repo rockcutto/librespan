@@ -4556,7 +4556,9 @@ public class XmppConnectionService extends Service {
     }
 
     private void hydrateProtectedTextMessages(final List<Message> messages) {
-        if (!Config.SECURE_MESSAGE_PAYLOAD_ROLLOUT || messages.isEmpty()) {
+        if (!Config.SECURE_MESSAGE_PAYLOAD_ROLLOUT
+                || messages == null
+                || messages.isEmpty()) {
             return;
         }
         final SecureMessageTextRepository repository = getSecureMessageTextRepository();
@@ -5082,18 +5084,25 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    public void jumpToMessage(final Conversation conversation, final String uuid, JumpToMessageListener listener) {
+    public void jumpToMessage(
+            final Conversation conversation,
+            final String uuid,
+            final JumpToMessageListener listener) {
         final Runnable runnable = () -> {
-            List<Message> messages = databaseBackend.getMessagesNearUuid(conversation, 30, uuid);
+            final List<Message> messages =
+                    databaseBackend.getMessagesNearUuid(conversation, 30, uuid);
+
+            if (messages == null || messages.isEmpty()) {
+                listener.onNotFound();
+                return;
+            }
+
             hydrateProtectedTextMessages(messages);
             restoreRepliesForMessages(conversation, messages);
-            if (messages != null && !messages.isEmpty()) {
-                conversation.jumpToHistoryPart(messages);
-                scheduleLegacyPlaintextMigrationForLoadedPage(messages);
-                listener.onSuccess();
-            } else {
-                listener.onNotFound();
-            }
+
+            conversation.jumpToHistoryPart(messages);
+            scheduleLegacyPlaintextMigrationForLoadedPage(messages);
+            listener.onSuccess();
         };
 
         mDatabaseReaderExecutor.execute(runnable);
@@ -5104,6 +5113,9 @@ public class XmppConnectionService extends Service {
     }
 
     public void restoreRepliesForMessages(final Conversation conversation, List<Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
         Map<String, ArrayList<Message>> notFoundReplies = null;
 
         for (Message m : messages) {
