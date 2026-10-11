@@ -90,6 +90,90 @@ public interface DatabaseBackend extends SecureContentMetadataStore {
     Moderation getMessageModeration(Conversation conversation, String roomStanzaId);
     List<String[]> getPendingModeratedMessageIds();
     void markMessageModerationRetired(String accountUuid, String messageUuid);
+    /** Store an unverified XEP-0424 MUC event; never mutates the target. */
+    boolean recordUnverifiedMucRetraction(
+            Conversation room, String requestId, String targetRoomStanzaId,
+            Jid senderFullJid, String senderOccupantId, long eventTime);
+
+    /** Bounded snapshot of events awaiting sender verification. */
+    List<PendingRetraction> getUnverifiedMucRetractions(
+            Conversation room, String targetRoomStanzaId);
+
+    /**
+     * Verify an incoming MUC retraction against exactly one persisted
+     * message. Does not scrub content or acknowledge remote deletion.
+     */
+    boolean verifyUnverifiedMucRetraction(
+            Conversation room, String requestId);
+
+    /**
+     * Atomically scrub durable message presentation fields and move
+     * VERIFIED -> RETIRE_PENDING. Does NOT retire SCS content.
+     * Not to be invoked until runtime retirement/recovery is wired.
+     */
+    boolean beginVerifiedMucRetractionRetirement(
+            Conversation room, String requestId);
+
+    /** An account-scoped, durable SCS retirement job. */
+    final class PendingRetractionRetirement {
+        public final String accountUuid;
+        public final String conversationUuid;
+        public final String requestId;
+        public final String messageUuid;
+
+        public PendingRetractionRetirement(
+                String accountUuid,
+                String conversationUuid,
+                String requestId,
+                String messageUuid) {
+            this.accountUuid = accountUuid;
+            this.conversationUuid = conversationUuid;
+            this.requestId = requestId;
+            this.messageUuid = messageUuid;
+        }
+    }
+
+    /** Returns up to 128 verified, scrubbed retirement jobs. */
+    /** Verified events not yet transitioned to RETIRE_PENDING. */
+    List<PendingRetractionRetirement>
+            getVerifiedMucRetractionsToResume();
+
+    List<PendingRetractionRetirement>
+            getPendingMucRetractionRetirements();
+
+    /**
+     * Call only AFTER successful SCS retirement and cache invalidation.
+     * Changes both durable states atomically.
+     */
+    boolean completeMucRetractionRetirement(
+            PendingRetractionRetirement job);
+
+    final class PendingRetraction {
+        public final String requestId;
+        public final String targetRoomStanzaId;
+        public final String senderFullJid;
+        public final String senderOccupantId;
+        public final long eventTime;
+
+        public PendingRetraction(
+                String requestId, String targetRoomStanzaId,
+                String senderFullJid, String senderOccupantId,
+                long eventTime) {
+            this.requestId = requestId;
+            this.targetRoomStanzaId = targetRoomStanzaId;
+            this.senderFullJid = senderFullJid;
+            this.senderOccupantId = senderOccupantId;
+            this.eventTime = eventTime;
+        }
+    }
+
+    /** Account-scoped durable XEP-0424 retraction check. */
+    boolean isMessageRetracted(String accountUuid, String messageUuid);
+
+    /** True only for a verified, durably associated MUC retraction. */
+    boolean hasVerifiedMucRetractionForRoomStanzaId(
+            Conversation room, String roomStanzaId);
+
     Message getMessageWithRoomStanzaId(Conversation conversation, String roomStanzaId);
 
     default boolean hasMessageWithRoomStanzaId(

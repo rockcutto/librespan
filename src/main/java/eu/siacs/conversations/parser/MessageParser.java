@@ -57,6 +57,7 @@ import eu.siacs.conversations.xml.LocalizedContent;
 import eu.siacs.conversations.xml.Namespace;
 import eu.siacs.conversations.xmpp.Jid;
 import eu.siacs.conversations.xmpp.MucModerationProtocol;
+import eu.siacs.conversations.xmpp.MessageRetractionProtocol;
 import eu.siacs.conversations.xmpp.chatstate.ChatState;
 import eu.siacs.conversations.xmpp.jingle.JingleConnectionManager;
 import eu.siacs.conversations.xmpp.jingle.JingleRtpConnection;
@@ -863,6 +864,75 @@ public class MessageParser extends AbstractParser
             return;
         }
 
+        // An archive tombstone is not a user-visible message.
+        // Its id refers to the retraction request, NOT the target.
+        // Never retire content based on a tombstone alone.
+        if (MessageRetractionProtocol.isPlainRetractionTombstone(packet)) {
+            if (query != null) {
+                query.incrementActualMessageCount();
+            }
+            return;
+        }
+
+        if (MessageRetractionProtocol.isPlainRetractionMessage(packet)) {
+            // Always consume fallback, including malformed or rejected events.
+            // The MAM wrapper has already been validated above.
+            final boolean trustedMucTransport =
+                    MessageRetractionProtocol.isTrustedMucDelivery(
+                            isTypeGroupChat,
+                            from,
+                            query != null && query.muc()
+                                    ? query.getWith() : null,
+                            isForwarded,
+                            query != null && query.muc());
+
+            if (trustedMucTransport) {
+                final Conversation room =
+                        mXmppConnectionService.find(
+                                account, from.asBareJid(), null);
+
+                if (room != null
+                        && room.getMode() == Conversation.MODE_MULTI
+                        && room.getJid().asBareJid()
+                                .equals(from.asBareJid())) {
+                    final OccupantId occupant =
+                            packet.getExtension(OccupantId.class);
+                    final String occupantId = occupant == null
+                            ? null
+                            : room.getMucOptions().acceptedOccupantId(
+                                    occupant.getId());
+
+                    final String targetId =
+                            MessageRetractionProtocol
+                                    .plainRetractionTarget(packet);
+
+                    // UNVERIFIED only. Never scrub or hide the target here.
+                    final boolean recorded =
+                            mXmppConnectionService.databaseBackend
+                                    .recordUnverifiedMucRetraction(
+                                            room,
+                                            packet.getId(),
+                                            targetId,
+                                            from,
+                                            occupantId,
+                                            System.currentTimeMillis());
+
+                    if (recorded) {
+                        // Only a verified author retraction may retire content.
+                        final boolean verified =
+                                mXmppConnectionService.databaseBackend
+                                        .verifyUnverifiedMucRetraction(
+                                                room, packet.getId());
+                        if (verified) {
+                            mXmppConnectionService.applyVerifiedMucRetraction(
+                                    room, packet.getId());
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
         if (query != null && !query.muc() && isTypeGroupChat) {
             Log.e(
                     Config.LOGTAG,
@@ -1041,6 +1111,21 @@ public class MessageParser extends AbstractParser
                 return;
             }
 
+            // A trusted MUC archive result must not resurrect an
+            // original already covered by a verified retraction.
+            if (query != null
+                    && query.muc()
+                    && conversationMultiMode
+                    && serverMsgId != null
+                    && mXmppConnectionService.databaseBackend
+                            .hasVerifiedMucRetractionForRoomStanzaId(
+                                    conversation, serverMsgId)) {
+                query.incrementActualMessageCount();
+                Log.d(Config.LOGTAG,
+                        "suppressing XEP-0424 MAM replay");
+                return;
+            }
+
             if (serverMsgId == null) {
                 serverMsgId = extractStanzaId(packet, isTypeGroupChat, conversation);
             }
@@ -1069,13 +1154,17 @@ public class MessageParser extends AbstractParser
                     isCarbon = true; // not really carbon but received from another resource
                     final String reflectedRoomStanzaId =
                             MucModerationProtocol.roomStanzaId(packet, conversation.getJid());
-                    if (remoteMsgId != null && reflectedRoomStanzaId != null) {
+                    if (remoteMsgId != null) {
                         final Message reflected =
                                 conversation.findSentMessageWithUuid(remoteMsgId);
-                        if (reflected != null && reflected.getRoomStanzaId() == null) {
-                            // Persist the canonical moderation identity before markMessage() takes
-                            // the self-echo early return.
-                            reflected.setRoomStanzaId(reflectedRoomStanzaId);
+                        if (reflected != null) {
+                            if (reflectedRoomStanzaId != null
+                                    && reflected.getRoomStanzaId() == null) {
+                                reflected.setRoomStanzaId(reflectedRoomStanzaId);
+                            }
+                            if (occupant != null) {
+                                reflected.setOccupantId(occupant.getId());
+                            }
                         }
                     }
                     // don’t store serverMsgId on reflections for edits
@@ -1091,6 +1180,9 @@ public class MessageParser extends AbstractParser
                                 if (message.getRoomStanzaId() == null
                                         && reflectedRoomStanzaId != null) {
                                     message.setRoomStanzaId(reflectedRoomStanzaId);
+                                }
+                                if (occupant != null) {
+                                    message.setOccupantId(occupant.getId());
                                 }
                                 mXmppConnectionService.markMessage(message, status);
                                 return;
@@ -1229,6 +1321,20 @@ public class MessageParser extends AbstractParser
                 // moderation identity even if the server preserved a matching by=room attribute.
                 final String candidateRoomStanzaId =
                         MucModerationProtocol.roomStanzaId(packet, conversation.getJid());
+
+                if (candidateRoomStanzaId != null
+                        && mXmppConnectionService.databaseBackend
+                                .hasVerifiedMucRetractionForRoomStanzaId(
+                                        conversation, candidateRoomStanzaId)) {
+                    message.markRetracted();
+                    if (query != null) {
+                        query.incrementActualMessageCount();
+                    }
+                    Log.d(Config.LOGTAG,
+                            "suppressing durably retracted MUC original");
+                    return;
+                }
+
                 final var knownModeration =
                         candidateRoomStanzaId == null
                                 ? null
@@ -1603,7 +1709,28 @@ public class MessageParser extends AbstractParser
                 return;
             }
 
-            if (message.isModerated()) {
+            // The original may arrive after its retraction (MAM/live).
+            // Verify author identity before suppressing presentation.
+            boolean verifiedMucRetraction = false;
+            if (conversationMultiMode
+                    && isTypeGroupChat
+                    && !message.isModerated()
+                    && message.getRoomStanzaId() != null) {
+                for (final var pending :
+                        mXmppConnectionService.databaseBackend
+                                .getUnverifiedMucRetractions(
+                                        conversation, message.getRoomStanzaId())) {
+                    if (mXmppConnectionService.databaseBackend
+                            .verifyUnverifiedMucRetraction(
+                                    conversation, pending.requestId)) {
+                        verifiedMucRetraction = true;
+                        mXmppConnectionService.applyVerifiedMucRetraction(
+                                conversation, pending.requestId);
+                    }
+                }
+            }
+
+            if (message.isModerated() || verifiedMucRetraction) {
                 // Keep the scrubbed row/tombstone durable for deduplication and late MAM replay,
                 // but never publish a residual moderation bubble into the visible timeline.
                 if (query != null) {

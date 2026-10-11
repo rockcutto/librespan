@@ -7,6 +7,7 @@ import eu.siacs.conversations.entities.Message
 import eu.siacs.conversations.entities.Transferable
 import eu.siacs.conversations.http.HttpDownloadConnection
 import eu.siacs.conversations.utils.MessageUtils
+import eu.siacs.conversations.xmpp.MessageRetractionPolicy
 import eu.siacs.conversations.xmpp.jingle.JingleFileTransferConnection
 
 class MessageActionResolver(@Suppress("UNUSED_PARAMETER") context: Context? = null) {
@@ -172,26 +173,35 @@ class MessageActionResolver(@Suppress("UNUSED_PARAMETER") context: Context? = nu
                 )
             )
 
-            if (canModerateMessage) {
+            if (resolveDeleteOptions(message, canModerateMessage).isNotEmpty()) {
                 add(
                     MessageAction(
-                        type = MessageActionType.MODERATE_MESSAGE,
-                        title = R.string.moderate_delete,
-                        icon = R.drawable.ic_shield_x_24dp,
-                        group = MessageActionGroup.DANGER,
-                        destructive = true
-                    )
-                )
-            } else if (canDeleteLocally(message)) {
-                add(
-                    MessageAction(
-                        type = MessageActionType.DELETE_LOCALLY,
+                        type = MessageActionType.DELETE,
                         title = R.string.delete,
                         icon = R.drawable.ic_delete_24dp,
                         group = MessageActionGroup.DANGER,
                         destructive = true
                     )
                 )
+            }
+        }
+    }
+
+    fun resolveDeleteOptions(
+        message: Message,
+        canModerateMessage: Boolean
+    ): List<MessageActionType> {
+        if (!isLegacyContextMenuEligible(message)) return emptyList()
+
+        return buildList {
+            if (canRetractOwnMucMessage(message)) {
+                add(MessageActionType.RETRACT_MUC)
+            }
+            if (canModerateMessage) {
+                add(MessageActionType.MODERATE_MESSAGE)
+            }
+            if (canDeleteLocally(message)) {
+                add(MessageActionType.DELETE_LOCALLY)
             }
         }
     }
@@ -256,6 +266,15 @@ class MessageActionResolver(@Suppress("UNUSED_PARAMETER") context: Context? = nu
         val sourceConversation = message.conversation as? Conversation ?: return false
         return canShare(message, transferable, unInitiatedButKnownSize)
                 && !sourceConversation.withSelf()
+    }
+
+    private fun canRetractOwnMucMessage(message: Message): Boolean {
+        val room = message.conversation as? Conversation ?: return false
+        val eligible =
+                MessageRetractionPolicy.canRetractOwnMucMessage(room, message) &&
+                room.account.xmppConnection != null
+
+        return eligible
     }
 
     private fun canDeleteLocally(message: Message): Boolean {

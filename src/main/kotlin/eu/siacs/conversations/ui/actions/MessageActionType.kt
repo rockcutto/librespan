@@ -17,6 +17,7 @@ enum class MessageActionType {
     DELETE_FILE,
     DELETE_LOCALLY,
     MODERATE_MESSAGE,
+    RETRACT_MUC,
     RETRY,
     RETRY_AS_P2P,
     SHOW_ERROR,

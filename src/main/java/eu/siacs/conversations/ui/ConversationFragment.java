@@ -146,6 +146,7 @@ import eu.siacs.conversations.storage.secure.SecureOutgoingVoiceStagingRetirer;
 import eu.siacs.conversations.ui.actions.MessageAction;
 import eu.siacs.conversations.ui.actions.MessageActionController;
 import eu.siacs.conversations.ui.actions.MessageActionResolver;
+import eu.siacs.conversations.ui.actions.MessageActionType;
 import eu.siacs.conversations.ui.actions.reactions.QuickReaction;
 import eu.siacs.conversations.ui.actions.reactions.QuickReactionResolver;
 import eu.siacs.conversations.ui.actions.ui.MaterialMessageActionSheet;
@@ -4581,8 +4582,14 @@ public class ConversationFragment extends XmppFragment
             case CANCEL_TRANSFER:
                 cancelTransmission(message);
                 break;
+            case DELETE:
+                showUnifiedDeleteOptions(message);
+                break;
             case DELETE_LOCALLY:
                 deleteLocally(message);
+                break;
+            case RETRACT_MUC:
+                retractMucMessageFromActionSheet(message);
                 break;
             case MODERATE_MESSAGE:
                 moderateMessageFromActionSheet(message);
@@ -4590,6 +4597,114 @@ public class ConversationFragment extends XmppFragment
             default:
                 break;
         }
+    }
+
+    private void showUnifiedDeleteOptions(final Message message) {
+        final ConversationsActivity host = this.activity;
+        if (host == null
+                || host.xmppConnectionService == null
+                || message == null
+                || !(message.getConversation() instanceof Conversation room)) {
+            return;
+        }
+
+        final boolean canModerate =
+                host.xmppConnectionService.canModerateMessage(room, message);
+
+        final java.util.List<MessageActionType> choices =
+                new MessageActionResolver(host)
+                        .resolveDeleteOptions(message, canModerate);
+
+        if (choices.isEmpty()) {
+            return;
+        }
+
+        if (choices.size() == 1) {
+            performUnifiedDeleteChoice(message, choices.get(0));
+            return;
+        }
+
+        final CharSequence[] labels = new CharSequence[choices.size()];
+        for (int i = 0; i < choices.size(); i++) {
+            switch (choices.get(i)) {
+                case RETRACT_MUC:
+                    labels[i] = host.getString(R.string.muc_retract_for_everyone);
+                    break;
+                case MODERATE_MESSAGE:
+                    labels[i] = host.getString(R.string.moderate_delete);
+                    break;
+                case DELETE_LOCALLY:
+                    labels[i] = host.getString(R.string.delete_locally);
+                    break;
+                default:
+                    return;
+            }
+        }
+
+        new MaterialAlertDialogBuilder(host)
+                .setTitle(R.string.delete)
+                .setItems(
+                        labels,
+                        (dialog, which) -> {
+                            if (which >= 0 && which < choices.size()) {
+                                performUnifiedDeleteChoice(
+                                        message, choices.get(which));
+                            }
+                        })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void performUnifiedDeleteChoice(
+            final Message message, final MessageActionType choice) {
+        switch (choice) {
+            case DELETE_LOCALLY:
+                deleteLocally(message);
+                break;
+            case RETRACT_MUC:
+                retractMucMessageFromActionSheet(message);
+                break;
+            case MODERATE_MESSAGE:
+                moderateMessageFromActionSheet(message);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void retractMucMessageFromActionSheet(final Message message) {
+        final ConversationsActivity hostActivity = this.activity;
+        if (message == null
+                || hostActivity == null
+                || hostActivity.xmppConnectionService == null
+                || !(message.getConversation() instanceof Conversation room)) {
+            return;
+        }
+
+        new MaterialAlertDialogBuilder(hostActivity)
+                .setTitle(R.string.muc_retract_for_everyone)
+                .setMessage(R.string.muc_retract_confirmation)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(
+                        R.string.delete,
+                        (dialog, which) -> {
+                            final ConversationsActivity current = this.activity;
+                            final XmppConnectionService currentService =
+                                    current == null
+                                            ? null
+                                            : current.xmppConnectionService;
+                            if (currentService == null
+                                    || !currentService.retractOwnMucMessage(
+                                            room, message)) {
+                                if (current != null) {
+                                    Toast.makeText(
+                                            current,
+                                            R.string.muc_retract_failed,
+                                            Toast.LENGTH_SHORT).show();
+                                }
+                            }
+                        })
+                .show();
     }
 
     private void moderateMessageFromActionSheet(final Message message) {
@@ -5055,6 +5170,12 @@ public class ConversationFragment extends XmppFragment
             if (m.getReactions() != null) {
                 correctMessage.setVisible(false);
                 retractMessage.setVisible(true);
+            }
+
+            if (m.getConversation() instanceof Conversation c
+                    && c.getMode() == Conversation.MODE_MULTI) {
+                // Never use legacy message correction for MUC retraction.
+                retractMessage.setVisible(false);
             }
 
             if ((m.isFileOrImage() && !deleted && !receiving)
@@ -8446,8 +8567,16 @@ public class ConversationFragment extends XmppFragment
                                 presentationRevisionAfter);
                 final boolean requestedAdapterRefresh =
                         refreshAction != TimelineRefreshGate.RefreshAction.NONE;
+                boolean visibleRetractionPending = false;
+                for (final Message visible : this.messageList) {
+                    if (visible.isRetracted()) {
+                        visibleRetractionPending = true;
+                        break;
+                    }
+                }
                 final boolean deferTimelineRefresh =
                         requestedAdapterRefresh
+                                && !visibleRetractionPending
                                 && !forceTimelineRebuild
                                 && !conversationChanged
                                 && shouldFreezeTimelineForReading();

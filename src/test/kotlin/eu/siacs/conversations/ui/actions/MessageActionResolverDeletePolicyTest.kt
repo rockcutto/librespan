@@ -5,7 +5,7 @@ import eu.siacs.conversations.entities.Conversation
 import eu.siacs.conversations.entities.Message
 import eu.siacs.conversations.xmpp.Jid
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -32,7 +32,14 @@ class MessageActionResolverDeletePolicyTest {
 
         val actions = MessageActionResolver().resolve(media, ownsMediaFile = false).map { it.type }
 
-        assertTrue(MessageActionType.DELETE_LOCALLY in actions)
+        assertEquals(1, actions.count { it == MessageActionType.DELETE })
+        assertFalse(MessageActionType.DELETE_LOCALLY in actions)
+        assertEquals(
+            listOf(MessageActionType.DELETE_LOCALLY),
+            MessageActionResolver().resolveDeleteOptions(
+                media, canModerateMessage = false
+            )
+        )
     }
 
     @Test
@@ -52,11 +59,18 @@ class MessageActionResolverDeletePolicyTest {
 
         val actions = MessageActionResolver().resolve(media, ownsMediaFile = true).map { it.type }
 
-        assertTrue(MessageActionType.DELETE_LOCALLY in actions)
+        assertEquals(1, actions.count { it == MessageActionType.DELETE })
+        assertFalse(MessageActionType.DELETE_LOCALLY in actions)
+        assertEquals(
+            listOf(MessageActionType.DELETE_LOCALLY),
+            MessageActionResolver().resolveDeleteOptions(
+                media, canModerateMessage = false
+            )
+        )
         assertFalse(MessageActionType.DELETE_FILE in actions)
     }
     @Test
-    fun moderatorDeleteReplacesLocalDeleteInActionSheet() {
+    fun moderatorDeleteOffersTwoChoicesUnderSingleAction() {
         val account = Account(Jid.of("me@example.test"), "")
         val conversation = Conversation(
             "moderator-delete-policy",
@@ -78,8 +92,18 @@ class MessageActionResolverDeletePolicyTest {
                 )
                 .map { it.type }
 
-        assertTrue(MessageActionType.MODERATE_MESSAGE in actions)
+        assertEquals(1, actions.count { it == MessageActionType.DELETE })
+        assertFalse(MessageActionType.MODERATE_MESSAGE in actions)
         assertFalse(MessageActionType.DELETE_LOCALLY in actions)
+        assertEquals(
+            listOf(
+                MessageActionType.MODERATE_MESSAGE,
+                MessageActionType.DELETE_LOCALLY
+            ),
+            MessageActionResolver().resolveDeleteOptions(
+                message, canModerateMessage = true
+            )
+        )
     }
 
 }
