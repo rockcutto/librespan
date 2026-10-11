@@ -215,7 +215,8 @@ class SecureMessageTextRepository @JvmOverloads constructor(
             )
             val protectedMessages =
                 accountMessages.filter {
-                    it.secureMessagePayloadMode == SecureMessagePayloadMode.PROTECTED
+                    !it.isRetracted &&
+                        it.secureMessagePayloadMode == SecureMessagePayloadMode.PROTECTED
                 }
             SecureColdStartPerfTrace.increment(
                 "secure_text_protected",
@@ -357,7 +358,8 @@ class SecureMessageTextRepository @JvmOverloads constructor(
             accountMessages
                 .asSequence()
                 .filter {
-                    it.secureMessagePayloadMode == SecureMessagePayloadMode.PROTECTED
+                    !it.isRetracted &&
+                        it.secureMessagePayloadMode == SecureMessagePayloadMode.PROTECTED
                 }
                 .forEach {
                     if (cancelled.getAsBoolean()) {
@@ -381,6 +383,11 @@ class SecureMessageTextRepository @JvmOverloads constructor(
      * verified cache entry owns the Message; otherwise it is read and terminally verified again.
      */
     fun resolveForTransport(message: Message): String? {
+        try {
+            rejectDurablyRetracted(message)
+        } catch (_: IOException) {
+            return null
+        }
         val mode = message.secureMessagePayloadMode
         if (mode == null) return message.body
         if (mode != SecureMessagePayloadMode.PROTECTED) return null
@@ -397,7 +404,8 @@ class SecureMessageTextRepository @JvmOverloads constructor(
     @Synchronized
     @Throws(IOException::class)
     fun hydrate(message: Message): Boolean {
-        if (message.secureMessagePayloadMode != SecureMessagePayloadMode.PROTECTED) {
+        if (message.isRetracted ||
+            message.secureMessagePayloadMode != SecureMessagePayloadMode.PROTECTED) {
             return false
         }
         readAndCache(message)
@@ -598,6 +606,23 @@ class SecureMessageTextRepository @JvmOverloads constructor(
             pinPreview = false,
         )
 
+    /**
+     * A resident Message may predate an atomic SQLCipher retirement.
+     * Consult durable state before using or publishing SCS plaintext.
+     */
+    @Throws(IOException::class)
+    private fun rejectDurablyRetracted(message: Message) {
+        val accountUuid = message.conversation.account.uuid
+        val messageUuid = message.uuid
+
+        if (message.isRetracted ||
+            databaseBackend.isMessageRetracted(accountUuid, messageUuid)) {
+            message.markRetracted()
+            invalidate(accountUuid, messageUuid)
+            throw IOException("Retracted message content is unavailable")
+        }
+    }
+
     @Throws(IOException::class)
     private fun readVerified(
         message: Message,
@@ -606,6 +631,7 @@ class SecureMessageTextRepository @JvmOverloads constructor(
         promoteLegacy: Boolean,
         pinPreview: Boolean = false,
     ): SecureMessagePayloadReference {
+        rejectDurablyRetracted(message)
         val context = contextOf(message)
         val persistedReference =
             if (readPlan != null) {
@@ -639,7 +665,9 @@ class SecureMessageTextRepository @JvmOverloads constructor(
                 )
             val cached = cache[key] ?: previewCache[key]
             if (cached != null) {
+                rejectDurablyRetracted(message)
                 applyVerifiedBody(message, cached.text, promoteLegacy)
+                rejectDurablyRetracted(message)
                 val refreshedEntry = CacheEntry(cached.text, WeakReference(message))
                 cache[key] = refreshedEntry
                 if (pinPreview) {
@@ -693,7 +721,9 @@ class SecureMessageTextRepository @JvmOverloads constructor(
                 snapshot.handle.contentId,
                 snapshot.metadata.namespace,
             )
+            rejectDurablyRetracted(message)
             applyVerifiedBody(message, text, promoteLegacy)
+            rejectDurablyRetracted(message)
             if (cacheResult) {
                 val key =
                     CacheKey(
@@ -727,6 +757,7 @@ class SecureMessageTextRepository @JvmOverloads constructor(
 
     @Synchronized
     private fun pinVerifiedPreview(message: Message) {
+        if (message.isRetracted) return
         val accountUuid = message.conversation.account.uuid
         val cached =
             cache.entries.firstOrNull {
@@ -745,7 +776,7 @@ class SecureMessageTextRepository @JvmOverloads constructor(
         text: String,
         promoteLegacy: Boolean,
     ) {
-        if (message.isModerated) return
+        if (message.isModerated || message.isRetracted) return
         if (promoteLegacy) {
             message.promoteLegacyToVerifiedProtectedBody(text)
         } else {

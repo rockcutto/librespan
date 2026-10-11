@@ -20,6 +20,7 @@ import eu.siacs.conversations.services.XmppConnectionService;
 import eu.siacs.conversations.xml.Element;
 import eu.siacs.conversations.xml.Namespace;
 import eu.siacs.conversations.xmpp.Jid;
+import eu.siacs.conversations.xmpp.MessageRetractionProtocol;
 import eu.siacs.conversations.xmpp.chatstate.ChatState;
 import eu.siacs.conversations.xmpp.forms.Data;
 import eu.siacs.conversations.xmpp.jingle.JingleConnectionManager;
@@ -169,6 +170,22 @@ public class MessageGenerator extends AbstractGenerator {
         }
         packet.setBody(content);
         return packet;
+    }
+
+
+    public im.conversations.android.xmpp.model.stanza.Message generateMucRetraction(
+            final Conversation room, final String roomStanzaId) {
+        if (room == null
+                || room.getMode() != Conversation.MODE_MULTI
+                || room.getAccount() == null) {
+            throw new IllegalArgumentException("Invalid MUC retraction room");
+        }
+
+        return MessageRetractionProtocol.newGroupchatRetraction(
+                room.getJid().asBareJid(),
+                room.getAccount().getJid(),
+                roomStanzaId,
+                java.util.UUID.randomUUID().toString());
     }
 
     public im.conversations.android.xmpp.model.stanza.Message requestVoice(

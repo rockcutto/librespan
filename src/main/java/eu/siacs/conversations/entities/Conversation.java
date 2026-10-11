@@ -573,6 +573,29 @@ public class Conversation extends AbstractEntity
         return removed;
     }
 
+    /**
+     * Hide an author-retracted message while retaining its durable
+     * identity for replay suppression and deduplication.
+     */
+    public boolean removeRetractedMessageFromTimeline(final Message message) {
+        if (message == null || !message.isRetracted()) {
+            return false;
+        }
+        final boolean removed;
+        synchronized (this.messages) {
+            final boolean timeline = this.messages.remove(message);
+            final boolean history = this.historyPartMessages.remove(message);
+            if (this.replyTo == message) {
+                this.replyTo = null;
+            }
+            removed = timeline || history;
+        }
+        if (removed) {
+            markTimelineChanged();
+        }
+        return removed;
+    }
+
     public void clearMessages() {
         final boolean changed;
         synchronized (this.messages) {
