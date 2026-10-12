@@ -131,6 +131,23 @@ class SecureMessagePayloadDatabaseInstrumentationTest {
 
         val result = databaseBackend.cleanupMigratedLegacyPlaintextResidue()
 
+        val journalMode =
+            databaseBackend.readableDatabase
+                .rawQuery("PRAGMA journal_mode", null)
+                .use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0)
+                    else "unknown"
+                }
+
+        println(
+            "SCS_SQLITE_CLEANUP " +
+                "journalMode=$journalMode " +
+                "checkpointBusy=${result.walCheckpointBusy} " +
+                "walFrames=${result.walFramesRemaining} " +
+                "freelist=${result.freelistPagesAfterVacuum} " +
+                "completed=${result.completed}"
+        )
+
         assertTrue(result.eligible)
         assertTrue(result.secureDeleteEnabled)
         assertTrue(result.ftsCanaryObservedBeforeRebuild)
