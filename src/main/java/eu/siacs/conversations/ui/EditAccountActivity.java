@@ -349,18 +349,14 @@ public class EditAccountActivity extends OmemoActivity implements OnAccountUpdat
 
     public void refreshUiReal() {
         invalidateOptionsMenu();
-        if (mAccount != null
-                && mAccount.getStatus() != Account.State.ONLINE
-                && mFetchingAvatar) {
-            Intent intent = new Intent(this, StartConversationActivity.class);
-            StartConversationActivity.addInviteUri(intent, getIntent());
-            startActivity(intent);
-            finish();
-        } else if (mInitMode && mAccount != null && mAccount.getStatus() == Account.State.ONLINE) {
-            if (!mFetchingAvatar) {
-                mFetchingAvatar = true;
-                xmppConnectionService.checkForAvatar(mAccount, mAvatarFetchCallback);
-            }
+        // Authentication is complete. Profile picture setup is optional
+        // and must be explicitly started by the user from the profile.
+        if (mInitMode
+                && mAccount != null
+                && mAccount.getStatus() == Account.State.ONLINE
+                && !mInitialSetupTransitionStarted) {
+            finishInitialSetup(null, true);
+            return;
         }
         if (mAccount != null) {
             updateAccountInformation(false);

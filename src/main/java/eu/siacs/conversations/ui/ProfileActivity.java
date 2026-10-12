@@ -71,7 +71,7 @@ public class ProfileActivity extends XmppActivity
         changePassword = findViewById(R.id.profile_change_password);
         changePasswordSummary = findViewById(R.id.profile_change_password_summary);
 
-        avatar.setOnClickListener(view -> openAvatarEditor());
+        findViewById(R.id.profile_avatar_action).setOnClickListener(view -> openAvatarEditor());
         name.setOnClickListener(view -> editDisplayName());
         jid.setOnClickListener(view -> showAccountPicker());
         accountSwitch.setOnClickListener(view -> showAccountPicker());
