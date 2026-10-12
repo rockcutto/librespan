@@ -121,8 +121,14 @@ class SecureMessagePayloadDatabaseInstrumentationTest {
 
     @Test
     fun sqliteResidueCleanupRebuildsFtsTruncatesWalAndVacuumsAfterBodyRetirement() {
-        val fixture = insertOutgoingTextMessage()
         val db = databaseBackend.writableDatabase
+
+        db.rawQuery("PRAGMA journal_mode=WAL", null).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("wal", cursor.getString(0).lowercase())
+        }
+
+        val fixture = insertOutgoingTextMessage()
         db.execSQL(
             "UPDATE " + Message.TABLENAME + " SET " + Message.BODY + "='' WHERE " +
                 Message.UUID + "=?",
