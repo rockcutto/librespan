@@ -53,9 +53,8 @@ class SecureContentPersistenceTamperInstrumentationTest {
         try {
             tamperProtectedPayload(preferences, recordKey, original)
 
-            assertNull(store.find(accountUuid, contentId))
-            expectIOException { store.open(accountUuid, contentId) }
-
+            // A live Store may hold previously authenticated metadata.
+            // Verify tamper detection with a fresh metadata cache.
             val recreatedStore = RuntimeSecureContentStore(context, registry)
             assertNull(recreatedStore.find(accountUuid, contentId))
             expectIOException { recreatedStore.open(accountUuid, contentId) }

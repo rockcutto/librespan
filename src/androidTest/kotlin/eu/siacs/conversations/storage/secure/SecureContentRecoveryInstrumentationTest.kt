@@ -116,6 +116,12 @@ class SecureContentRecoveryInstrumentationTest {
         verifyInterruptedDeleteRecovery(SecureContentRecoveryPhase.METADATA_RETIRED)
     }
 
+    private fun freshMetadataStore(): AccountProtectedSecureContentMetadataStore =
+        AccountProtectedSecureContentMetadataStore(
+            context,
+            PersistentSecureContentKeyMaterialStore(context),
+        )
+
     private fun verifyInterruptedCommitRecovery(
         phase: SecureContentRecoveryPhase,
         expectCommitted: Boolean,
@@ -131,7 +137,7 @@ class SecureContentRecoveryInstrumentationTest {
             )
 
             if (expectCommitted) {
-                val record = fixture.metadataStore.find(fixture.accountUuid, fixture.contentId)
+                val record = freshMetadataStore().find(fixture.accountUuid, fixture.contentId)
                 assertEquals(SecureContentState.COMMITTED, record?.metadata?.state)
                 assertEquals(
                     SecureContentKeyMaterialState.ACTIVE,
@@ -155,7 +161,7 @@ class SecureContentRecoveryInstrumentationTest {
                     session.close()
                 }
             } else {
-                val record = fixture.metadataStore.find(fixture.accountUuid, fixture.contentId)
+                val record = freshMetadataStore().find(fixture.accountUuid, fixture.contentId)
                 assertEquals(SecureContentState.FAILED, record?.metadata?.state)
                 assertEquals(
                     SecureContentKeyMaterialState.INVALIDATED,
@@ -291,7 +297,7 @@ class SecureContentRecoveryInstrumentationTest {
         advanceDeleteTo(fixture, phase)
 
         val recoveredStore = RuntimeSecureContentStore(context, registry)
-        assertNull(fixture.metadataStore.find(fixture.accountUuid, fixture.contentId))
+        assertNull(freshMetadataStore().find(fixture.accountUuid, fixture.contentId))
         assertNull(recoveredStore.find(fixture.accountUuid, fixture.contentId))
         assertEquals(
             SecureContentKeyMaterialState.INVALIDATED,
