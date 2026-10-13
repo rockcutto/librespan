@@ -288,3 +288,10 @@ tasks.register("assembleLibreSpanRelease") {
     dependsOn("assembleConversationsFreeRelease")
 }
 
+
+// Reproducible builds: disable non-deterministic ART profile generation.
+tasks.whenTaskAdded { task ->
+    if (task.name.contains("ArtProfile")) {
+        task.enabled = false
+    }
+}
