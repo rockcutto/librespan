@@ -8575,7 +8575,7 @@ public class ConversationFragment extends XmppFragment
                     }
                 }
                 final boolean deferTimelineRefresh =
-                        requestedAdapterRefresh
+                        refreshAction == TimelineRefreshGate.RefreshAction.REBUILD
                                 && !visibleRetractionPending
                                 && !forceTimelineRebuild
                                 && !conversationChanged

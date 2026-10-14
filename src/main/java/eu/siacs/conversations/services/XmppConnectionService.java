@@ -361,6 +361,7 @@ public class XmppConnectionService extends Service {
             ConcurrentHashMap.newKeySet();
     private final Set<String> protectedTextConversationRehydratePending =
             ConcurrentHashMap.newKeySet();
+    private static final long PROTECTED_TEXT_VISIBLE_RETRY_DELAY_MS = 750L;
     private final Set<String> protectedTextVisibleMessageRehydrateInFlight =
             ConcurrentHashMap.newKeySet();
     private final ReplacingSerialSingleThreadExecutor mContactMergerExecutor =
@@ -465,7 +466,7 @@ public class XmppConnectionService extends Service {
                 }
             };
 
-    private boolean destroyed = false;
+    private volatile boolean destroyed = false;
 
     private int unreadCount = -1;
 
@@ -2866,6 +2867,7 @@ public class XmppConnectionService extends Service {
 
     @Override
     public void onDestroy() {
+        destroyed = true;
         final android.app.Application application = getApplication();
         if (application instanceof Conversations) {
             ((Conversations) application).removeUiStateListener(mUiStateListener);
@@ -2886,7 +2888,6 @@ public class XmppConnectionService extends Service {
         } catch (final IllegalArgumentException e) {
             // ignored
         }
-        destroyed = false;
         fileObserver.stopWatching();
         internalPingExecutor.shutdown();
         super.onDestroy();
@@ -4708,40 +4709,100 @@ public class XmppConnectionService extends Service {
             return;
         }
 
+        final var snapshot =
+                SecureContentCryptoSessionRuntimeV1.snapshot(getApplicationContext());
         final String key = conversation.getAccount().getUuid() + ":" + message.getUuid();
         if (!protectedTextVisibleMessageRehydrateInFlight.add(key)) {
             return;
         }
 
-        mDatabaseReaderExecutor.execute(
-                () -> {
-                    boolean restored = false;
-                    try {
-                        if (!SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(
-                                        getApplicationContext())
-                                || message.getSecureMessagePayloadMode()
-                                        != SecureMessagePayloadMode.PROTECTED
-                                || message.hasVerifiedProtectedBody()
-                                || !isConversationStillOpen(conversation)) {
-                            return;
+        enqueueVisibleProtectedTextRead(
+                message, conversation, key, snapshot.getState(), snapshot.getEpoch(), false);
+    }
+
+    private void enqueueVisibleProtectedTextRead(
+            final Message message,
+            final Conversation conversation,
+            final String key,
+            final SecureContentCryptoSessionStateV1 expectedState,
+            final long expectedEpoch,
+            final boolean retry) {
+        try {
+            mDatabaseReaderExecutor.execute(
+                    () -> {
+                        boolean restored = false;
+                        boolean scheduleRetry = false;
+                        try {
+                            final var snapshot =
+                                    SecureContentCryptoSessionRuntimeV1.snapshot(
+                                            getApplicationContext());
+                            if (destroyed
+                                    || snapshot.getState() != expectedState
+                                    || snapshot.getEpoch() != expectedEpoch
+                                    || !SecureContentCryptoSessionRuntimeV1
+                                            .isBackgroundCryptoAvailable(getApplicationContext())
+                                    || message.getSecureMessagePayloadMode()
+                                            != SecureMessagePayloadMode.PROTECTED
+                                    || message.hasVerifiedProtectedBody()
+                                    || !isConversationStillOpen(conversation)) {
+                                return;
+                            }
+
+                            final SecureMessageTextRepository repository =
+                                    getSecureMessageTextRepository();
+                            if (repository == null) {
+                                return;
+                            }
+
+                            restored = repository.hydrate(message);
+                        } catch (final IOException e) {
+                            Log.w(
+                                    Config.LOGTAG,
+                                    "visible protected text targeted rehydrate failed",
+                                    e);
+                            scheduleRetry = !retry;
+                        } catch (final RuntimeException | AssertionError e) {
+                            Log.w(
+                                    Config.LOGTAG,
+                                    "visible protected text targeted rehydrate failed",
+                                    e);
+                        } finally {
+                            if (!scheduleRetry) {
+                                protectedTextVisibleMessageRehydrateInFlight.remove(key);
+                            }
                         }
 
-                        final SecureMessageTextRepository repository =
-                                getSecureMessageTextRepository();
-                        if (repository == null) {
-                            return;
+                        if (restored && message.hasVerifiedProtectedBody() && !destroyed) {
+                            updateConversationPresentationUi();
                         }
-                        restored = repository.hydrate(message);
-                    } catch (final IOException | RuntimeException | AssertionError e) {
-                        Log.w(Config.LOGTAG, "visible protected text targeted rehydrate failed", e);
-                    } finally {
-                        protectedTextVisibleMessageRehydrateInFlight.remove(key);
-                    }
 
-                    if (restored && message.hasVerifiedProtectedBody()) {
-                        updateConversationPresentationUi();
-                    }
-                });
+                        if (scheduleRetry) {
+                            try {
+                                internalPingExecutor.schedule(
+                                        () -> {
+                                            if (destroyed) {
+                                                protectedTextVisibleMessageRehydrateInFlight
+                                                        .remove(key);
+                                                return;
+                                            }
+                                            enqueueVisibleProtectedTextRead(
+                                                    message,
+                                                    conversation,
+                                                    key,
+                                                    expectedState,
+                                                    expectedEpoch,
+                                                    true);
+                                        },
+                                        PROTECTED_TEXT_VISIBLE_RETRY_DELAY_MS,
+                                        TimeUnit.MILLISECONDS);
+                            } catch (final RejectedExecutionException e) {
+                                protectedTextVisibleMessageRehydrateInFlight.remove(key);
+                            }
+                        }
+                    });
+        } catch (final RejectedExecutionException e) {
+            protectedTextVisibleMessageRehydrateInFlight.remove(key);
+        }
     }
 
     private static boolean hasMissingProtectedText(final List<Message> messages) {

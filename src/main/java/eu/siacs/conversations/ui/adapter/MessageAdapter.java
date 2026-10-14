@@ -3737,6 +3737,18 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
             displayInfoMessage(viewHolder, activity.getString(R.string.not_encrypted_for_this_device), bubbleColor);
         } else if (message.getEncryption() == Message.ENCRYPTION_AXOLOTL_FAILED) {
             displayInfoMessage(viewHolder, activity.getString(R.string.omemo_decryption_failed), bubbleColor);
+        } else if (message.getSecureMessagePayloadMode()
+                == eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.PENDING) {
+            displayInfoMessage(
+                    viewHolder,
+                    activity.getString(R.string.protected_message_pending),
+                    bubbleColor);
+        } else if (message.getSecureMessagePayloadMode()
+                == eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.UNAVAILABLE) {
+            displayInfoMessage(
+                    viewHolder,
+                    activity.getString(R.string.protected_message_unavailable),
+                    bubbleColor);
         } else {
             if (message.isGeoUri()) {
                 displayLocationMessage(viewHolder, message, bubbleColor);
