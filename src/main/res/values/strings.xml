@@ -1786,4 +1786,6 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_retract_for_everyone">Delete for everyone</string>
     <string name="muc_retract_confirmation">Send a request to remove this message for room participants? Saved copies may remain.</string>
     <string name="muc_retract_failed">Could not send message retraction</string>
+    <string name="protected_message_pending">Preparing protected message…</string>
+    <string name="protected_message_unavailable">Protected message unavailable</string>
 </resources>

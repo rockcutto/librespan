@@ -1819,4 +1819,6 @@
     <string name="muc_retract_for_everyone">Удалить для всех</string>
     <string name="muc_retract_confirmation">Отправить запрос на удаление сообщения у участников комнаты? Сохранённые копии могут остаться.</string>
     <string name="muc_retract_failed">Не удалось отправить запрос на удаление</string>
+    <string name="protected_message_pending">Подготовка защищённого сообщения…</string>
+    <string name="protected_message_unavailable">Защищённое сообщение недоступно</string>
 </resources>
