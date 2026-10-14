@@ -465,7 +465,7 @@ public class XmppConnectionService extends Service {
                 }
             };
 
-    private boolean destroyed = false;
+    private volatile boolean destroyed = false;
 
     private int unreadCount = -1;
 
@@ -2866,6 +2866,7 @@ public class XmppConnectionService extends Service {
 
     @Override
     public void onDestroy() {
+        destroyed = true;
         final android.app.Application application = getApplication();
         if (application instanceof Conversations) {
             ((Conversations) application).removeUiStateListener(mUiStateListener);
@@ -2886,7 +2887,6 @@ public class XmppConnectionService extends Service {
         } catch (final IllegalArgumentException e) {
             // ignored
         }
-        destroyed = false;
         fileObserver.stopWatching();
         internalPingExecutor.shutdown();
         super.onDestroy();
