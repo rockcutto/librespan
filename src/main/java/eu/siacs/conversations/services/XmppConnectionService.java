@@ -63,6 +63,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import eu.siacs.conversations.AppSettings;
 import eu.siacs.conversations.Config;
+import eu.siacs.conversations.storage.secure.ScsTextDiagnosticsRuntime;
 import eu.siacs.conversations.Conversations;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.android.JabberIdContact;
@@ -4716,6 +4717,8 @@ public class XmppConnectionService extends Service {
             return;
         }
 
+        ScsTextDiagnosticsRuntime.record(this, "SCS_DIAG enqueue obj="
+                + System.identityHashCode(message) + " epoch=" + snapshot.getEpoch());
         enqueueVisibleProtectedTextRead(
                 message, conversation, key, snapshot.getState(), snapshot.getEpoch(), false);
     }
@@ -4727,9 +4730,11 @@ public class XmppConnectionService extends Service {
             final SecureContentCryptoSessionStateV1 expectedState,
             final long expectedEpoch,
             final boolean retry) {
+        final long queuedAtMs = SystemClock.elapsedRealtime();
         try {
             mDatabaseReaderExecutor.execute(
                     () -> {
+                        final long startedAtMs = SystemClock.elapsedRealtime();
                         boolean restored = false;
                         boolean scheduleRetry = false;
                         try {
@@ -4770,6 +4775,14 @@ public class XmppConnectionService extends Service {
                             if (!scheduleRetry) {
                                 protectedTextVisibleMessageRehydrateInFlight.remove(key);
                             }
+                            ScsTextDiagnosticsRuntime.record(this, "SCS_DIAG result obj="
+                                    + System.identityHashCode(message)
+                                    + " retry=" + retry
+                                    + " restored=" + restored
+                                    + " verified=" + message.hasVerifiedProtectedBody()
+                                    + " retryPending=" + scheduleRetry
+                                    + " queueMs=" + (startedAtMs - queuedAtMs)
+                                    + " runMs=" + (SystemClock.elapsedRealtime() - startedAtMs));
                         }
 
                         if (restored && message.hasVerifiedProtectedBody() && !destroyed) {
@@ -9599,7 +9612,8 @@ public class XmppConnectionService extends Service {
     }
 
     public void updateConversationPresentationUi() {
-        conversationPresentationRevision.incrementAndGet();
+        final long revision = conversationPresentationRevision.incrementAndGet();
+        ScsTextDiagnosticsRuntime.record(this, "SCS_DIAG publish presentationRev=" + revision);
         updateConversationUi(false);
     }
 

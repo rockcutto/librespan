@@ -102,6 +102,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import eu.siacs.conversations.Config;
+import eu.siacs.conversations.storage.secure.ScsTextDiagnosticsRuntime;
 import eu.siacs.conversations.Conversations;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.crypto.axolotl.AxolotlService;
@@ -7536,7 +7537,12 @@ public class ConversationFragment extends XmppFragment
                 conversation.getMode() == Conversational.MODE_SINGLE
                         || conversation.getMucOptions().participating();
         if (participating) {
+            final long vaultStartMs = android.os.SystemClock.elapsedRealtime();
+            ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG vault-begin muc="
+                    + (conversation.getMode() == Conversational.MODE_MULTI));
             this.activity.xmppConnectionService.hydrateConversationSecrets(this.conversation);
+            ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG vault-end elapsedMs="
+                    + (android.os.SystemClock.elapsedRealtime() - vaultStartMs));
             this.binding.textinput.setText(this.conversation.getNextMessage());
             this.binding.textinput.setSelection(this.binding.textinput.length());
         } else {
@@ -8567,6 +8573,11 @@ public class ConversationFragment extends XmppFragment
                                 presentationRevisionAfter);
                 final boolean requestedAdapterRefresh =
                         refreshAction != TimelineRefreshGate.RefreshAction.NONE;
+                if (renderedConversationPresentationRevision != presentationRevisionAfter) {
+                    ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG refresh action=" + refreshAction
+                            + " previous=" + renderedConversationPresentationRevision
+                            + " current=" + presentationRevisionAfter);
+                }
                 boolean visibleRetractionPending = false;
                 for (final Message visible : this.messageList) {
                     if (visible.isRetracted()) {

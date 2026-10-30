@@ -101,6 +101,7 @@ import java.util.regex.Pattern;
 import eu.siacs.conversations.AppSettings;
 import eu.siacs.conversations.BuildConfig;
 import eu.siacs.conversations.Config;
+import eu.siacs.conversations.storage.secure.ScsTextDiagnosticsRuntime;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.crypto.axolotl.FingerprintStatus;
 import eu.siacs.conversations.entities.Account;
@@ -3431,6 +3432,13 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
         if (message != null
                 && message.getSecureMessagePayloadMode()
                         == eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.PROTECTED
+                && !message.hasVerifiedProtectedBody()) {
+            ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG bind-missing obj="
+                    + System.identityHashCode(message));
+        }
+        if (message != null
+                && message.getSecureMessagePayloadMode()
+                        == eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.PROTECTED
                 && !message.hasVerifiedProtectedBody()
                 && activity.xmppConnectionService != null) {
             activity.xmppConnectionService.scheduleProtectedTextRehydrateForVisibleMessage(message);
@@ -3617,6 +3625,10 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
 
         final boolean revealResolvedProtectedText =
                 prepareProtectedTextRevealForBind(viewHolder, message);
+        if (revealResolvedProtectedText) {
+            ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG bind-resolved obj="
+                    + System.identityHashCode(message));
+        }
 
         resetMessageBubbleInteraction(viewHolder);
         viewHolder.message_box.setOnLongClickListener(messageActionLongClickListener(message));
