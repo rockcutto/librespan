@@ -47,7 +47,7 @@ dependencies {
     // Local JVM tests need real org.json rather than android.jar stubs.
     testImplementation 'org.json:json:20240303'
     // Robolectric runs on the host JVM; use the host Conscrypt build at runtime.
-    testRuntimeOnly 'org.conscrypt:conscrypt-openjdk-uber:2.7.0'
+    testRuntimeOnly 'org.conscrypt:conscrypt-openjdk-uber:2.5.2'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:core-ktx:1.6.1'

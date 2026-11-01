@@ -320,7 +320,15 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         }
 
         if (Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
-            executor.execute(() -> prepareSecurePlayback(playPause, audioPlayer, viewHolder, message));
+            // Bind the queued request to the current crypto epoch before any worker is started.
+            final long scheduledEpoch =
+                    SecureContentCryptoSessionRuntimeV1
+                            .snapshot(playPause.getContext().getApplicationContext())
+                            .getEpoch();
+            executor.execute(
+                    () ->
+                            prepareSecurePlayback(
+                                    playPause, audioPlayer, viewHolder, message, scheduledEpoch));
             return;
         }
         startStopLegacy(playPause, audioPlayer, viewHolder, message);
@@ -330,7 +338,13 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
             final View playPause,
             final RelativeLayout audioPlayer,
             final ViewHolder viewHolder,
-            final Message message) {
+            final Message message,
+            final long scheduledEpoch) {
+        final Context appContext = messageAdapter.getActivity().getApplicationContext();
+        if (SecureContentCryptoSessionRuntimeV1.snapshot(appContext).getEpoch() != scheduledEpoch
+                || !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(appContext)) {
+            return;
+        }
         final AndroidSecureMessageMediaReadCache.Lease lease;
         try {
             final Conversations application =
@@ -353,6 +367,15 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                         return;
                     }
                     synchronized (LOCK) {
+                        // Privacy suspension retires crypto before acquiring the audio lock.
+                        // A late completion from the old epoch must close its lease, not play.
+                        if (SecureContentCryptoSessionRuntimeV1.snapshot(appContext).getEpoch()
+                                        != scheduledEpoch
+                                || !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(
+                                        appContext)) {
+                            closeLease(lease);
+                            return;
+                        }
                         if (lease == null) {
                             // Missing or still-downloading SCS media must not use FileBackend.
                             Log.w(Config.LOGTAG, "secure audio is not yet available");
@@ -362,6 +385,14 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                             stopCurrent();
                         }
                         if (play(viewHolder, message, false, lease)) {
+                            // Crypto may be retired during synchronous MediaPlayer.prepare().
+                            if (SecureContentCryptoSessionRuntimeV1.snapshot(appContext).getEpoch()
+                                            != scheduledEpoch
+                                    || !SecureContentCryptoSessionRuntimeV1
+                                            .isBackgroundCryptoAvailable(appContext)) {
+                                stopCurrent();
+                                return;
+                            }
                             audioPlayerLayouts.clear();
                             audioPlayerLayouts.addWeakReferenceTo(audioPlayer);
                             stopRefresher(true);
