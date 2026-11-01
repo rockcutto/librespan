@@ -84,7 +84,6 @@ import eu.siacs.conversations.entities.Conversation;
 import eu.siacs.conversations.entities.Conversational;
 import eu.siacs.conversations.entities.Message;
 import eu.siacs.conversations.persistance.FileBackend;
-import eu.siacs.conversations.storage.secure.SecureMessageNotificationMediaPolicy;
 import eu.siacs.conversations.ui.ConversationsActivity;
 import eu.siacs.conversations.ui.EditAccountActivity;
 import eu.siacs.conversations.ui.RtpSessionActivity;
@@ -153,26 +152,10 @@ public class NotificationService {
         this.mXmppConnectionService = service;
     }
 
-    private boolean allowLegacyNotificationMedia(final Message message) {
-        if (!Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
-            return true;
-        }
-        try {
-            final Conversations application =
-                    (Conversations) mXmppConnectionService.getApplication();
-            final SecureMessageNotificationMediaPolicy policy =
-                    new SecureMessageNotificationMediaPolicy(
-                            application.getSecureContentStoreProvider().get());
-            return policy.decide(
-                            message.getConversation().getAccount().getUuid(), message.getUuid())
-                    == SecureMessageNotificationMediaPolicy.Decision.LEGACY_ALLOWED;
-        } catch (final Exception e) {
-            Log.w(
-                    Config.LOGTAG,
-                    "suppressing legacy notification media because secure relation state is unavailable",
-                    e);
-            return false;
-        }
+    private boolean allowLegacyNotificationMedia(final Message ignored) {
+        // LibreSpan supports fresh SCS-only installations. Until notifications have a verified
+        // SCS media consumer, never obtain thumbnails or media URIs through legacy FileBackend.
+        return false;
     }
 
     private static boolean displaySnoozeAction(List<Message> messages) {
