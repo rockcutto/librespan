@@ -2,6 +2,7 @@ package eu.siacs.conversations.storage.secure
 
 import android.content.Context
 import android.net.Uri
+import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
 import eu.siacs.conversations.persistance.FileBackend
 import java.io.File
 import java.io.FileOutputStream
@@ -31,6 +32,10 @@ class AndroidSecureMessageMediaExporter @JvmOverloads constructor(
         messageUuid: String,
         operation: ContentExportOperation,
     ): AndroidSecureContentExport? {
+        val before = SecureContentCryptoSessionRuntimeV1.snapshot(applicationContext)
+        if (!SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(applicationContext)) {
+            throw IOException("Secure media is locked")
+        }
         val binding = coordinator.resolve(accountUuid, messageUuid) ?: return null
         val metadata =
             coordinator.resolveMetadata(accountUuid, messageUuid)
@@ -52,6 +57,11 @@ class AndroidSecureMessageMediaExporter @JvmOverloads constructor(
         try {
             FileOutputStream(exportFile).use { output ->
                 reader.copyVerified(binding, output)
+            }
+            if (SecureContentCryptoSessionRuntimeV1.snapshot(applicationContext) != before ||
+                !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(applicationContext)
+            ) {
+                throw IOException("Secure media crypto epoch changed during export")
             }
             val now = clock()
             if (!exportFile.setLastModified(now)) {
@@ -88,6 +98,12 @@ class AndroidSecureMessageMediaExporter @JvmOverloads constructor(
     companion object {
         const val EXPORT_DIRECTORY = "SecureContentExports"
         const val EXPORT_TTL_MILLIS = 15L * 60L * 1000L
+
+        /** Retire app-owned VIEW/SHARE plaintext, not user-selected public SAVE destinations. */
+        @JvmStatic
+        fun clearAllTemporaryFiles(context: Context) {
+            File(context.applicationContext.cacheDir, EXPORT_DIRECTORY).deleteRecursively()
+        }
     }
 }
 

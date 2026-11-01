@@ -76,10 +76,10 @@ object SecureMessageMediaUiBridge {
         accountUuid: String,
         messageUuid: String,
         mimeType: String?,
-        legacyFallback: Runnable,
+        @Suppress("UNUSED_PARAMETER") legacyFallback: Runnable,
     ) {
         if (!Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
-            legacyFallback.run()
+            Toast.makeText(activity, R.string.error_io_exception, Toast.LENGTH_SHORT).show()
             return
         }
         ioExecutor.execute {
@@ -94,7 +94,7 @@ object SecureMessageMediaUiBridge {
                         return@runOnUiThread
                     }
                     if (viewIntent == null) {
-                        legacyFallback.run()
+                        Toast.makeText(activity, R.string.error_io_exception, Toast.LENGTH_SHORT).show()
                     } else {
                         try {
                             activity.startActivity(viewIntent)
@@ -133,10 +133,10 @@ object SecureMessageMediaUiBridge {
     fun openOrFallback(
         activity: XmppActivity,
         message: Message,
-        legacyFallback: Runnable,
+        @Suppress("UNUSED_PARAMETER") legacyFallback: Runnable,
     ) {
         if (!Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
-            legacyFallback.run()
+            Toast.makeText(activity, R.string.error_io_exception, Toast.LENGTH_SHORT).show()
             return
         }
         val accountUuid = message.conversation.account.uuid
@@ -170,7 +170,7 @@ object SecureMessageMediaUiBridge {
                         return@runOnUiThread
                     }
                     if (viewIntent == null) {
-                        legacyFallback.run()
+                        Toast.makeText(activity, R.string.error_io_exception, Toast.LENGTH_SHORT).show()
                     } else {
                         try {
                             activity.startActivity(viewIntent)

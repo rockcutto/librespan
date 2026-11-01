@@ -7,9 +7,9 @@ import org.junit.Test
 
 class SecureMessageMediaLegacyBoundaryTest {
     @Test
-    fun legacyAllowedOnlyWhenNoSecureRelationExists() {
+    fun missingSecureRelationStillForbidsLegacyInScsOnlyMode() {
         val boundary = SecureMessageMediaLegacyBoundary(FakeStore())
-        boundary.requireLegacyAllowed("account-a", "message-a")
+        expectIOException { boundary.requireLegacyAllowed("account-a", "message-a") }
         assertFalse(boundary.isSecure("account-a", "message-a"))
     }
 

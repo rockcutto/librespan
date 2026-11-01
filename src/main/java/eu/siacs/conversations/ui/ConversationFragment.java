@@ -7023,34 +7023,10 @@ public class ConversationFragment extends XmppFragment
                         final var secureBinding =
                                 coordinator.resolve(accountUuid, message.getUuid());
                         if (secureBinding == null) {
-                            final boolean deletedLegacyFile =
-                                    targetActivity
-                                            .xmppConnectionService
-                                            .getFileBackend()
-                                            .deleteFile(message);
-                            if (deletedLegacyFile) {
-                                targetActivity.runOnUiThread(
-                                        () -> markMessageFileDeleted(targetActivity, message));
-                            }
-                            return;
+                            throw new IOException("Secure media is not available for deletion");
                         }
 
-                        final DownloadableFile legacyFile =
-                                targetActivity
-                                        .xmppConnectionService
-                                        .getFileBackend()
-                                        .getFile(message);
-                        if (legacyFile.exists()
-                                && !targetActivity
-                                        .xmppConnectionService
-                                        .getFileBackend()
-                                        .deleteFile(message)
-                                && legacyFile.exists()) {
-                            throw new IOException(
-                                    "Unable to delete legacy plaintext before secure media"
-                                            + " retirement");
-                        }
-
+                        // Do not touch a FileBackend path: it may be a user-selected source file.
                         coordinator.retire(secureBinding);
                         targetActivity.runOnUiThread(
                                 () -> markMessageFileDeleted(targetActivity, message));

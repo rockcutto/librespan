@@ -1287,16 +1287,22 @@ public abstract class XmppActivity extends ActionBarActivity {
                                     targetSize,
                                     false);
                     if (secure != null) {
+                        if (!eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
+                                .isBackgroundCryptoAvailable(activity.getApplicationContext())) {
+                            secure.recycle();
+                            return null;
+                        }
                         activity.xmppConnectionService.cacheMessageBitmap(
                                 message, targetSize, "chat-fit", secure);
                         return secure;
                     }
                 } catch (final Exception e) {
-                    // Known secure relation but failed verification/decode: fail closed. Only a
-                    // null result (no secure relation) is allowed to reach transition legacy data.
+                    // Secure relation or authentication failure must not expose a plaintext path.
                     Log.w(Config.LOGTAG, "unable to read secure media thumbnail", e);
                     return null;
                 }
+                // Missing SCS metadata may mean the download has not finished; never fall back.
+                return null;
             }
             try {
                 return activity.xmppConnectionService

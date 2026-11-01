@@ -601,20 +601,9 @@ public class MediaBrowserActivity extends XmppActivity {
                         final var secureBinding =
                                 coordinator.resolve(account, message.getUuid());
                         if (secureBinding == null) {
-                            if (xmppConnectionService.getFileBackend().deleteFile(message)) {
-                                runOnUiThread(() -> markAttachmentDeleted(message));
-                            }
-                            return;
+                            throw new IOException("Secure media is not available for deletion");
                         }
-
-                        final DownloadableFile legacyFile =
-                                xmppConnectionService.getFileBackend().getFile(message);
-                        if (legacyFile.exists()
-                                && !xmppConnectionService.getFileBackend().deleteFile(message)
-                                && legacyFile.exists()) {
-                            throw new IOException(
-                                    "Unable to delete legacy plaintext before secure media retirement");
-                        }
+                        // Never delete a user-selected source through the legacy FileBackend.
                         coordinator.retire(secureBinding);
                         runOnUiThread(() -> markAttachmentDeleted(message));
                     } catch (final Exception error) {

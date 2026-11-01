@@ -171,6 +171,10 @@ public final class AttachmentBrowserRepository {
                     record.timeSent);
         }
 
+        // Fresh-install SCS-only: an absent/unpublished object is not a legacy file.
+        if (Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
+            return null;
+        }
         if (Strings.isNullOrEmpty(record.relativeFilePath)) {
             return null;
         }

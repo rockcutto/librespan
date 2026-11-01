@@ -38,6 +38,7 @@ import eu.siacs.conversations.Config;
 import eu.siacs.conversations.Conversations;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.entities.Message;
+import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1;
 import eu.siacs.conversations.services.MediaPlayer;
 import eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaReadCache;
 import eu.siacs.conversations.ui.ConversationsActivity;
@@ -65,6 +66,31 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
     private static final int MAX_WAVEFORM_CACHE_ENTRIES = 128;
     private static final Map<String, float[]> WAVEFORM_CACHE = new HashMap<>();
     private static final Set<String> WAVEFORM_IN_FLIGHT = new HashSet<>();
+
+    /** Retire in-app audio and its derived waveform presentation on High Security suspension. */
+    public static void suspendForPrivacy() {
+        synchronized (LOCK) {
+            final MediaPlayer toRelease = player;
+            player = null;
+            currentlyPlayingMessage = null;
+            closeLease(currentlyPlayingLease);
+            currentlyPlayingLease = null;
+            if (toRelease != null) {
+                try {
+                    toRelease.setOnCompletionListener(null);
+                    toRelease.release();
+                } catch (final RuntimeException error) {
+                    Log.w(Config.LOGTAG, "unable to retire audio player", error);
+                }
+            }
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+            }
+        }
+        synchronized (WAVEFORM_CACHE) {
+            WAVEFORM_CACHE.clear();
+        }
+    }
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService waveformExecutor = Executors.newSingleThreadExecutor();
@@ -138,6 +164,11 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         waveformExecutor.execute(
                 () -> {
                     AndroidSecureMessageMediaReadCache.Lease lease = null;
+                    final Context applicationContext =
+                            messageAdapter.getActivity().getApplicationContext();
+                    final long waveformEpoch =
+                            SecureContentCryptoSessionRuntimeV1.snapshot(applicationContext)
+                                    .getEpoch();
                     try {
                         final float[] amplitudes;
                         if (Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
@@ -151,6 +182,9 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                                     cache.acquire(
                                             message.getConversation().getAccount().getUuid(),
                                             message.getUuid());
+                        }
+                        if (lease == null && Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
+                            throw new IllegalStateException("Secure audio is not yet available");
                         }
                         if (lease != null) {
                             amplitudes =
@@ -170,6 +204,17 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                         }
 
                         synchronized (WAVEFORM_CACHE) {
+                            // The lock path clears this cache under the same monitor after
+                            // retiring crypto. Old workers must not repopulate it after unlock.
+                            if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                                    && (SecureContentCryptoSessionRuntimeV1
+                                                    .snapshot(applicationContext)
+                                                    .getEpoch()
+                                            != waveformEpoch
+                                            || !SecureContentCryptoSessionRuntimeV1
+                                                    .isBackgroundCryptoAvailable(applicationContext))) {
+                                return;
+                            }
                             if (WAVEFORM_CACHE.size() >= MAX_WAVEFORM_CACHE_ENTRIES) {
                                 WAVEFORM_CACHE.clear();
                             }
@@ -177,6 +222,15 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                         }
                         messageAdapter.getActivity().runOnUiThread(
                                 () -> {
+                                    if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                                            && (SecureContentCryptoSessionRuntimeV1
+                                                            .snapshot(applicationContext)
+                                                            .getEpoch()
+                                                    != waveformEpoch
+                                                    || !SecureContentCryptoSessionRuntimeV1
+                                                            .isBackgroundCryptoAvailable(applicationContext))) {
+                                        return;
+                                    }
                                     if (audioPlayer.getTag() == message) {
                                         ViewHolder.get(audioPlayer)
                                                 .progress
@@ -300,9 +354,8 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                     }
                     synchronized (LOCK) {
                         if (lease == null) {
-                            // Only an absent secure relation is allowed to use the rollout legacy
-                            // population. Inconsistent secure state throws before this point.
-                            startStopLegacy(playPause, audioPlayer, viewHolder, message);
+                            // Missing or still-downloading SCS media must not use FileBackend.
+                            Log.w(Config.LOGTAG, "secure audio is not yet available");
                             return;
                         }
                         if (AudioPlayer.player != null) {
@@ -387,6 +440,9 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
             AudioPlayer.currentlyPlayingMessage = message;
             AudioPlayer.player.setAudioStreamType(
                     earpiece ? AudioManager.STREAM_VOICE_CALL : AudioManager.STREAM_MUSIC);
+            if (lease == null && Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
+                throw new IllegalStateException("SCS-only audio cannot play a legacy file");
+            }
             if (lease != null) {
                 AudioPlayer.player.setDataSource(messageAdapter.getActivity(), lease.getUri());
             } else {

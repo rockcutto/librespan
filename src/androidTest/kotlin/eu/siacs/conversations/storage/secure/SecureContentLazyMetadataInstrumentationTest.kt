@@ -3,10 +3,12 @@ package eu.siacs.conversations.storage.secure
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.io.IOException
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -199,6 +201,71 @@ class SecureContentLazyMetadataInstrumentationTest {
         } finally {
             SecureColdStartPerfTrace.clear()
             writer.deleteMetadata(accountUuid, contentId)
+        }
+    }
+
+    @Test
+    fun malformedMessageRelationIndexFailsClosed() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val accountUuid = freshId("account")
+        val messageUuid = freshId("message")
+        val contentId = freshId("content")
+        val preferences = context.getSharedPreferences("secure_content_metadata_v1", Context.MODE_PRIVATE)
+        val before = preferences.all.keys.toSet()
+        val writer = AccountProtectedSecureContentMetadataStore(
+            context, PersistentSecureContentKeyMaterialStore(context))
+        writer.create(
+            SecureContentMetadata(accountUuid = accountUuid, contentId = contentId,
+                messageUuid = messageUuid, cryptoVersion = 1),
+            storageLocator = null,
+        )
+        val relationKey = (preferences.all.keys - before).single { it.startsWith("relation.") }
+        val original = preferences.getString(relationKey, null)!!
+        try {
+            assertTrue(preferences.edit().putString(relationKey, "{broken-index").commit())
+            val reader = AccountProtectedSecureContentMetadataStore(
+                context, PersistentSecureContentKeyMaterialStore(context))
+            expectIOException { reader.findByMessageUuid(accountUuid, messageUuid) }
+        } finally {
+            assertTrue(preferences.edit().putString(relationKey, original).commit())
+            writer.deleteMetadata(accountUuid, contentId)
+        }
+    }
+
+    @Test
+    fun unauthenticatedIndexedRecordFailsClosed() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val accountUuid = freshId("account")
+        val messageUuid = freshId("message")
+        val contentId = freshId("content")
+        val preferences = context.getSharedPreferences("secure_content_metadata_v1", Context.MODE_PRIVATE)
+        val before = preferences.all.keys.toSet()
+        val writer = AccountProtectedSecureContentMetadataStore(
+            context, PersistentSecureContentKeyMaterialStore(context))
+        writer.create(
+            SecureContentMetadata(accountUuid = accountUuid, contentId = contentId,
+                messageUuid = messageUuid, cryptoVersion = 1),
+            storageLocator = null,
+        )
+        val recordKey = (preferences.all.keys - before).single { it.startsWith("record.") }
+        val original = preferences.getString(recordKey, null)!!
+        try {
+            assertTrue(preferences.edit().putString(recordKey, "invalid-authenticated-record").commit())
+            val reader = AccountProtectedSecureContentMetadataStore(
+                context, PersistentSecureContentKeyMaterialStore(context))
+            expectIOException { reader.findByMessageUuid(accountUuid, messageUuid) }
+        } finally {
+            assertTrue(preferences.edit().putString(recordKey, original).commit())
+            writer.deleteMetadata(accountUuid, contentId)
+        }
+    }
+
+    private fun expectIOException(action: () -> Unit) {
+        try {
+            action()
+            fail("Expected IOException")
+        } catch (_: IOException) {
+            // expected
         }
     }
 

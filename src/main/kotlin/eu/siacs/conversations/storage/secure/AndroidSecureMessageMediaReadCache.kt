@@ -2,6 +2,7 @@ package eu.siacs.conversations.storage.secure
 
 import android.content.Context
 import android.net.Uri
+import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
 import eu.siacs.conversations.persistance.FileBackend
 import java.io.File
 import java.io.FileOutputStream
@@ -28,6 +29,10 @@ class AndroidSecureMessageMediaReadCache @JvmOverloads constructor(
 
     @Throws(IOException::class)
     fun acquire(accountUuid: String, messageUuid: String): Lease? {
+        val before = SecureContentCryptoSessionRuntimeV1.snapshot(applicationContext)
+        if (!SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(applicationContext)) {
+            throw IOException("Secure media is locked")
+        }
         val binding = coordinator.resolve(accountUuid, messageUuid) ?: return null
         sweepOrphans()
         val accountDirectory = accountDirectory(accountUuid)
@@ -37,6 +42,11 @@ class AndroidSecureMessageMediaReadCache @JvmOverloads constructor(
         val file = File(accountDirectory, UUID.randomUUID().toString())
         try {
             FileOutputStream(file).use { output -> reader.copyVerified(binding, output) }
+            if (SecureContentCryptoSessionRuntimeV1.snapshot(applicationContext) != before ||
+                !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(applicationContext)
+            ) {
+                throw IOException("Secure media crypto epoch changed during read")
+            }
             val now = clock()
             file.setLastModified(now)
             return Lease(FileBackend.getUriForFile(applicationContext, file), file)
@@ -94,5 +104,11 @@ class AndroidSecureMessageMediaReadCache @JvmOverloads constructor(
     companion object {
         const val CACHE_DIRECTORY = "SecureMediaReadCache"
         const val ORPHAN_TTL_MILLIS = 60L * 60L * 1000L
+
+        /** Revoke app-owned plaintext playback/thumbnail leases after High Security suspension. */
+        @JvmStatic
+        fun clearAllTemporaryFiles(context: Context) {
+            File(context.applicationContext.cacheDir, CACHE_DIRECTORY).deleteRecursively()
+        }
     }
 }

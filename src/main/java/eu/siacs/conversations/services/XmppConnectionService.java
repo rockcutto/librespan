@@ -670,29 +670,21 @@ public class XmppConnectionService extends Service {
     public void copyAttachmentToDownloadsFolder(Message m, final UiCallback<Integer> callback) {
         COPY_TO_DOWNLOAD_EXECUTOR.execute(
                 () -> {
-                    if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
-                            && getApplication() instanceof Conversations) {
+                    try {
+                        if (!(getApplication() instanceof Conversations)) {
+                            throw new IOException("Secure content store is unavailable");
+                        }
                         final Conversations application = (Conversations) getApplication();
                         final AndroidSecureMessageMediaSaver saver =
                                 new AndroidSecureMessageMediaSaver(
                                         this, application.getSecureContentStoreProvider().get());
-                        try {
-                            if (saver.save(m)) {
-                                callback.success(-1);
-                                return;
-                            }
-                        } catch (final Exception e) {
-                            Log.w(Config.LOGTAG, "unable to save secure media to Downloads", e);
-                            callback.error(-1, R.string.error_io_exception);
-                            return;
+                        if (!saver.save(m)) {
+                            throw new IOException("Secure media is not available for export");
                         }
-                    }
-
-                    try {
-                        fileBackend.copyAttachmentToDownloadsFolder(m);
                         callback.success(-1);
-                    } catch (FileBackend.FileCopyException e) {
-                        callback.error(-1, e.getResId());
+                    } catch (final Exception e) {
+                        Log.w(Config.LOGTAG, "unable to save secure media to Downloads", e);
+                        callback.error(-1, R.string.error_io_exception);
                     }
                 });
     }
@@ -700,29 +692,21 @@ public class XmppConnectionService extends Service {
     public void copyMediaToGallery(Message m, final UiCallback<Integer> callback) {
         COPY_TO_DOWNLOAD_EXECUTOR.execute(
                 () -> {
-                    if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
-                            && getApplication() instanceof Conversations) {
+                    try {
+                        if (!(getApplication() instanceof Conversations)) {
+                            throw new IOException("Secure content store is unavailable");
+                        }
                         final Conversations application = (Conversations) getApplication();
                         final AndroidSecureMessageMediaSaver saver =
                                 new AndroidSecureMessageMediaSaver(
                                         this, application.getSecureContentStoreProvider().get());
-                        try {
-                            if (saver.saveToGallery(m)) {
-                                callback.success(-1);
-                                return;
-                            }
-                        } catch (final Exception e) {
-                            Log.w(Config.LOGTAG, "unable to export secure media to gallery", e);
-                            callback.error(-1, R.string.error_io_exception);
-                            return;
+                        if (!saver.saveToGallery(m)) {
+                            throw new IOException("Secure media is not available for gallery export");
                         }
-                    }
-
-                    try {
-                        fileBackend.copyAttachmentToGalleryFolder(m);
                         callback.success(-1);
-                    } catch (FileBackend.FileCopyException e) {
-                        callback.error(-1, e.getResId());
+                    } catch (final Exception e) {
+                        Log.w(Config.LOGTAG, "unable to export secure media to gallery", e);
+                        callback.error(-1, R.string.error_io_exception);
                     }
                 });
     }
@@ -8573,6 +8557,13 @@ public class XmppConnectionService extends Service {
         // can republish presentation plaintext while High Security is retiring process state.
         MessageSearchTask.cancelRunningTasks();
         SecureContentCryptoSessionRuntimeV1.suspendForPrivacy(getApplicationContext());
+        // File deletion alone cannot stop media playing through an open file descriptor.
+        eu.siacs.conversations.ui.service.AudioPlayer.suspendForPrivacy();
+        // The FileProvider plaintext cache is not protected by the Store after export.
+        // Revoke scoped temporary files as part of the lock boundary. Never remove a user SAVE.
+        AndroidSecureMessageMediaReadCache.clearAllTemporaryFiles(getApplicationContext());
+        eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaExporter
+                .clearAllTemporaryFiles(getApplicationContext());
 
         // High Security suspension retires not only key material but also every process-owned
         // plaintext presentation accelerator. SecureMessageTextRepository keeps strong String
