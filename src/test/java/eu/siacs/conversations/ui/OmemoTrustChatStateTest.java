@@ -32,9 +32,10 @@ public class OmemoTrustChatStateTest {
     }
 
     @Test
-    public void unknownKeysAreNotMisreportedAsUntrusted() {
+    public void noActiveKeysAfterFetchShowsGuidance() {
         assertEquals(
-                OmemoTrustChatState.HIDDEN, OmemoTrustChatState.resolve(true, false, false, false));
+                OmemoTrustChatState.NO_ACTIVE_KEYS,
+                OmemoTrustChatState.resolve(true, false, false, false));
     }
 
     @Test
@@ -42,5 +43,21 @@ public class OmemoTrustChatStateTest {
         assertEquals(
                 OmemoTrustChatState.FETCHING,
                 OmemoTrustChatState.resolve(true, false, false, true));
+    }
+
+    @Test
+    public void noActiveKeysTransitionBackToUsableSession() {
+        assertEquals(
+                OmemoTrustChatState.NO_ACTIVE_KEYS,
+                OmemoTrustChatState.resolve(true, false, false, false));
+        assertEquals(
+                OmemoTrustChatState.FETCHING,
+                OmemoTrustChatState.resolve(true, false, false, true));
+        assertEquals(
+                OmemoTrustChatState.TRUST_REQUIRED,
+                OmemoTrustChatState.resolve(true, false, true, false));
+        assertEquals(
+                OmemoTrustChatState.HIDDEN,
+                OmemoTrustChatState.resolve(true, true, true, false));
     }
 }

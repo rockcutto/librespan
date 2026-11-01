@@ -8181,10 +8181,13 @@ public class ConversationFragment extends XmppFragment
         }
 
         final boolean trustRequired = state == OmemoTrustChatState.TRUST_REQUIRED;
-        binding.omemoTrustMessage.setText(
+        final int bannerText =
                 trustRequired
                         ? R.string.omemo_chat_trust_required
-                        : R.string.omemo_chat_fetching_keys);
+                        : state == OmemoTrustChatState.NO_ACTIVE_KEYS
+                                ? R.string.omemo_chat_no_active_keys
+                                : R.string.omemo_chat_fetching_keys;
+        binding.omemoTrustMessage.setText(bannerText);
         binding.omemoTrustAction.setVisibility(trustRequired ? View.VISIBLE : View.GONE);
         if (trustRequired) {
             binding.omemoTrustAction.setOnClickListener(v -> openOmemoTrustKeysFromChat());
