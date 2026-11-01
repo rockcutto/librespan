@@ -1798,10 +1798,14 @@ public class MessageParser extends AbstractParser
                             && remoteFileParams.url != null
                             && remoteFileParams.size != null;
             if (!message.isModerated()
-                    && message.trusted()
+                    && (message.trusted()
+                            || (conversationMultiMode
+                                    && isTypeGroupChat
+                                    && conversation.getStatus() == Conversation.STATUS_AVAILABLE
+                                    && !conversation.isMucExplicitlyLeft()))
                     && (message.treatAsDownloadable() || hasKnownRemoteAttachment)
                     && manager.getAutoAcceptFileSize() > 0) {
-                // Classification is presentation-only. A trusted remote attachment must enter the
+                // Classification is presentation-only. An eligible remote attachment enters the
                 // same metadata/size policy even when an earlier pass already rewrote the body to
                 // the canonical "url|size" form and treatAsDownloadable() no longer sees a bare URL.
                 manager.createNewDownloadConnection(message);
