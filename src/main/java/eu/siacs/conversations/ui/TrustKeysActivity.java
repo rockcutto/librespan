@@ -430,7 +430,8 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
         } else {
             if (!hasForeignKeys && hasNoOtherTrustedKeys()) {
                 binding.keyErrorMessageCard.setVisibility(View.VISIBLE);
-                boolean lastReportWasError = lastFetchReport == AxolotlService.FetchStatus.ERROR;
+                boolean lastReportWasError = lastFetchReport == AxolotlService.FetchStatus.ERROR
+                        || lastFetchReport == AxolotlService.FetchStatus.TIMEOUT;
                 boolean errorFetchingBundle =
                         mAccount.getAxolotlService().fetchMapHasErrors(contactJids);
                 boolean errorFetchingDeviceList =
@@ -608,6 +609,7 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
                         }
                         switch (report) {
                             case ERROR:
+                            case TIMEOUT:
                                 Toast.makeText(
                                                 TrustKeysActivity.this,
                                                 R.string.error_fetching_omemo_key,
@@ -635,7 +637,9 @@ public class TrustKeysActivity extends OmemoActivity implements OnKeyStatusUpdat
                         }
                     });
         }
-        if (keysToTrust || hasPendingKeyFetches() || hasNoOtherTrustedKeys()) {
+        if (report == AxolotlService.FetchStatus.ERROR
+                || report == AxolotlService.FetchStatus.TIMEOUT
+                || keysToTrust || hasPendingKeyFetches() || hasNoOtherTrustedKeys()) {
             refreshUi();
         } else {
             runOnUiThread(() -> finishOk(false));
