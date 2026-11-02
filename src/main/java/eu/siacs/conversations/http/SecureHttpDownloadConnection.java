@@ -1,7 +1,5 @@
 package eu.siacs.conversations.http;
 
-import static eu.siacs.conversations.http.HttpConnectionManager.EXECUTOR;
-
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -21,6 +19,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.net.ssl.SSLHandshakeException;
 
@@ -28,6 +27,7 @@ import eu.siacs.conversations.Config;
 import eu.siacs.conversations.Conversations;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.entities.Message;
+import eu.siacs.conversations.entities.Conversation;
 import eu.siacs.conversations.entities.Transferable;
 import eu.siacs.conversations.persistance.FileBackend;
 import eu.siacs.conversations.services.XmppConnectionService;
@@ -53,7 +53,6 @@ import okhttp3.Response;
  */
 final class SecureHttpDownloadConnection extends HttpDownloadConnection {
 
-    private static final long AUDIO_AUTO_DOWNLOAD_MAX_BYTES = 16L * 1024L * 1024L;
     private static final int MAX_HTTP_DOWNLOAD_ATTEMPTS = 4;
     private static final int PREFLIGHT_READ_TIMEOUT_SECONDS = 5;
     private static final int PREFLIGHT_CONNECT_TIMEOUT_SECONDS = 5;
@@ -64,12 +63,15 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
     private final XmppConnectionService service;
 
     private HttpUrl url;
-    private int status = Transferable.STATUS_UNKNOWN;
+    private volatile int status = Transferable.STATUS_UNKNOWN;
     private long expectedWireSize = -1L;
     private long expectedPlaintextSize = -1L;
     private int progress = 0;
     private boolean acceptedAutomatically = false;
-    @Nullable private Call mostRecentCall;
+    @Nullable private volatile Call mostRecentCall;
+    private volatile boolean retired;
+    private final AtomicBoolean operationScheduled = new AtomicBoolean();
+    private final HttpDownloadRequestGate requestGate;
     @Nullable private String probedContentType;
     @Nullable private String probedContentDisposition;
 
@@ -78,6 +80,10 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
         this.secureMessage = message;
         this.manager = manager;
         this.service = manager.getXmppConnectionService();
+        this.requestGate = new HttpDownloadRequestGate(
+                () -> !retired && !manager.isAccountCleanupInProgress(accountUuid())
+                        && !secureMessage.isRetracted() && !secureMessage.isModerated(),
+                () -> service.isDataSaverDisabled() && automaticConversationAvailable());
     }
 
     @Override
@@ -85,7 +91,18 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
         if (!service.hasInternetConnection()) {
             return false;
         }
-        if (status == STATUS_OFFER_CHECK_FILESIZE) {
+        if (manager.isAccountCleanupInProgress(accountUuid())) return false;
+        if (retired) {
+            // Offers keep no queue entry, HTTP Call or registry slot. Re-enter through the manager
+            // so manual retry participates in deduplication and account cleanup again.
+            manager.createNewDownloadConnection(secureMessage, true);
+            return true;
+        }
+        if (operationScheduled.get()) {
+            if (!manager.removePendingAutomaticDownload(this)) return true;
+            operationScheduled.set(false);
+        }
+        if (status == STATUS_OFFER_CHECK_FILESIZE || expectedWireSize < 0) {
             checkFileSize(true);
         } else {
             download(true);
@@ -132,20 +149,23 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                 return;
             }
 
-            if (knownPlaintextSize != null && (interactive || isAudioMessage())) {
+            requestGate.check(interactive);
+            if (knownPlaintextSize != null && knownPlaintextSize >= 0 && (interactive || isAudioMessage())) {
                 if (interactive) {
                     download(true);
                 } else {
-                    maybeAutoDownloadKnownSize(expectedWireSize);
+                    maybeAutoDownloadKnownSize(expectedWireSize, false);
                 }
             } else {
                 checkFileSize(interactive);
             }
+        } catch (final HttpDownloadRequestGate.Deferred deferred) {
+            deferToManual();
         } catch (final Exception e) {
             Log.w(Config.LOGTAG, "unable to initialize secure HTTP download", e);
             acceptedAutomatically = false;
             progress = 0;
-            changeStatus(STATUS_OFFER);
+            deferToManual();
             if (interactive) {
                 showToastForException(e);
             }
@@ -180,70 +200,134 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
         return fragment != null && AesGcmURL.IV_KEY.matcher(fragment).matches();
     }
 
-    private void maybeAutoDownloadKnownSize(final long wireSize) {
-        final boolean audio = isAudioMessage();
-        final long configuredLimit = manager.getAutoAcceptFileSize();
-        final boolean withinConfiguredLimit = configuredLimit > 0 && wireSize <= configuredLimit;
-        final boolean withinAudioLimit = audio && wireSize <= AUDIO_AUTO_DOWNLOAD_MAX_BYTES;
-        // Secure storage is app-internal and requires no shared-storage permission.
-        if ((withinConfiguredLimit || withinAudioLimit) && service.isDataSaverDisabled()) {
+    private boolean automaticConversationAvailable() {
+        if (!(secureMessage.getConversation() instanceof Conversation)) return true;
+        final Conversation conversation = (Conversation) secureMessage.getConversation();
+        return conversation.getMode() != Conversation.MODE_MULTI
+                || (conversation.getStatus() == Conversation.STATUS_AVAILABLE
+                        && !conversation.isMucExplicitlyLeft());
+    }
+
+    private void maybeAutoDownloadKnownSize(final long wireSize, final boolean inline) {
+        if (HttpDownloadRequestGate.withinAutoLimit(
+                wireSize, manager.getAutoAcceptFileSize(), isAudioMessage())) {
             acceptedAutomatically = true;
-            download(false);
+            if (inline) new SecureDownloader(false).run();
+            else download(false);
         } else {
             acceptedAutomatically = false;
-            changeStatus(STATUS_OFFER);
+            deferToManual();
             service.getNotificationService().push(secureMessage);
         }
     }
 
+    /** Policy/overload is a silent manual offer, not deletion, cancellation or a new notification. */
+    private void deferToManual() {
+        retired = true;
+        operationScheduled.set(false);
+        acceptedAutomatically = false;
+        progress = 0;
+        mostRecentCall = null;
+        status = expectedWireSize < 0 ? STATUS_OFFER_CHECK_FILESIZE : STATUS_OFFER;
+        manager.finishConnection(this);
+        manager.updateConversationUi(true);
+    }
+
+    private void submit(final boolean interactive, final Runnable operation, final int queuedStatus) {
+        if (!operationScheduled.compareAndSet(false, true)) return;
+        try {
+            requestGate.check(interactive);
+        } catch (HttpDownloadRequestGate.Deferred deferred) {
+            deferToManual();
+            return;
+        }
+        // Make queued cards finite-state without forcing one extra UI refresh per MAM item.
+        status = queuedStatus;
+        final Runnable guarded = () -> {
+            try {
+                requestGate.check(interactive);
+                operation.run();
+            } catch (HttpDownloadRequestGate.Deferred deferred) {
+                if (!retired) deferToManual();
+            } finally {
+                mostRecentCall = null;
+                operationScheduled.set(false);
+            }
+        };
+        if (interactive) manager.submitManualDownload(guarded);
+        else manager.submitAutomaticDownload(this, guarded, this::deferToManual);
+    }
+
+    private OkHttpClient guardedClient(final OkHttpClient client, final boolean interactive) {
+        return client.newBuilder().addNetworkInterceptor(chain -> {
+            requestGate.check(interactive);
+            return chain.proceed(chain.request());
+        }).build();
+    }
+
+    private Response execute(final OkHttpClient client, final Request request,
+            final boolean interactive) throws IOException {
+        // Publish the Call before the final check, so concurrent cancel() can abort even the
+        // small interval between authorization and execute(). Redirects recheck in the interceptor.
+        final Call call = client.newCall(request);
+        mostRecentCall = call;
+        try {
+            return requestGate.execute(interactive, call::execute);
+        } catch (HttpDownloadRequestGate.Deferred deferred) {
+            call.cancel();
+            throw deferred;
+        }
+    }
+
     private void download(final boolean interactive) {
-        EXECUTOR.execute(new SecureDownloader(interactive));
+        submit(interactive, new SecureDownloader(interactive), STATUS_DOWNLOADING);
     }
 
     private void checkFileSize(final boolean interactive) {
-        EXECUTOR.execute(() -> {
+        submit(interactive, () -> {
             Exception failure = null;
             try {
                 final long wireSize = retrieveFileSize(interactive);
+                requestGate.check(interactive);
                 expectedWireSize = wireSize;
                 expectedPlaintextSize = isWireEncrypted() && wireSize >= 16L ? wireSize - 16L : wireSize;
-                final Message.FileParams fileParams = secureMessage.getFileParams();
-                final String probeMime = resolveMimeType(probedContentType);
-                final String probeFileName =
-                        resolveIncomingFileName(
-                                secureMessage.getSecureMediaFileName(),
-                                probedContentDisposition,
-                                url.toString());
-                secureMessage.setSecureMediaPresentationMetadata(
-                        probeMime,
-                        probeFileName,
-                        expectedPlaintextSize);
-                FileBackend.updateFileParams(secureMessage, fileParams.url, expectedPlaintextSize);
-                secureMessage.setOob(true);
-                service.databaseBackend.updateMessage(secureMessage, true);
-                secureMessage.resetFileParams();
-                maybeAutoDownloadKnownSize(wireSize);
+                synchronized (secureMessage) {
+                    requestGate.check(interactive);
+                    final Message.FileParams fileParams = secureMessage.getFileParams();
+                    final String probeMime = resolveMimeType(probedContentType);
+                    final String probeFileName =
+                            resolveIncomingFileName(
+                                    secureMessage.getSecureMediaFileName(),
+                                    probedContentDisposition,
+                                    url.toString());
+                    secureMessage.setSecureMediaPresentationMetadata(probeMime, probeFileName, expectedPlaintextSize);
+                    FileBackend.updateFileParams(secureMessage, fileParams.url, expectedPlaintextSize);
+                    secureMessage.setOob(true);
+                    service.databaseBackend.updateMessage(secureMessage, true);
+                    secureMessage.resetFileParams();
+                }
+                if (interactive) new SecureDownloader(true).run();
+                else maybeAutoDownloadKnownSize(wireSize, true);
+                return;
+            } catch (final HttpDownloadRequestGate.Deferred deferred) {
+                if (!retired) deferToManual();
                 return;
             } catch (final Exception e) {
                 failure = e;
                 Log.d(Config.LOGTAG, "secure HTTP size preflight failed", e);
             }
-
-            acceptedAutomatically = false;
-            // Preflight is intentionally single-shot. If HEAD plus ranged GET cannot establish
-            // size quickly, return control to the user instead of keeping the card busy.
-            changeStatus(STATUS_OFFER);
-            if (interactive) {
-                showToastForException(failure);
-            } else {
-                service.getNotificationService().push(secureMessage);
-            }
-        });
+            if (retired) return;
+            try { requestGate.check(interactive); }
+            catch (HttpDownloadRequestGate.Deferred deferred) { deferToManual(); return; }
+            deferToManual();
+            if (interactive) showToastForException(failure);
+            else service.getNotificationService().push(secureMessage);
+        }, STATUS_CHECKING);
     }
 
     private long retrieveFileSize(final boolean interactive) throws IOException {
         changeStatus(STATUS_CHECKING);
-        final OkHttpClient client =
+        final OkHttpClient client = guardedClient(
                 manager.buildHttpClient(
                                 url,
                                 secureMessage.getConversation().getAccount(),
@@ -252,7 +336,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                         .newBuilder()
                         .connectTimeout(PREFLIGHT_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                         .callTimeout(PREFLIGHT_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                        .build();
+                        .build(), interactive);
 
         IOException headFailure = null;
         final Request headRequest = new Request.Builder()
@@ -260,8 +344,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                 .addHeader("Accept-Encoding", "identity")
                 .head()
                 .build();
-        mostRecentCall = client.newCall(headRequest);
-        try (final Response response = mostRecentCall.execute()) {
+        try (final Response response = execute(client, headRequest, interactive)) {
             if (response.code() >= 200 && response.code() < 300) {
                 captureProbeMetadata(response);
                 final String contentLength = response.header("Content-Length");
@@ -275,6 +358,8 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
             } else {
                 headFailure = new IOException("HTTP HEAD status " + response.code());
             }
+        } catch (final HttpDownloadRequestGate.Deferred deferred) {
+            throw deferred;
         } catch (final IOException e) {
             headFailure = e;
         }
@@ -286,8 +371,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                 .addHeader("Range", "bytes=0-0")
                 .get()
                 .build();
-        mostRecentCall = client.newCall(rangeRequest);
-        try (final Response response = mostRecentCall.execute()) {
+        try (final Response response = execute(client, rangeRequest, interactive)) {
             throwOnInvalidCode(response);
             captureProbeMetadata(response);
             final String contentRange = response.header("Content-Range");
@@ -317,15 +401,17 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
 
     @Override
     public void cancel() {
+        synchronized (secureMessage) {
+            retired = true;
+            if (secureMessage.getTransferable() == this) {
+                secureMessage.setTransferable(null);
+                if (secureMessage.isFileOrImage()) secureMessage.setDeleted(true);
+            }
+        }
+        manager.removePendingAutomaticDownload(this);
         final Call call = mostRecentCall;
-        if (call != null && !call.isCanceled()) {
-            call.cancel();
-        }
+        if (call != null && !call.isCanceled()) call.cancel();
         manager.finishConnection(this);
-        secureMessage.setTransferable(null);
-        if (secureMessage.isFileOrImage()) {
-            secureMessage.setDeleted(true);
-        }
         manager.updateConversationUi(true);
     }
 
@@ -376,6 +462,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
     }
 
     private void finishSuccessfulDownload() throws IOException {
+        requestGate.check(true);
         final String remoteUrl = isWireEncrypted() ? AesGcmURL.toAesGcmUrl(url) : url.toString();
         /*
          * The Store commit is the receive authority. Rebuild all render-critical params from the
@@ -386,7 +473,11 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                 .update(secureMessage, remoteUrl);
         secureMessage.setOob(true);
         service.updateMessage(secureMessage);
-        secureMessage.setTransferable(null);
+        synchronized (secureMessage) {
+            requestGate.check(true);
+            if (secureMessage.getTransferable() == this) secureMessage.setTransferable(null);
+            retired = true;
+        }
         manager.finishConnection(this);
         final boolean notify = acceptedAutomatically && !secureMessage.isRead();
         manager.updateConversationUi(true);
@@ -405,6 +496,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
         @Override
         public void run() {
             try {
+                requestGate.check(interactive);
                 progress = 0;
                 changeStatus(STATUS_DOWNLOADING);
                 if (resolveExistingSecureMedia()) {
@@ -413,14 +505,16 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                 }
                 downloadResumable();
                 finishSuccessfulDownload();
+            } catch (final HttpDownloadRequestGate.Deferred deferred) {
+                if (!retired) deferToManual();
             } catch (final SSLHandshakeException e) {
-                progress = 0;
-                changeStatus(STATUS_OFFER);
+                if (!retired) deferToManual();
             } catch (final Exception e) {
                 Log.d(Config.LOGTAG, "secure HTTP download failed", e);
-                acceptedAutomatically = false;
-                progress = 0;
-                changeStatus(STATUS_OFFER);
+                if (retired) return;
+                try { requestGate.check(interactive); }
+                catch (HttpDownloadRequestGate.Deferred deferred) { deferToManual(); return; }
+                deferToManual();
                 if (interactive) {
                     showToastForException(e);
                 } else {
@@ -450,11 +544,12 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
             try {
                 for (int attempt = 1; attempt <= MAX_HTTP_DOWNLOAD_ATTEMPTS; attempt++) {
                     final long requestOffset = wireReceived;
-                    final OkHttpClient client =
+                    requestGate.check(interactive);
+                    final OkHttpClient client = guardedClient(
                             manager.buildHttpClient(
                                     url,
                                     secureMessage.getConversation().getAccount(),
-                                    interactive);
+                                    interactive), interactive);
                     final Request.Builder requestBuilder =
                             new Request.Builder()
                                     .url(URL.stripFragment(url))
@@ -468,9 +563,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                                         "bytes=%d-",
                                         requestOffset));
                     }
-                    mostRecentCall = client.newCall(requestBuilder.build());
-
-                    try (final Response response = mostRecentCall.execute()) {
+                    try (final Response response = execute(client, requestBuilder.build(), interactive)) {
                         throwOnInvalidCode(response);
                         if (requestOffset > 0L
                                 && !isResumeContentRange(
@@ -534,6 +627,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                         try (InputStream rawInput = response.body().byteStream()) {
                             int count;
                             while ((count = rawInput.read(buffer)) != -1) {
+                                requestGate.check(true);
                                 if (expectedWireSize > 0L
                                         && wireReceived + count > expectedWireSize) {
                                     throw new NonRetryableDownloadException(
@@ -581,7 +675,10 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                             secureOutput.flush();
                             secureOutput.close();
                             secureOutput = null;
-                            session.commit();
+                            synchronized (secureMessage) {
+                                requestGate.check(true);
+                                session.commit();
+                            }
                             session = null;
                             return;
                         } catch (final NonRetryableDownloadException e) {
@@ -591,11 +688,14 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                                     "unable to finalize secure media receive",
                                     e);
                         }
+                    } catch (final HttpDownloadRequestGate.Deferred deferred) {
+                        throw deferred;
                     } catch (final NonRetryableDownloadException e) {
                         throw e;
                     } catch (final SSLHandshakeException e) {
                         throw e;
                     } catch (final IOException e) {
+                        requestGate.check(interactive);
                         lastNetworkFailure = e;
                         Log.d(
                                 Config.LOGTAG,
