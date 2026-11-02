@@ -129,14 +129,10 @@ public class Compatibility {
         }
         if (Compatibility.runsTwentySix()) {
             if (targetsTwentySix(settingsFragment.getContext())) {
-                Preference preference =
+                final Preference preference =
                         settingsFragment.findPreference(SettingsActivity.KEEP_FOREGROUND_SERVICE);
-                if (preference != null) {
-                    for (PreferenceGroup category : categories) {
-                        if (category != null) {
-                            category.removePreference(preference);
-                        }
-                    }
+                if (preference != null && preference.getParent() != null) {
+                    preference.getParent().removePreference(preference);
                 }
             }
         }

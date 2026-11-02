@@ -209,6 +209,11 @@
                 android:summary="@string/neocont_background_connection_summary"
                 android:title="@string/neocont_background_connection"
                 android:widgetLayout="@layout/preference_app_switch" />
+            <Preference
+                android:key="background_delivery_reliability"
+                android:layout="@layout/preference_subnavigation_row"
+                android:summary="@string/neocont_delivery_reliability_summary"
+                android:title="@string/neocont_delivery_reliability" />
             <PreferenceScreen
                 android:key="neocont_push_settings"
                 android:layout="@layout/preference_subnavigation_row"

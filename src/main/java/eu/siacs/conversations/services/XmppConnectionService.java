@@ -2911,7 +2911,7 @@ public class XmppConnectionService extends Service {
     }
 
     private void toggleForegroundService(final boolean force) {
-        final boolean status;
+        final String state;
         final OngoingCall ongoing = ongoingCall.get();
         final boolean ongoingVideoTranscoding = mOngoingVideoTranscoding.get();
         final int id;
@@ -2924,22 +2924,31 @@ public class XmppConnectionService extends Service {
             if (ongoing != null) {
                 notification = this.mNotificationService.getOngoingCallNotification(ongoing);
                 id = NotificationService.ONGOING_CALL_NOTIFICATION_ID;
-                startForegroundOrCatch(id, notification, true, ongoing.media.contains(Media.VIDEO));
+                state =
+                        startForegroundOrCatch(
+                                        id, notification, true, ongoing.media.contains(Media.VIDEO))
+                                ? "started"
+                                : "start failed";
             } else if (ongoingVideoTranscoding) {
                 notification = this.mNotificationService.getIndeterminateVideoTranscoding();
                 id = NotificationService.ONGOING_VIDEO_TRANSCODING_NOTIFICATION_ID;
-                startForegroundOrCatch(id, notification, false, false);
+                state =
+                        startForegroundOrCatch(id, notification, false, false)
+                                ? "started"
+                                : "start failed";
             } else {
                 notification = this.mNotificationService.createForegroundNotification();
                 id = NotificationService.FOREGROUND_NOTIFICATION_ID;
-                startForegroundOrCatch(id, notification, false, false);
+                state =
+                        startForegroundOrCatch(id, notification, false, false)
+                                ? "started"
+                                : "start failed";
             }
             mNotificationService.notify(id, notification);
-            status = true;
         } else {
             id = 0;
             stopForeground(true);
-            status = false;
+            state = "stopped";
         }
 
         for (final int toBeRemoved :
@@ -2953,10 +2962,10 @@ public class XmppConnectionService extends Service {
         }
         Log.d(
                 Config.LOGTAG,
-                "ForegroundService: " + (status ? "on" : "off") + ", notification: " + id);
+                "ForegroundService: " + state + ", notification: " + id);
     }
 
-    private void startForegroundOrCatch(
+    private boolean startForegroundOrCatch(
             final int id,
             final Notification notification,
             final boolean requireMicrophone,
@@ -2994,8 +3003,10 @@ public class XmppConnectionService extends Service {
             } else {
                 startForeground(id, notification);
             }
+            return true;
         } catch (final IllegalStateException | SecurityException e) {
             Log.e(Config.LOGTAG, "Could not start foreground service", e);
+            return false;
         }
     }
 
