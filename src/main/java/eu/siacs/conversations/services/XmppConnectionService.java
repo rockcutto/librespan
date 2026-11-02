@@ -2965,6 +2965,29 @@ public class XmppConnectionService extends Service {
                 "ForegroundService: " + state + ", notification: " + id);
     }
 
+    // Android 14+ while-in-use permissions must not double as a type for idle XMPP work.
+    // The microphone/camera types remain available only for an actual ongoing call.
+    static int selectForegroundServiceType(
+            final boolean callRequiresMicrophone,
+            final boolean callRequiresCamera,
+            final boolean microphoneGranted,
+            final boolean cameraGranted,
+            final boolean batteryOptimizationExempt) {
+        int type = 0;
+        if (callRequiresMicrophone && microphoneGranted) {
+            type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        }
+        if (callRequiresCamera && cameraGranted) {
+            type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+        }
+        if (type != 0) {
+            return type;
+        }
+        return batteryOptimizationExempt
+                ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+                : ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
+    }
+
     private boolean startForegroundOrCatch(
             final int id,
             final Notification notification,
@@ -2972,33 +2995,17 @@ public class XmppConnectionService extends Service {
             final boolean requireCamera) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                int foregroundServiceType = 0;
-                if (requireMicrophone
-                        && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                                == PackageManager.PERMISSION_GRANTED) {
-                    foregroundServiceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-                }
-                if (requireCamera
-                        && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                                == PackageManager.PERMISSION_GRANTED) {
-                    foregroundServiceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
-                }
-                if (foregroundServiceType == 0) {
-                    if (getSystemService(PowerManager.class)
-                            .isIgnoringBatteryOptimizations(getPackageName())) {
-                        foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED;
-                    } else if (ContextCompat.checkSelfPermission(
-                                    this, Manifest.permission.RECORD_AUDIO)
-                            == PackageManager.PERMISSION_GRANTED) {
-                        foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-                    } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                            == PackageManager.PERMISSION_GRANTED) {
-                        foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
-                    } else {
-                        foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
-                        Log.w(Config.LOGTAG, "falling back to special use foreground service type");
-                    }
-                }
+                final int foregroundServiceType =
+                        selectForegroundServiceType(
+                                requireMicrophone,
+                                requireCamera,
+                                ContextCompat.checkSelfPermission(
+                                                this, Manifest.permission.RECORD_AUDIO)
+                                        == PackageManager.PERMISSION_GRANTED,
+                                ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                                        == PackageManager.PERMISSION_GRANTED,
+                                getSystemService(PowerManager.class)
+                                        .isIgnoringBatteryOptimizations(getPackageName()));
                 startForeground(id, notification, foregroundServiceType);
             } else {
                 startForeground(id, notification);
