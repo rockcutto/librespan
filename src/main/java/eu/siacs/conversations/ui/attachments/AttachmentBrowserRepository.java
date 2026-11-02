@@ -1,5 +1,7 @@
 package eu.siacs.conversations.ui.attachments;
 
+import android.content.Context;
+
 import androidx.annotation.Nullable;
 
 import com.google.common.base.Strings;
@@ -21,6 +23,8 @@ import eu.siacs.conversations.storage.secure.SecureContentObject;
 import eu.siacs.conversations.storage.secure.SecureContentStore;
 import eu.siacs.conversations.storage.secure.SecureMessageMediaCoordinator;
 import eu.siacs.conversations.utils.MimeUtils;
+import eu.siacs.conversations.utils.AudioAttachmentPresentation;
+import eu.siacs.conversations.storage.secure.SecureAudioPresentation;
 import eu.siacs.conversations.xmpp.Jid;
 
 /**
@@ -35,14 +39,17 @@ public final class AttachmentBrowserRepository {
     private static final int RAW_BATCH = 80;
     private static final int MAX_RAW_BATCHES_PER_PAGE = 8;
 
+    private final Context context;
     private final DatabaseBackend databaseBackend;
     private final FileBackend fileBackend;
     private final SecureContentStore secureContentStore;
 
     public AttachmentBrowserRepository(
+            final Context context,
             final DatabaseBackend databaseBackend,
             final FileBackend fileBackend,
             final SecureContentStore secureContentStore) {
+        this.context = context.getApplicationContext();
         this.databaseBackend = databaseBackend;
         this.fileBackend = fileBackend;
         this.secureContentStore = secureContentStore;
@@ -146,10 +153,19 @@ public final class AttachmentBrowserRepository {
             final String storedMime = secure.getMetadata().getMimeType();
             final String storedName = secure.getMetadata().getFileName();
             final String name = MimeUtils.resolvePresentationFileName(storedName, record.body);
-            final String mime = MimeUtils.resolvePresentationMime(storedMime, name);
+            final String resolvedMime = MimeUtils.resolvePresentationMime(storedMime, name);
+            final AudioAttachmentPresentation.Metadata audio =
+                    "application/ogg".equals(resolvedMime)
+                            ? SecureAudioPresentation.load(context, secureContentStore, accountUuid,
+                                    record.messageUuid, resolvedMime)
+                            : SecureAudioPresentation.peek(context, accountUuid, record.messageUuid);
+            final String mime = "application/ogg".equals(resolvedMime) && audio != null
+                    && audio.tracks == AudioAttachmentPresentation.Tracks.AUDIO
+                    ? "audio/ogg" : resolvedMime;
             final Long secureSize = secure.getMetadata().getSizeBytes();
             final AttachmentEntry.Category category =
-                    AttachmentEntry.classify(
+                    audio != null && audio.tracks == AudioAttachmentPresentation.Tracks.VIDEO
+                            ? AttachmentEntry.Category.FILE : AttachmentEntry.classify(
                             mime,
                             record.type,
                             params.width,

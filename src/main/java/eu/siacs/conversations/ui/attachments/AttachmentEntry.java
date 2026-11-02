@@ -4,6 +4,7 @@ import androidx.annotation.Nullable;
 
 import eu.siacs.conversations.entities.Message;
 import eu.siacs.conversations.utils.MimeUtils;
+import eu.siacs.conversations.utils.AudioAttachmentPresentation;
 
 /** Path-free presentation identity for one message-owned attachment. */
 public final class AttachmentEntry {
@@ -93,7 +94,7 @@ public final class AttachmentEntry {
                 if (normalized.startsWith("image/") || normalized.startsWith("video/")) {
                     return Category.MEDIA;
                 }
-                if (normalized.startsWith("audio/")) {
+                if (AudioAttachmentPresentation.isAudio(normalized, AudioAttachmentPresentation.Tracks.UNKNOWN)) {
                     return Category.AUDIO;
                 }
                 if (MimeUtils.isExplicitDocumentMime(normalized)) {
@@ -101,21 +102,17 @@ public final class AttachmentEntry {
                     return Category.FILE;
                 }
                 if (MimeUtils.AMBIGUOUS_CONTAINER_FORMATS.contains(normalized)) {
-                    if (width > 0 && height > 0) {
+                    if (!"application/ogg".equals(normalized) && width > 0 && height > 0) {
                         return Category.MEDIA;
                     }
-                    if (durationMillis > 0) {
-                        return Category.AUDIO;
-                    }
+                    // A duration is not proof of an audio-only container.
+                    return Category.FILE;
                 }
         }
         // Width/height and the legacy image message type remain useful recovery signals for
         // media whose server/provider MIME is generic or simply wrong (often application/*).
         if (messageType == Message.TYPE_IMAGE || (width > 0 && height > 0)) {
             return Category.MEDIA;
-        }
-        if (durationMillis > 0 && width <= 0 && height <= 0) {
-            return Category.AUDIO;
         }
         return Category.FILE;
     }

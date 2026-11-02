@@ -7823,6 +7823,7 @@ public class XmppConnectionService extends Service {
                             final Conversations application = (Conversations) getApplication();
                             final AttachmentBrowserRepository repository =
                                     new AttachmentBrowserRepository(
+                                            getApplicationContext(),
                                             databaseBackend,
                                             fileBackend,
                                             application.getSecureContentStoreProvider().get());

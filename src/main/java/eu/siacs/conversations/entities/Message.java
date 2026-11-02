@@ -1714,6 +1714,13 @@ public class Message extends AbstractEntity implements AvatarService.Avatarable 
         return MimeUtils.guessMimeTypeFromExtension(extension);
     }
 
+    /** Audio UI identity is independent of duration, direction and conversation mode. */
+    public boolean isAudioAttachment(
+            final eu.siacs.conversations.utils.AudioAttachmentPresentation.Tracks tracks) {
+        return isFileOrImage()
+                && eu.siacs.conversations.utils.AudioAttachmentPresentation.isAudio(getMimeType(), tracks);
+    }
+
     public synchronized boolean treatAsDownloadable() {
         if (treatAsDownloadable == null) {
             treatAsDownloadable = MessageUtils.treatAsDownloadable(getBody(), this.oob);

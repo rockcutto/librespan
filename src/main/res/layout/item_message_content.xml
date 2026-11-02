@@ -101,12 +101,35 @@
             android:visibility="gone"
             tools:visibility="visible">
 
+            <LinearLayout
+                android:id="@+id/audio_metadata"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="56dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+                <TextView
+                    android:id="@+id/audio_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textAppearance="?textAppearanceBodyMedium" />
+                <TextView
+                    android:id="@+id/audio_artist"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textAppearance="?textAppearanceBodySmall" />
+            </LinearLayout>
+
             <com.google.android.material.button.MaterialButton
                 style="?attr/materialIconButtonStyle"
                 android:id="@+id/play_pause"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:layout_centerVertical="true"
+                android:layout_below="@id/audio_metadata"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
                 android:padding="0dp"
@@ -126,7 +149,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="40dp"
                 android:layout_toEndOf="@+id/play_pause"
-                android:layout_alignTop="@+id/play_pause"
+                android:layout_below="@id/audio_metadata"
                 android:layout_marginStart="8dp"
                 android:progress="0" />
 

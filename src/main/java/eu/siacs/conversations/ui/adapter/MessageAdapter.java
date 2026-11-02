@@ -136,6 +136,7 @@ import eu.siacs.conversations.ui.ConversationsActivity;
 import eu.siacs.conversations.ui.DraggableListView;
 import eu.siacs.conversations.ui.XmppActivity;
 import eu.siacs.conversations.ui.service.AudioPlayer;
+import eu.siacs.conversations.storage.secure.SecureAudioPresentation;
 import eu.siacs.conversations.ui.text.DividerSpan;
 import eu.siacs.conversations.ui.text.QuoteSpan;
 import eu.siacs.conversations.ui.text.TypographyHelper;
@@ -2441,7 +2442,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                 contextPreviewDoc.setVisibility(View.GONE);
                 contextPreviewAudio.setVisibility(View.GONE);
                 activity.loadBitmap(replyMessage, contextPreviewImage);
-            } else if (replyMessage.getFileParams().runtime > 0) {
+            } else if (SecureAudioPresentation.isAudio(activity, replyMessage)) {
                 iconsContainer.setVisibility(View.VISIBLE);
                 contextPreviewImage.setVisibility(View.GONE);
                 contextPreviewDoc.setVisibility(View.GONE);
@@ -3465,6 +3466,9 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
             SecureMessageMediaUiBridge.hydratePresentationMetadata(
                     activity, message, () -> notifyDataSetChanged());
         }
+        if (message.isFileOrImage() && !message.isDeleted() && message.getTransferable() == null) {
+            SecureAudioPresentation.hydrate(activity, message, () -> notifyDataSetChanged());
+        }
         final int type = getItemViewType(position);
 
         int oldPosition = -1;
@@ -3630,6 +3634,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                     + System.identityHashCode(message));
         }
 
+        AudioPlayer.rebind(viewHolder.audioPlayer, message);
         resetMessageBubbleInteraction(viewHolder);
         viewHolder.message_box.setOnLongClickListener(messageActionLongClickListener(message));
 
@@ -3733,7 +3738,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
         } else if (message.isFileOrImage() && message.getEncryption() != Message.ENCRYPTION_PGP && message.getEncryption() != Message.ENCRYPTION_DECRYPTION_FAILED) {
             if (shouldRenderMediaPreview(message)) {
                 displayMediaPreviewMessage(viewHolder, message, bubbleColor);
-            } else if (message.getFileParams().runtime > 0) {
+            } else if (SecureAudioPresentation.isAudio(activity, message)) {
                 displayAudioMessage(viewHolder, message, bubbleColor);
             } else {
                 displayOpenableMessage(viewHolder, message, bubbleColor);
