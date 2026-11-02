@@ -243,6 +243,30 @@
 
     <style name="Widget.App.AccountTextInput" parent="Widget.App.TextInput" />
 
+    <!-- Shared rounded input treatment for compact Material dialogs. -->
+    <style name="Widget.App.Dialog.TextInput" parent="Widget.App.TextInput">
+        <item name="hintEnabled">true</item>
+        <item name="errorEnabled">true</item>
+        <item name="errorIconDrawable">@null</item>
+        <item name="errorTextAppearance">?attr/textAppearanceCaption</item>
+        <item name="hintTextAppearance">?attr/textAppearanceCaption</item>
+    </style>
+
+    <style name="Widget.App.Dialog.TextInputField" parent="Widget.AppCompat.EditText">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:background">@drawable/bg_neocont_text_input</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingTop">0dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingBottom">0dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.Material3.BodyLarge</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:textColorHint">?attr/colorOnSurfaceVariant</item>
+    </style>
+
     <style name="Widget.App.Switch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
         <item name="android:minHeight">48dp</item>
         <item name="android:focusable">false</item>

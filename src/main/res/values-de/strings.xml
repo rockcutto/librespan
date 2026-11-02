@@ -198,6 +198,7 @@
     <string name="channel_full_jid_example">channel@conference.domain.de/Nickname</string>
     <string name="channel_bare_jid_example">channel@conference.domain.de</string>
     <string name="save_as_bookmark">Als Lesezeichen speichern</string>
+    <string name="save_as_contact_or_bookmark">Als Kontakt / Lesezeichen speichern</string>
     <string name="delete_bookmark">Lesezeichen löschen</string>
     <string name="destroy_room">Gruppenchat löschen</string>
     <string name="destroy_channel">Channel löschen</string>

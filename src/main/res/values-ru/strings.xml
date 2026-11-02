@@ -233,6 +233,7 @@
     <string name="channel_full_jid_example">канал@конференция.пример.com/никнейм</string>
     <string name="channel_bare_jid_example">канал@конференция.пример.com</string>
     <string name="save_as_bookmark">Сохранить закладку</string>
+    <string name="save_as_contact_or_bookmark">Сохранить как контакт / закладку</string>
     <string name="delete_bookmark">Удалить закладку</string>
     <string name="destroy_room">Уничтожить конференцию</string>
     <string name="destroy_channel">Уничтожить канал</string>

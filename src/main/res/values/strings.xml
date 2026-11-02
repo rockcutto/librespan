@@ -240,6 +240,7 @@
     <string name="channel_full_jid_example">channel@conference.example.com/nick</string>
     <string name="channel_bare_jid_example">channel@conference.example.com</string>
     <string name="save_as_bookmark">Save as bookmark</string>
+    <string name="save_as_contact_or_bookmark">Save as contact / bookmark</string>
     <string name="save_as_group_chat">Save as group chat</string>
     <string name="delete_bookmark">Delete bookmark</string>
     <string name="destroy_room">Destroy group chat</string>
