@@ -454,7 +454,7 @@ public class MessageParser extends AbstractParser
                 final Jid from = Jid.Invalid.getNullForInvalid(invite.getAttributeAsJid("from"));
                 final Jid to = Jid.Invalid.getNullForInvalid(invite.getAttributeAsJid("to"));
                 if (to != null && from == null) {
-                    Log.d(Config.LOGTAG, "do not parse outgoing mediated invite " + message);
+                    Log.d(Config.LOGTAG, "do not parse outgoing mediated invite");
                     return null;
                 }
                 final Jid room = Jid.Invalid.getNullForInvalid(message.getAttributeAsJid("from"));

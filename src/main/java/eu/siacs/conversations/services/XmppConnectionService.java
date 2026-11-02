@@ -3994,6 +3994,7 @@ public class XmppConnectionService extends Service {
         if (conversation == null || bookmark == null) {
             return;
         }
+        if (hydrateOwnerPasswordState(conversation)) return;
         final String password =
                 ScopedAccountSecretVaultV1.readString(
                         getApplicationContext(),
@@ -4117,7 +4118,7 @@ public class XmppConnectionService extends Service {
         Element query = iqPacket.query("jabber:iq:private");
         Element storage = query.addChild("storage", "storage:bookmarks");
         for (final Bookmark bookmark : account.getBookmarks()) {
-            storage.addChild(bookmark);
+            storage.addChild(bookmark.forPublication());
         }
         sendIqPacket(account, iqPacket, mDefaultIqHandler);
     }
@@ -4126,7 +4127,7 @@ public class XmppConnectionService extends Service {
         Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": pushing bookmarks via pep");
         final Element storage = new Element("storage", "storage:bookmarks");
         for (final Bookmark bookmark : account.getBookmarks()) {
-            storage.addChild(bookmark);
+            storage.addChild(bookmark.forPublication());
         }
         pushNodeAndEnforcePublishOptions(
                 account,
@@ -7060,6 +7061,21 @@ public class XmppConnectionService extends Service {
                 account.getJid().asBareJid() + ": fetching members for " + conversation.getName());
     }
 
+    private final MucPasswordController mucPasswordController = new MucPasswordController(this);
+
+    public MucPasswordController getMucPasswordController() { return mucPasswordController; }
+
+    private boolean hydrateOwnerPasswordState(final Conversation conversation) {
+        if (conversation.getMode() != Conversation.MODE_MULTI) return false;
+        try {
+            return new eu.siacs.conversations.storage.secure.MucPasswordVault(this, conversation).hydrate();
+        } catch (Exception unavailable) {
+            // Never fall back to unprotected persistence if the protected state cannot be read.
+            conversation.getMucOptions().setPassword(null);
+            return true;
+        }
+    }
+
     public boolean rememberMucPassword(final Conversation conversation, final String password) {
         if (conversation == null || conversation.getMode() != Conversation.MODE_MULTI) {
             return false;
@@ -7073,6 +7089,10 @@ public class XmppConnectionService extends Service {
                 password)) {
             return false;
         }
+        try {
+            if (!new eu.siacs.conversations.storage.secure.MucPasswordVault(this, conversation)
+                    .acceptProvidedPassword()) return false;
+        } catch (Exception unavailable) { return false; }
         conversation.getMucOptions().setPassword(password);
         if (conversation.clearLegacyMucPassword()) {
             updateConversation(conversation);
@@ -7133,6 +7153,8 @@ public class XmppConnectionService extends Service {
                 conversation.getMucOptions().setPassword(password);
             }
         }
+
+        if (conversation.getMode() == Conversation.MODE_MULTI) hydrateOwnerPasswordState(conversation);
 
         final String legacyDraft = conversation.getLegacyNextMessage();
         final long timestamp = conversation.getLongAttribute("next_message_timestamp", 0L);
@@ -8392,7 +8414,7 @@ public class XmppConnectionService extends Service {
                                         if (packet.getType() == Iq.Type.RESULT) {
                                             callback.onPushSucceeded();
                                         } else {
-                                            Log.d(Config.LOGTAG, "failed: " + packet.toString());
+                                            Log.d(Config.LOGTAG, "failed: " + eu.siacs.conversations.xml.SecretStanzaLog.forLog(packet));
                                             callback.onPushFailed();
                                         }
                                     }

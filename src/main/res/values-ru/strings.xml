@@ -1821,4 +1821,25 @@
     <string name="muc_retract_failed">Не удалось отправить запрос на удаление</string>
     <string name="protected_message_pending">Подготовка защищённого сообщения…</string>
     <string name="protected_message_unavailable">Защищённое сообщение недоступно</string>
+
+    <!-- Standard XEP-0045 owner password configuration. -->
+    <string name="muc_password_title">Пароль для входа</string>
+    <string name="muc_password_checking">Проверка…</string>
+    <string name="muc_password_on">Включён</string>
+    <string name="muc_password_off">Выключен</string>
+    <string name="muc_password_unsupported">Недоступно на этом сервере</string>
+    <string name="muc_password_pending">Предыдущее изменение не подтверждено</string>
+    <string name="muc_password_check_again">Нажмите для проверки конфигурации комнаты</string>
+    <string name="muc_password_change">Изменить пароль</string>
+    <string name="muc_password_disable">Отключить пароль</string>
+    <string name="muc_password_disable_confirm">Отключить пароль для входа в эту комнату?</string>
+    <string name="muc_password_explanation">Пароль ограничивает вход в комнату, но не обеспечивает сквозное шифрование сообщений. В закрытой комнате также требуется членство. Пробелы сохраняются точно как введены.</string>
+    <string name="muc_password_invalid">Введите непустой пароль до 1024 символов, без управляющих символов.</string>
+    <string name="muc_password_saved">Настройки пароля комнаты сохранены</string>
+    <string name="muc_password_vault_error">Защищённое хранилище недоступно. Разблокируйте приложение и проверьте настройки комнаты снова.</string>
+    <string name="muc_password_failed">Не удалось изменить пароль комнаты. Проверьте соединение и права владельца.</string>
+    <string name="muc_password_pending_explanation">Результат на сервере неизвестен или локальное сохранение не завершено. Данные доступа сохранены в защищённом хранилище. Повторите ранее выбранное изменение для подтверждения: оно будет применено ещё раз.</string>
+    <string name="muc_password_retry">Повторить изменение</string>
+    <string name="muc_password_unknown">Состояние пароля неизвестно</string>
+    <string name="muc_password_set">Установить или изменить пароль</string>
 </resources>

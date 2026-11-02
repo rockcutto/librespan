@@ -206,7 +206,7 @@ public class PresenceParser extends AbstractParser
                         mucOptions.setError(MucOptions.Error.SHUTDOWN);
                     } else if (!codes.contains(MucOptions.STATUS_CODE_CHANGED_NICK)) {
                         mucOptions.setError(MucOptions.Error.UNKNOWN);
-                        Log.d(Config.LOGTAG, "unknown error in conference: " + packet);
+                        Log.d(Config.LOGTAG, "unknown error in conference: " + eu.siacs.conversations.xml.SecretStanzaLog.forLog(packet));
                     }
                 } else if (!from.isBareJid()) {
                     Element item = x.findChild("item");
@@ -277,7 +277,7 @@ public class PresenceParser extends AbstractParser
                         }
                     } else {
                         mucOptions.setError(MucOptions.Error.UNKNOWN);
-                        Log.d(Config.LOGTAG, "unknown error in conference: " + packet);
+                        Log.d(Config.LOGTAG, "unknown error in conference: " + eu.siacs.conversations.xml.SecretStanzaLog.forLog(packet));
                     }
                 }
             }

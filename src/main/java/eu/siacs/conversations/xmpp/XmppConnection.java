@@ -1355,7 +1355,7 @@ public class XmppConnection implements Runnable {
         }
         lastPacketReceived = SystemClock.elapsedRealtime();
         if (Config.BACKGROUND_STANZA_LOGGING && mXmppConnectionService.checkListeners()) {
-            Log.d(Config.LOGTAG, "[background stanza] " + stanza);
+            Log.d(Config.LOGTAG, "[background stanza] " + eu.siacs.conversations.xml.SecretStanzaLog.forLog(stanza));
         }
         return stanza;
     }
@@ -2684,7 +2684,7 @@ public class XmppConnection implements Runnable {
                         Config.LOGTAG,
                         account.getJid().asBareJid()
                                 + " do not write stanza to unbound stream "
-                                + packet.toString());
+                                + eu.siacs.conversations.xml.SecretStanzaLog.forLog(packet));
             }
             if (packet instanceof Stanza stanza) {
                 if (this.mStanzaQueue.size() != 0) {

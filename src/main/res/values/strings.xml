@@ -1788,4 +1788,25 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_retract_failed">Could not send message retraction</string>
     <string name="protected_message_pending">Preparing protected message…</string>
     <string name="protected_message_unavailable">Protected message unavailable</string>
+
+    <!-- Standard XEP-0045 owner password configuration. -->
+    <string name="muc_password_title">Room entry password</string>
+    <string name="muc_password_checking">Checking…</string>
+    <string name="muc_password_on">Enabled</string>
+    <string name="muc_password_off">Disabled</string>
+    <string name="muc_password_unsupported">Unavailable on this server</string>
+    <string name="muc_password_pending">Previous change needs confirmation</string>
+    <string name="muc_password_check_again">Tap to check the room configuration</string>
+    <string name="muc_password_change">Change password</string>
+    <string name="muc_password_disable">Disable password</string>
+    <string name="muc_password_disable_confirm">Disable the entry password for this room?</string>
+    <string name="muc_password_explanation">The password restricts entry; it does not provide end-to-end message encryption. Members-only rooms also require membership. Spaces are kept exactly as entered.</string>
+    <string name="muc_password_invalid">Enter a non-empty password, up to 1024 characters, without control characters.</string>
+    <string name="muc_password_saved">Room password settings saved</string>
+    <string name="muc_password_vault_error">Protected storage is unavailable. Unlock the app and check the room settings again.</string>
+    <string name="muc_password_failed">The room password could not be changed. Check your connection and owner permissions.</string>
+    <string name="muc_password_pending_explanation">The server result is uncertain or local completion is pending. Access credentials are retained in protected storage. Retry the previously chosen change to confirm it; this will apply that change again.</string>
+    <string name="muc_password_retry">Retry previous change</string>
+    <string name="muc_password_unknown">Password status unknown</string>
+    <string name="muc_password_set">Set or change password</string>
 </resources>

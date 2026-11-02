@@ -57,6 +57,7 @@ public class MucOptions {
     private User self;
     private long voiceRequestPendingSince = 0L;
     private String password = null;
+    private String passwordFallback = null;
 
     public MucOptions(final Conversation conversation) {
         this.account = conversation.getAccount();
@@ -836,6 +837,7 @@ public class MucOptions {
     }
 
     public String getPassword() {
+        if (this.error == Error.PASSWORD_REQUIRED && passwordFallback != null) return passwordFallback;
         if (this.password != null) {
             return this.password;
         }
@@ -845,10 +847,18 @@ public class MucOptions {
 
     public void setPassword(String password) {
         this.password = password;
+        this.passwordFallback = null;
         final Bookmark bookmark = conversation.getBookmark();
-        if (bookmark != null) {
-            bookmark.setPassword(password);
+        // Runtime join credentials must never enter a serializable bookmark. Preserve the
+        // existing null cleanup used by High Security without copying non-null secrets.
+        if (bookmark != null && password == null) {
+            bookmark.setPassword(null);
         }
+    }
+
+    /** Only the existing password-required prompt selects this; no automatic rejoin is added. */
+    public void setPasswordFallback(final String password) {
+        this.passwordFallback = password;
     }
 
     public Conversation getConversation() {
