@@ -121,6 +121,9 @@ import eu.siacs.conversations.storage.secure.LegacyPlaintextSqliteCleanupResult;
 import eu.siacs.conversations.storage.secure.PersistentSecureContentKeyMaterialStore;
 import eu.siacs.conversations.storage.secure.ScopedAccountSecretVaultV1;
 import eu.siacs.conversations.storage.secure.SecureColdStartPerfTrace;
+import eu.siacs.conversations.storage.secure.SecureContentStore;
+import eu.siacs.conversations.storage.secure.SecureContentTransferGateway;
+import eu.siacs.conversations.storage.secure.SecureMessageMediaCoordinator;
 import eu.siacs.conversations.storage.secure.SecureMessageMediaLifecyclePolicy;
 import eu.siacs.conversations.storage.secure.SecureMessagePayloadCoordinator;
 import eu.siacs.conversations.storage.secure.SecureMessagePayloadMode;
@@ -3211,6 +3214,29 @@ public class XmppConnectionService extends Service {
         }
     }
 
+    /** Writes only a completed outgoing attachment locator, never a general message body. */
+    public boolean persistOutgoingAttachmentUpload(
+            final Message message, final String expectedBody, final String remoteUrl)
+            throws IOException {
+        synchronized (secureContentMediaMutationLock) {
+            if (!isSecureContentAccountAvailableForMutation(message)
+                    || !message.isFileOrImage() || message.isModerated() || message.isRetracted()) {
+                return false;
+            }
+            if (Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
+                final Conversations application = (Conversations) getApplication();
+                final SecureContentStore store = application.getSecureContentStoreProvider().get();
+                if (new SecureMessageMediaCoordinator(
+                                store, new SecureContentTransferGateway(store))
+                        .resolve(message.getConversation().getAccount().getUuid(), message.getUuid())
+                        == null) {
+                    return false;
+                }
+            }
+            return databaseBackend.persistOutgoingAttachmentUpload(message, expectedBody, remoteUrl);
+        }
+    }
+
     public void sendMessage(final Message message) {
         sendMessage(message, false, false, false);
     }
@@ -3285,6 +3311,38 @@ public class XmppConnectionService extends Service {
             conversation.findUnsentMessagesWithEncryption(
                     Message.ENCRYPTION_OTR,
                     message1 -> markMessage(message1, Message.STATUS_SEND_FAILED));
+        }
+
+        // Transport may complete on another executor. Publish/confirm its row first. A retry
+        // must never recreate a removed row or start HTTP with an unpersisted source message.
+        if ((resend || saveInDb) && message.isFileOrImage() && message.needsUploading()
+                && !forceP2P
+                && (message.getEncryption() == Message.ENCRYPTION_NONE
+                        || message.getEncryption() == Message.ENCRYPTION_AXOLOTL)) {
+            boolean created = false;
+            try {
+                synchronized (secureContentMediaMutationLock) {
+                    if (isSecureContentAccountAvailableForMutation(message)) {
+                        if (!resend && conversation.getMode() == Conversation.MODE_MULTI
+                                && !message.isPrivateMessage()) {
+                            message.setCounterpart(conversation.getMucOptions().getSelf().getFullJid());
+                        }
+                        created = databaseBackend.prepareOutgoingAttachmentMessage(message, !resend);
+                    }
+                }
+            } catch (final RuntimeException error) {
+                Log.w(Config.LOGTAG, "unable to persist outgoing attachment before transport");
+            }
+            if (!created) {
+                message.setStatus(Message.STATUS_SEND_FAILED);
+                if (!resend && addToConversation) {
+                    restoreReplyForMessage(conversation, message);
+                    conversation.add(message);
+                }
+                updateConversationUi();
+                return;
+            }
+            saveInDb = false;
         }
 
         final boolean inProgressJoin = isJoinInProgress(conversation);

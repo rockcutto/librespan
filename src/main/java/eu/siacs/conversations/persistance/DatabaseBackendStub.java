@@ -78,6 +78,17 @@ public class DatabaseBackendStub implements DatabaseBackend {
     }
 
     @Override
+    public boolean prepareOutgoingAttachmentMessage(Message message, boolean insert) {
+        return false;
+    }
+
+    @Override
+    public boolean persistOutgoingAttachmentUpload(
+            Message message, String expectedBody, String remoteUrl) {
+        return false;
+    }
+
+    @Override
     public boolean createProtectedTextMessage(Message message, String accountUuid) {
         return false;
     }

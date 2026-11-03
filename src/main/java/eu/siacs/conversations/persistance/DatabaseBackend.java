@@ -50,6 +50,12 @@ public interface DatabaseBackend extends SecureContentMetadataStore {
     void createConversation(Conversation conversation);
     void createMessage(Message message);
 
+    /** Creates or confirms an owned pending attachment row before transport dispatch. */
+    boolean prepareOutgoingAttachmentMessage(Message message, boolean insert);
+
+    /** CAS-publishes only canonical attachment params; never a generic text body. */
+    boolean persistOutgoingAttachmentUpload(Message message, String expectedBody, String remoteUrl);
+
     /**
      * Atomically persists message metadata with an empty body and claims protected PENDING mode.
      */

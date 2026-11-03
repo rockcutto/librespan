@@ -74,6 +74,7 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
     private Account account;
     private int uploadAttempt = 0;
     private volatile boolean cancelled = false;
+    private final HttpUploadCompletion completion = new HttpUploadCompletion();
     private volatile long slotRequestStartedNanos = 0L;
 
     public HttpUploadConnection(Message message, Method method, HttpConnectionManager httpConnectionManager) {
@@ -113,6 +114,9 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
 
     @Override
     public void cancel() {
+        if (!completion.terminate()) {
+            return;
+        }
         this.cancelled = true;
         final ListenableFuture<SlotRequester.Slot> slotFuture = this.slotFuture;
         if (slotFuture != null && !slotFuture.isDone()) {
@@ -125,9 +129,15 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
             call.cancel();
             Log.d(Config.LOGTAG,"cancelled HTTP request");
         }
+        finish();
+        mXmppConnectionService.markMessage(
+                message, Message.STATUS_SEND_FAILED, Message.ERROR_MESSAGE_CANCELLED);
     }
 
     private void fail(String errorMessage) {
+        if (!completion.terminate()) {
+            return;
+        }
         finish();
         final Call call = this.mostRecentCall;
         final Future<SlotRequester.Slot> slotFuture = this.slotFuture;
@@ -138,7 +148,9 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
     private void finish() {
         clearSecureContentUploadRoute();
         mHttpConnectionManager.finishUploadConnection(this);
-        message.setTransferable(null);
+        if (message.getTransferable() == this) {
+            message.setTransferable(null);
+        }
     }
 
     /**
@@ -418,7 +430,7 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
     private boolean isCancelled() {
         final Call call = this.mostRecentCall;
         final Future<SlotRequester.Slot> future = this.slotFuture;
-        return cancelled
+        return cancelled || completion.isTerminal()
                 || (call != null && call.isCanceled())
                 || (future != null && future.isCancelled());
     }
@@ -464,6 +476,15 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
     }
 
     private void upload() {
+        final SecureContentUploadDescriptor uploadDescriptor;
+        final SecureContentUploadRoute uploadRoute;
+        synchronized (completion) {
+            if (completion.isTerminal()) {
+                return;
+            }
+            uploadDescriptor = secureContentUploadDescriptor;
+            uploadRoute = secureContentUploadRoute;
+        }
         final OkHttpClient client = mHttpConnectionManager.buildHttpClient(
                 slot.put,
                 message.getConversation().getAccount(),
@@ -471,10 +492,10 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
                 true
         );
         final RequestBody requestBody =
-                secureContentUploadDescriptor == null
+                uploadDescriptor == null
                         ? AbstractConnectionManager.requestBody(file, this)
-                        : secureContentUploadRoute.requestBody(
-                                secureContentUploadDescriptor,
+                        : uploadRoute.requestBody(
+                                uploadDescriptor,
                                 file.getKey(),
                                 file.getIv(),
                                 this::onProgress);
@@ -483,7 +504,7 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
                 .put(requestBody)
                 .headers(slot.headers)
                 .build();
-        if (secureContentUploadDescriptor == null &&
+        if (uploadDescriptor == null &&
                 (!file.exists() || !file.isFile() || file.length() <= 0)) {
             fail(mXmppConnectionService.getString(eu.siacs.conversations.R.string.error_file_not_found));
             return;
@@ -492,10 +513,17 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
                 Config.LOGTAG,
                 "uploading file to " + slot.put.host() + " (attempt " + uploadAttempt + ")");
         this.mostRecentCall = client.newCall(request);
+        if (completion.isTerminal()) {
+            this.mostRecentCall.cancel();
+            return;
+        }
         this.mostRecentCall.enqueue(
                 new Callback() {
                     @Override
                     public void onFailure(@NonNull final Call call, final IOException e) {
+                        if (completion.isTerminal() || call != mostRecentCall) {
+                            return;
+                        }
                         SecureMediaPerfTrace.gapSinceLastEvent(
                                 message.getUuid(), "upload_response_wait");
                         if (call.isCanceled()) {
@@ -511,12 +539,15 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
                         SecureMediaPerfTrace.gapSinceLastEvent(
                                 message.getUuid(), "upload_response_wait");
                         try (response) {
+                            if (completion.isTerminal() || call != mostRecentCall) {
+                                return;
+                            }
                             final int code = response.code();
                             if (code >= 200 && code < 300) {
                                 final long expectedPayloadSize =
-                                        secureContentUploadDescriptor == null
+                                        uploadDescriptor == null
                                                 ? file.getExpectedSize()
-                                                : secureContentUploadDescriptor
+                                                : uploadDescriptor
                                                                 .getPlaintextSizeBytes()
                                                         + (key == null ? 0 : 16);
                                 if (expectedPayloadSize > 0 && transmitted != expectedPayloadSize) {
@@ -573,41 +604,26 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
                                 } else {
                                     get = slot.get.toString();
                                 }
-                                if (secureContentUploadDescriptor != null) {
-                                    try {
-                                        final Conversations application =
-                                                (Conversations)
-                                                        mXmppConnectionService.getApplication();
-                                        new SecureMessageMediaFileParamsUpdater(
-                                                        mXmppConnectionService,
-                                                        application
-                                                                .getSecureContentStoreProvider()
-                                                                .get())
-                                                .update(message, get);
-                                        retireLegacyPlaintextAfterSecureUpload();
-                                    } catch (final Exception e) {
-                                        Log.e(Config.LOGTAG, "unable to retire legacy upload plaintext", e);
-                                        fail(
-                                                mXmppConnectionService.getString(
-                                                        eu.siacs.conversations.R.string.file_transmission_failed));
+                                try {
+                                    if (!completeUpload(call, get)) {
                                         return;
                                     }
-                                } else {
-                                    mXmppConnectionService
-                                            .getFileBackend()
-                                            .updateFileParams(message, get);
-                                    if (file != null && file.exists()) {
-                                        mXmppConnectionService
-                                                .getFileBackend()
-                                                .updateMediaScanner(file);
-                                    }
+                                } catch (final UploadPersistenceException error) {
+                                    failPersistence();
+                                    return;
+                                } catch (final IOException | RuntimeException error) {
+                                    fail(mXmppConnectionService.getString(
+                                            eu.siacs.conversations.R.string.file_transmission_failed));
+                                    return;
                                 }
                                 finish();
                                 if (!message.isPrivateMessage()) {
                                     message.setCounterpart(
                                             message.getConversation().getJid().asBareJid());
                                 }
-                                mXmppConnectionService.resendMessage(message, delayed);
+                                if (!message.isModerated() && !message.isRetracted()) {
+                                    mXmppConnectionService.resendMessage(message, delayed);
+                                }
                             } else if (shouldRetryHttpCode(code)) {
                                 retryOrFail("HTTP upload returned status " + code, null);
                             } else {
@@ -617,6 +633,81 @@ public class HttpUploadConnection implements Transferable, AbstractConnectionMan
                     }
                 });
     }
+
+    private boolean completeUpload(final Call call, final String remoteUrl) throws IOException {
+        return completion.publish(() -> {
+            final String previousBody;
+            final int previousType;
+            synchronized (message) {
+                if (call != mostRecentCall || isCancelled() || message.getTransferable() != this
+                        || message.isModerated() || message.isRetracted() || message.isDeleted()) {
+                    throw new UploadPersistenceException();
+                }
+                previousBody = message.getBody();
+                previousType = message.getType();
+            }
+            try {
+                // Retirement clears the resident body under the same Message monitor. Do not
+                // reintroduce content if it races metadata enrichment.
+                synchronized (message) {
+                    if (message.isModerated() || message.isRetracted() || message.isDeleted()) {
+                        throw new UploadPersistenceException();
+                    }
+                    if (secureContentUploadDescriptor != null) {
+                        final Conversations application =
+                                (Conversations) mXmppConnectionService.getApplication();
+                        new SecureMessageMediaFileParamsUpdater(mXmppConnectionService,
+                                application.getSecureContentStoreProvider().get())
+                                .update(message, remoteUrl);
+                    } else {
+                        mXmppConnectionService.getFileBackend().updateFileParams(message, remoteUrl);
+                    }
+                }
+                final boolean stored;
+                try {
+                    stored = mXmppConnectionService.persistOutgoingAttachmentUpload(
+                            message, previousBody, remoteUrl);
+                } catch (final IOException | RuntimeException error) {
+                    throw new UploadPersistenceException();
+                }
+                if (!stored) {
+                    throw new UploadPersistenceException();
+                }
+            } catch (final IOException | RuntimeException error) {
+                synchronized (message) {
+                    if (!message.isModerated() && !message.isRetracted()) {
+                        message.setBody(previousBody);
+                        message.setType(previousType);
+                    }
+                }
+                throw error;
+            }
+            // The durable URL is committed before either retirement or final resend.
+            if (secureContentUploadDescriptor != null) {
+                retireLegacyPlaintextAfterSecureUpload();
+            } else if (file != null && file.exists()) {
+                mXmppConnectionService.getFileBackend().updateMediaScanner(file);
+            }
+        });
+    }
+
+    private void failPersistence() {
+        if (!completion.terminate()) {
+            return;
+        }
+        finish();
+        // A rejected CAS may mean a newer result or a retired row. Do not write stale status
+        // fields back over it, and do not pretend a failed DB write is a durable handoff.
+        if (!message.isModerated() && !message.isRetracted()) {
+            message.setStatus(Message.STATUS_SEND_FAILED);
+            message.setErrorMessage(mXmppConnectionService.getString(
+                    eu.siacs.conversations.R.string.file_transmission_failed));
+        }
+        Log.w(Config.LOGTAG, "outgoing attachment upload result was not persisted");
+        mXmppConnectionService.updateConversationUi();
+    }
+
+    private static final class UploadPersistenceException extends IOException {}
 
     public Message getMessage() {
         return message;
