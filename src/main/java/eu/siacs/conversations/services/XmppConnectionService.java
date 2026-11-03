@@ -8685,6 +8685,36 @@ public class XmppConnectionService extends Service {
         queryMucAffiliationList(conference, MucOptions.Affiliation.ADMIN);
     }
 
+    /** Read-only affiliation observation; does not grant membership or send an invitation. */
+    public MucAffiliationPreflight preflightMucAffiliation(
+            final Account account, final Conversation room, final Jid bareJid,
+            final Consumer<MucAffiliationPreflight.Result> callback) {
+        final var request = new MucAffiliationPreflight(this, account, room, bareJid, callback);
+        request.start();
+        return request;
+    }
+
+    boolean isCurrentMucAffiliationPreflight(
+            final Account account, final Conversation room, final MucOptions options,
+            final XmppConnection connection) {
+        return !destroyed && room.getAccount() == account
+                && findAccountByUuid(account.getUuid()) == account
+                && findConversationByUuid(room.getUuid()) == room
+                && room.getMode() == Conversation.MODE_MULTI && room.getNextCounterpart() == null
+                && room.getStatus() != Conversation.STATUS_ARCHIVED
+                && room.getMucOptions() == options && options.online()
+                && account.getStatus() == Account.State.ONLINE
+                && connection != null && account.getXmppConnection() == connection;
+    }
+
+    void executeMucAffiliationPreflight(final Runnable work) {
+        internalPingExecutor.execute(work);
+    }
+
+    ScheduledFuture<?> scheduleMucAffiliationPreflight(final Runnable timeout, final long seconds) {
+        return internalPingExecutor.schedule(timeout, seconds, TimeUnit.SECONDS);
+    }
+
     private void queryMucAffiliationList(
             final Conversation conference, final MucOptions.Affiliation affiliation) {
         final Iq request = mIqGenerator.queryAffiliation(conference, affiliation.toString());
