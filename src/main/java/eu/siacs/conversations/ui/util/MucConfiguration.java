@@ -7,6 +7,9 @@ import androidx.annotation.StringRes;
 
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.entities.MucOptions;
+import eu.siacs.conversations.services.MucRoomConfiguration;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MucConfiguration {
 
@@ -23,67 +26,42 @@ public class MucConfiguration {
         this.options = options;
     }
 
-    public static MucConfiguration get(Context context, boolean advanced, MucOptions mucOptions) {
-        if (mucOptions.isPrivateAndNonAnonymous()) {
-            String[] names =
-                    new String[] {
-                        context.getString(R.string.allow_participants_to_edit_subject),
-                        context.getString(R.string.allow_participants_to_invite_others)
-                    };
-            boolean[] values =
-                    new boolean[] {
-                        mucOptions.participantsCanChangeSubject(), mucOptions.allowInvites()
-                    };
-            final Option[] options =
-                    new Option[] {
-                        new Option("muc#roomconfig_changesubject"),
-                        new Option("muc#roomconfig_allowinvites")
-                    };
-            return new MucConfiguration(R.string.conference_options, names, values, options);
-        } else {
-            final String[] names;
-            final boolean[] values;
-            final Option[] options;
-            if (advanced) {
-                names =
-                        new String[] {
-                            context.getString(R.string.non_anonymous),
-                            context.getString(R.string.allow_participants_to_edit_subject),
-                            context.getString(R.string.moderated),
-                            context.getString(R.string.allow_private_messages)
-                        };
-                values =
-                        new boolean[] {
-                            mucOptions.nonanonymous(),
-                            mucOptions.participantsCanChangeSubject(),
-                            mucOptions.moderated(),
-                            mucOptions.allowPmRaw()
-                        };
-                options =
-                        new Option[] {
-                            new Option("muc#roomconfig_whois", "anyone", "moderators"),
-                            new Option("muc#roomconfig_changesubject"),
-                            new Option("muc#roomconfig_moderatedroom"),
-                            new Option("muc#roomconfig_allowpm", "anyone", "moderators"),
-                        };
-            } else {
-                names =
-                        new String[] {
-                            context.getString(R.string.non_anonymous),
-                            context.getString(R.string.allow_participants_to_edit_subject),
-                        };
-                values =
-                        new boolean[] {
-                            mucOptions.nonanonymous(), mucOptions.participantsCanChangeSubject()
-                        };
-                options =
-                        new Option[] {
-                            new Option("muc#roomconfig_whois", "anyone", "moderators"),
-                            new Option("muc#roomconfig_changesubject")
-                        };
-            }
-            return new MucConfiguration(R.string.channel_options, names, values, options);
+    public static MucConfiguration get(Context context, boolean advanced, MucOptions mucOptions,
+            MucRoomConfiguration form) {
+        List<String> names = new ArrayList<>();
+        List<Boolean> values = new ArrayList<>();
+        List<Option> options = new ArrayList<>();
+        add(context, form, names, values, options, MucRoomConfiguration.MEMBERS, R.string.muc_members_only_label);
+        add(context, form, names, values, options, MucRoomConfiguration.PUBLIC, R.string.muc_public_room_label);
+        add(context, form, names, values, options, MucRoomConfiguration.SUBJECT, R.string.allow_participants_to_edit_subject);
+        add(context, form, names, values, options,
+                form.supports(MucRoomConfiguration.INVITES) ? MucRoomConfiguration.INVITES
+                        : MucRoomConfiguration.MEMBER_INVITES,
+                R.string.allow_participants_to_invite_others);
+        if (form.canChangeWhois(mucOptions)) {
+            add(context, form, names, values, options, MucRoomConfiguration.WHOIS, R.string.non_anonymous);
         }
+        if (advanced) {
+            add(context, form, names, values, options, MucRoomConfiguration.MODERATED, R.string.moderated);
+            add(context, form, names, values, options, MucRoomConfiguration.PM, R.string.allow_private_messages);
+        }
+        boolean[] checked = new boolean[values.size()];
+        for (int i = 0; i < checked.length; i++) checked[i] = values.get(i);
+        return new MucConfiguration(R.string.conference_options, names.toArray(new String[0]), checked,
+                options.toArray(new Option[0]));
+    }
+
+    private static void add(Context context, MucRoomConfiguration form, List<String> names,
+            List<Boolean> values, List<Option> options, String name, int label) {
+        if (!form.supports(name)) return;
+        names.add(context.getString(label));
+        values.add(form.enabled(name));
+        options.add(MucRoomConfiguration.WHOIS.equals(name) || MucRoomConfiguration.PM.equals(name)
+                ? new Option(name, "anyone", "moderators") : new Option(name));
+    }
+
+    public boolean isMembersOption(int index) {
+        return MucRoomConfiguration.MEMBERS.equals(options[index].name);
     }
 
     public static String describe(final Context context, final MucOptions mucOptions) {
@@ -119,6 +97,7 @@ public class MucConfiguration {
     public Bundle toBundle(boolean[] values) {
         Bundle bundle = new Bundle();
         for (int i = 0; i < values.length; ++i) {
+            if (values[i] == this.values[i]) continue;
             final Option option = options[i];
             bundle.putString(option.name, option.values[values[i] ? 0 : 1]);
         }

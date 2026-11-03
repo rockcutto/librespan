@@ -9638,7 +9638,7 @@ public class XmppConnectionService extends Service {
         new Thread(() -> reconnectAccount(account, false, true)).start();
     }
 
-    public void invite(final Conversation conversation, final Jid contact) {
+    public boolean invite(final Conversation conversation, final Jid contact) {
         Log.d(
                 Config.LOGTAG,
                 conversation.getAccount().getJid().asBareJid()
@@ -9648,11 +9648,15 @@ public class XmppConnectionService extends Service {
                         + conversation.getJid().asBareJid());
         final MucOptions.User user =
                 conversation.getMucOptions().findUserByRealJid(contact.asBareJid());
-        if (user == null || user.getAffiliation() == MucOptions.Affiliation.OUTCAST) {
-            changeAffiliationInConference(conversation, contact, MucOptions.Affiliation.NONE, null);
+        // Inviting is not an implicit unban or affiliation reset. An absent local user may
+        // already be a member/admin/owner. The room authorizes the mediated invitation.
+        if (user != null && user.getAffiliation() == MucOptions.Affiliation.OUTCAST) {
+            showErrorToastInUi(R.string.muc_invite_banned);
+            return false;
         }
         final var packet = mMessageGenerator.invite(conversation, contact);
         sendMessagePacket(conversation.getAccount(), packet);
+        return true; // Locally sent, not a server acknowledgement of delivery or membership.
     }
 
     public void directInvite(Conversation conversation, Jid jid) {

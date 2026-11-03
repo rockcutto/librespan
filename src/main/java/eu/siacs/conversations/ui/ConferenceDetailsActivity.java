@@ -35,6 +35,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputLayout;
 import com.google.android.material.textfield.TextInputEditText;
 import eu.siacs.conversations.services.MucPasswordController;
+import eu.siacs.conversations.services.MucRoomConfiguration;
+import eu.siacs.conversations.services.MucRoomConfigurationController;
 import eu.siacs.conversations.services.MucPasswordChange;
 import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1;
 
@@ -189,59 +191,123 @@ public class ConferenceDetailsActivity extends XmppActivity
                 }
             };
 
-    private final OnClickListener mChangeConferenceSettings =
-            new OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    final MucOptions mucOptions = mConversation.getMucOptions();
-                    final MaterialAlertDialogBuilder builder =
-                            new MaterialAlertDialogBuilder(ConferenceDetailsActivity.this);
-                    MucConfiguration configuration =
-                            MucConfiguration.get(
-                                    ConferenceDetailsActivity.this, mAdvancedMode, mucOptions);
-                    builder.setTitle(configuration.title);
-                    final boolean[] values = configuration.values;
-                    final View optionsView =
-                            LayoutInflater.from(ConferenceDetailsActivity.this)
-                                    .inflate(R.layout.dialog_binary_settings, null, false);
-                    final LinearLayout optionsContainer =
-                            optionsView.findViewById(R.id.binary_settings_container);
-                    for (int i = 0; i < configuration.names.length; i++) {
-                        final int index = i;
-                        final View row =
-                                LayoutInflater.from(ConferenceDetailsActivity.this)
-                                        .inflate(
-                                                R.layout.item_binary_setting,
-                                                optionsContainer,
-                                                false);
-                        final TextView title = row.findViewById(R.id.binary_setting_title);
-                        final SwitchCompat toggle = row.findViewById(R.id.binary_setting_switch);
-                        title.setText(configuration.names[index]);
-                        toggle.setOnCheckedChangeListener(null);
-                        toggle.setChecked(values[index]);
-                        toggle.setOnCheckedChangeListener(
-                                (button, checked) -> values[index] = checked);
-                        row.setOnClickListener(clickedView -> toggle.toggle());
-                        optionsContainer.addView(row);
-                    }
-                    builder.setView(optionsView);
-                    builder.setNegativeButton(R.string.cancel, null);
-                    builder.setPositiveButton(
-                            R.string.confirm,
-                            (dialog, which) -> {
-                                final Bundle options = configuration.toBundle(values);
-                                options.putString("muc#roomconfig_persistentroom", "1");
-                                if (options.containsKey("muc#roomconfig_allowinvites")) {
-                                    options.putString(
-                                            "{http://prosody.im/protocol/muc}roomconfig_allowmemberinvites",
-                                            options.getString("muc#roomconfig_allowinvites"));
-                                }
-                                xmppConnectionService.pushConferenceConfiguration(
-                                        mConversation, options, ConferenceDetailsActivity.this);
-                            });
-                    builder.create().show();
-                }
-            };
+    private boolean roomConfigBusy;
+    private int roomConfigGeneration;
+    private AlertDialog roomConfigDialog;
+    private AlertDialog roomConfigConfirmation;
+    private MucRoomConfigurationController roomConfigController;
+    private final OnClickListener mChangeConferenceSettings = v -> openRoomConfiguration();
+
+    private void openRoomConfiguration() {
+        if (roomConfigBusy || roomConfigDialog != null || xmppConnectionService == null
+                || !MucPasswordController.canManage(mConversation)) return;
+        final Conversation room = mConversation;
+        final int generation = ++roomConfigGeneration;
+        roomConfigController = new MucRoomConfigurationController(xmppConnectionService, room);
+        roomConfigBusy = true;
+        binding.mucAdminPermissionsRow.setEnabled(false);
+        displayToast(getString(R.string.muc_config_loading));
+        roomConfigController.query(result -> runOnUiThread(() -> {
+            if (!currentRoomConfiguration(room, generation)) return;
+            roomConfigBusy = false;
+            binding.mucAdminPermissionsRow.setEnabled(true);
+            if (result.status != MucRoomConfigurationController.Status.READY) {
+                receiveRoomConfiguration(result, room, generation);
+                return;
+            }
+            showRoomConfiguration(result.configuration, room, generation);
+        }));
+    }
+
+    private boolean currentRoomConfiguration(Conversation room, int generation) {
+        return roomConfigGeneration == generation && mConversation == room
+                && !isFinishing() && !isDestroyed();
+    }
+
+    private void showRoomConfiguration(MucRoomConfiguration form, Conversation room, int generation) {
+        final MucConfiguration configuration = MucConfiguration.get(this, mAdvancedMode, room.getMucOptions(), form);
+        if (configuration.names.length == 0) {
+            cancelRoomConfiguration();
+            displayToast(getString(R.string.muc_config_unsupported));
+            return;
+        }
+        final boolean[] values = configuration.values.clone();
+        final View optionsView = LayoutInflater.from(this).inflate(R.layout.dialog_binary_settings, null, false);
+        final LinearLayout container = optionsView.findViewById(R.id.binary_settings_container);
+        for (int i = 0; i < configuration.names.length; i++) {
+            final int index = i;
+            final View row = LayoutInflater.from(this).inflate(R.layout.item_binary_setting, container, false);
+            final TextView title = row.findViewById(R.id.binary_setting_title);
+            final SwitchCompat toggle = row.findViewById(R.id.binary_setting_switch);
+            final boolean members = configuration.isMembersOption(index);
+            title.setText(members ? configuration.names[index] + "\n" + getString(R.string.muc_members_only_description)
+                    : configuration.names[index]);
+            toggle.setChecked(values[index]);
+            final boolean editable = !members || form.canChangeMembers(room.getMucOptions());
+            toggle.setEnabled(editable); row.setEnabled(editable); title.setEnabled(editable);
+            toggle.setOnCheckedChangeListener((button, checked) -> values[index] = checked);
+            row.setOnClickListener(clicked -> toggle.toggle());
+            container.addView(row);
+        }
+        final String message = getString(R.string.muc_config_visibility_hint)
+                + (form.supports(MucRoomConfiguration.MEMBERS) && !form.canChangeMembers(room.getMucOptions())
+                        ? "\n\n" + getString(R.string.muc_config_members_unavailable) : "");
+        final AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+                .setTitle(configuration.title).setMessage(message).setView(optionsView)
+                .setNegativeButton(R.string.cancel, null).setPositiveButton(R.string.confirm, null).create();
+        roomConfigDialog = dialog;
+        dialog.setOnDismissListener(ignored -> { if (roomConfigDialog == dialog) cancelRoomConfiguration(); });
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            if (!currentRoomConfiguration(room, generation) || roomConfigBusy) return;
+            final Bundle changes = configuration.toBundle(values);
+            final Runnable save = () -> saveRoomConfiguration(form, changes, room, generation);
+            if ("1".equals(changes.getString(MucRoomConfiguration.MEMBERS))) {
+                if (roomConfigConfirmation != null && roomConfigConfirmation.isShowing()) return;
+                roomConfigConfirmation = new MaterialAlertDialogBuilder(this)
+                        .setTitle(R.string.muc_members_only_label).setMessage(R.string.muc_members_only_warning)
+                        .setNegativeButton(R.string.cancel, null)
+                        .setPositiveButton(R.string.confirm, (warning, which) -> save.run()).show();
+            } else save.run();
+        }));
+        dialog.show();
+    }
+
+    private void saveRoomConfiguration(MucRoomConfiguration original, Bundle changes, Conversation room, int generation) {
+        if (!currentRoomConfiguration(room, generation) || roomConfigBusy || roomConfigController == null) return;
+        roomConfigBusy = true;
+        binding.mucAdminPermissionsRow.setEnabled(false);
+        if (roomConfigDialog != null) roomConfigDialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+        roomConfigController.save(original, changes,
+                result -> runOnUiThread(() -> receiveRoomConfiguration(result, room, generation)));
+    }
+
+    private void receiveRoomConfiguration(MucRoomConfigurationController.Result result, Conversation room, int generation) {
+        if (!currentRoomConfiguration(room, generation)) return;
+        cancelRoomConfiguration();
+        final int message = result.status == MucRoomConfigurationController.Status.SAVED ? R.string.muc_config_saved
+                : result.status == MucRoomConfigurationController.Status.READY ? 0
+                : result.status == MucRoomConfigurationController.Status.CONFLICT ? R.string.muc_config_conflict
+                : result.status == MucRoomConfigurationController.Status.UNSUPPORTED ? R.string.muc_config_unsupported
+                : result.status == MucRoomConfigurationController.Status.REJECTED ? R.string.muc_config_rejected
+                : result.status == MucRoomConfigurationController.Status.TIMEOUT ? R.string.muc_config_timeout
+                : R.string.muc_config_unconfirmed;
+        if (message != 0) displayToast(getString(message));
+        updateView();
+    }
+
+    private void cancelRoomConfiguration() {
+        ++roomConfigGeneration;
+        roomConfigBusy = false;
+        if (roomConfigController != null) roomConfigController.cancel();
+        roomConfigController = null;
+        final AlertDialog dialog = roomConfigDialog;
+        roomConfigDialog = null;
+        if (dialog != null) dialog.dismiss();
+        if (roomConfigConfirmation != null) roomConfigConfirmation.dismiss();
+        roomConfigConfirmation = null;
+        if (binding != null) binding.mucAdminPermissionsRow.setEnabled(true);
+    }
+
 
     @Override
     public void onConversationUpdate() {
@@ -1041,6 +1107,7 @@ public class ConferenceDetailsActivity extends XmppActivity
 
     @Override
     public void onPause() {
+        cancelRoomConfiguration();
         clearRoomPasswordDialog();
         super.onPause();
     }
@@ -1153,6 +1220,7 @@ public class ConferenceDetailsActivity extends XmppActivity
                                         : R.string.muc_admin_moderator_summary);
                 this.binding.mucAdminPermissionsRow.setVisibility(
                         ownerAccess ? View.VISIBLE : View.GONE);
+                this.binding.mucAdminPermissionsRow.setEnabled(ownerAccess && !roomConfigBusy);
             }
 
             if (managementAccess) {

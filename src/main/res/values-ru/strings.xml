@@ -1844,4 +1844,19 @@
     <string name="muc_password_unknown">Состояние пароля неизвестно</string>
     <string name="muc_password_set">Установить или изменить пароль</string>
     <string name="conference_password_incorrect">Неверный пароль конференции. Попробуйте ещё раз.</string>
+
+    <string name="muc_members_only_label">Вход только для участников</string>
+    <string name="muc_members_only_description">Войти могут только пользователи, которым предоставлено членство в комнате.</string>
+    <string name="muc_public_room_label">Показывать комнату в каталоге</string>
+    <string name="muc_members_only_warning">Пользователи без членства могут быть исключены из комнаты. Продолжить?</string>
+    <string name="muc_config_visibility_hint">Скрытая в каталоге комната не защищена от входа посторонних.</string>
+    <string name="muc_config_members_unavailable">Изменение режима членства для этой комнаты пока недоступно в этом редакторе.</string>
+    <string name="muc_config_saved">Настройки комнаты подтверждены сервером</string>
+    <string name="muc_config_conflict">Настройки комнаты изменились. Откройте их заново перед сохранением.</string>
+    <string name="muc_config_unsupported">Эти настройки недоступны или не предоставлены сервером.</string>
+    <string name="muc_config_unconfirmed">Не удалось подтвердить настройки комнаты. Откройте их заново для проверки или повторной попытки.</string>
+    <string name="muc_invite_banned">Этот пользователь заблокирован в комнате. Перед приглашением снимите запрет явно.</string>
+    <string name="muc_config_loading">Загрузка настроек комнаты…</string>
+    <string name="muc_config_rejected">Запрос настроек комнаты отклонён. Проверьте права и повторите попытку.</string>
+    <string name="muc_config_timeout">Время ожидания ответа истекло. Откройте настройки заново для проверки результата.</string>
 </resources>

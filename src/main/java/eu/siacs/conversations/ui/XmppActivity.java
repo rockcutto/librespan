@@ -1235,11 +1235,12 @@ public abstract class XmppActivity extends ActionBarActivity {
                 return Result.FAILED;
             }
             if (conversation.getMode() == Conversation.MODE_MULTI) {
+                boolean accepted = true;
                 for (final Jid jid : jids) {
                     // TODO use direct invites for public conferences
-                    service.invite(conversation, jid.asBareJid());
+                    accepted &= service.invite(conversation, jid.asBareJid());
                 }
-                return Result.INVITES_SENT;
+                return accepted ? Result.INVITES_SENT : Result.FAILED;
             } else {
                 final ArrayList<Jid> conferenceMembers = new ArrayList<>(jids);
                 conferenceMembers.add(conversation.getJid().asBareJid());

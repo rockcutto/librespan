@@ -1811,4 +1811,19 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_password_unknown">Password status unknown</string>
     <string name="muc_password_set">Set or change password</string>
     <string name="conference_password_incorrect">Incorrect conference password. Please try again.</string>
+
+    <string name="muc_members_only_label">Members only</string>
+    <string name="muc_members_only_description">Only users who have been granted room membership can enter.</string>
+    <string name="muc_public_room_label">Show room in the directory</string>
+    <string name="muc_members_only_warning">Users without membership may be removed from the room. Continue?</string>
+    <string name="muc_config_visibility_hint">Hiding a room from the directory does not restrict who can enter.</string>
+    <string name="muc_config_members_unavailable">Changing membership rules is not available for this room in this editor.</string>
+    <string name="muc_config_saved">Room settings confirmed by the server</string>
+    <string name="muc_config_conflict">Room settings changed. Open the settings again before saving.</string>
+    <string name="muc_config_unsupported">These settings are unavailable or were not provided by the server.</string>
+    <string name="muc_config_unconfirmed">Could not confirm the room settings. Open the settings again to check or retry.</string>
+    <string name="muc_invite_banned">This user is banned. Change the ban explicitly before inviting them.</string>
+    <string name="muc_config_loading">Loading room settings…</string>
+    <string name="muc_config_rejected">Room settings request was rejected. Check your permissions and try again.</string>
+    <string name="muc_config_timeout">The room settings request timed out. Open the settings again to check the result.</string>
 </resources>
