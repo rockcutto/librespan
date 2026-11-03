@@ -323,7 +323,7 @@ public class MucJoinReliabilityTest {
         assertEquals(1, f.service.deadlines.size());
     }
 
-    private static final class Fixture {
+    static final class Fixture {
         final TestService service = new TestService();
         final Account account = new Account(Jid.of("guest@example.test/device"), "");
         final Conversation room = new Conversation("room", account, Jid.of("room@conference.example"), Conversation.MODE_MULTI, null);
@@ -377,17 +377,21 @@ public class MucJoinReliabilityTest {
         }
     }
 
-    private static final class TestService extends XmppConnectionService {
+    static final class TestService extends XmppConnectionService {
         TestService() { attachBaseContext(RuntimeEnvironment.getApplication()); }
         Conversation room;
         String password;
         boolean acceptPassword = true;
         int ui;
         int roster;
+        Runnable duringJoinSend;
         final List<Consumer<Iq>> iqs = new ArrayList<>();
         final List<Long> iqTimeouts = new ArrayList<>();
         final List<Presence> sent = new ArrayList<>();
         final List<Deadline> deadlines = new ArrayList<>();
+        final List<Runnable> catchups = new ArrayList<>();
+        final List<Iq> mamRequests = new ArrayList<>();
+        final List<Consumer<Iq>> mamCallbacks = new ArrayList<>();
         final AvatarService avatars = new AvatarService(this) {
             @Override public void clear(MucOptions options) {}
             @Override public void clear(MucOptions.User user) {}
@@ -395,6 +399,7 @@ public class MucJoinReliabilityTest {
         @Override public List<Conversation> findAll(Account account, Jid jid) { return List.of(room); }
         @Override public List<Conversation> getConversations() { return List.of(room); }
         @Override public AvatarService getAvatarService() { return avatars; }
+        @Override public long getAutomaticMessageDeletionDate() { return 0L; }
         @Override public void updateConversationUi() { ui++; }
         @Override public void updateMucRosterUi() { roster++; }
         @Override public void updateConversation(Conversation conversation) {}
@@ -409,7 +414,21 @@ public class MucJoinReliabilityTest {
         @Override public void sendIqPacket(Account account, Iq iq, Consumer<Iq> callback, Long timeout) {
             iqs.add(callback); iqTimeouts.add(timeout);
         }
-        @Override public void sendPresencePacket(Account account, Presence packet) { sent.add(packet); }
+        @Override public void sendPresencePacket(Account account, Presence packet) {
+            sent.add(packet);
+            if (duringJoinSend != null && packet.hasChild("x", Namespace.MUC)) duringJoinSend.run();
+        }
+        @Override public void sendIqPacket(Account account, Iq iq, Consumer<Iq> callback) {
+            assertFalse("MAM must not run under Conversation", Thread.holdsLock(room));
+            mamRequests.add(iq);
+            mamCallbacks.add(callback);
+        }
+        @Override void dispatchMucJoinCatchup(Runnable task) { catchups.add(task); }
+        void runCatchups() {
+            List<Runnable> tasks = new ArrayList<>(catchups);
+            catchups.clear();
+            for (Runnable task : tasks) task.run();
+        }
         @Override void dispatchMucJoinTimeout(Runnable task) { task.run(); }
         @Override ScheduledFuture<?> scheduleMucJoinTimeout(Runnable task) {
             Deadline deadline = new Deadline(task);

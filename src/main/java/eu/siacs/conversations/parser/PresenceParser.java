@@ -42,6 +42,7 @@ public class PresenceParser extends AbstractParser
         }
 
         for (Conversation conversation : res) {
+            MucOptions joined = null;
             synchronized (conversation) {
                 final MucOptions mucOptions = conversation.getMucOptions();
                 final MucJoinAttempt attempt = mucOptions.getJoinAttempt();
@@ -73,6 +74,9 @@ public class PresenceParser extends AbstractParser
                 final boolean voiceRequestPendingBefore = mucOptions.isVoiceRequestPending();
                 final List<MucOptions.User> tileUserBefore = mucOptions.getUsers(5);
                 processConferencePresence(packet, conversation);
+                if (!before && mucOptions.online()) {
+                    joined = mucOptions;
+                }
                 if (attempt.hasStarted() && !attempt.isPending()) {
                     mXmppConnectionService.onMucJoinStateChanged(mucOptions);
                 }
@@ -93,6 +97,9 @@ public class PresenceParser extends AbstractParser
                 } else if (mucOptions.online()) {
                     mXmppConnectionService.updateMucRosterUi();
                 }
+            }
+            if (joined != null) {
+                mXmppConnectionService.onMucJoinConfirmed(joined);
             }
         }
     }

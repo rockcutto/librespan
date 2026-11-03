@@ -6834,6 +6834,30 @@ public class XmppConnectionService extends Service {
         }
     }
 
+    public void onMucJoinConfirmed(final MucOptions options) {
+        // Defer past the parser/join callback: MAM takes its own query locks and must never
+        // run while a presence handler (or a reentrant join callback) owns Conversation.
+        dispatchMucJoinCatchup(() -> {
+            final Conversation conversation = options.getConversation();
+            final MessageArchiveService archive = getMessageArchiveService();
+            // Include initial/reverse history queries, which are not marked as catchup.
+            final boolean historyInProgress = archive.queryInProgress(conversation);
+            synchronized (conversation) {
+                if (!isCurrentMucJoin(conversation, options) || !options.online()
+                        || !options.mamSupport() || !options.getJoinAttempt().claimCatchup()) {
+                    return;
+                }
+            }
+            if (!historyInProgress) {
+                archive.catchupMUC(conversation);
+            }
+        });
+    }
+
+    void dispatchMucJoinCatchup(final Runnable catchup) {
+        internalPingExecutor.execute(catchup);
+    }
+
     public void onMucJoinStateChanged(final MucOptions options) {
         final Conversation conversation = options.getConversation();
         synchronized (conversation) {
@@ -7051,9 +7075,6 @@ public class XmppConnectionService extends Service {
                                         databaseBackend.updateConversation(conversation);
                                     }
 
-                                    if (mucOptions.mamSupport()) {
-                                        getMessageArchiveService().catchupMUC(conversation);
-                                    }
                                     if (mucOptions.isPrivateAndNonAnonymous()) {
                                         fetchConferenceMembers(conversation);
 

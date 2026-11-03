@@ -11,6 +11,8 @@ public final class MucJoinAttempt {
     private boolean pending;
     private boolean sent;
     private boolean passwordSupplied;
+    private boolean confirmed;
+    private boolean catchupClaimed;
     private Future<?> timeout;
 
     public synchronized void begin() {
@@ -40,7 +42,21 @@ public final class MucJoinAttempt {
         else timeout.cancel(false);
     }
 
+    /** Only a server-confirmed self presence can authorize automatic room history. */
+    public synchronized void confirm() {
+        final boolean accepted = confirmed || (pending && sent);
+        finish();
+        confirmed = accepted;
+    }
+
+    public synchronized boolean claimCatchup() {
+        if (!confirmed || catchupClaimed) return false;
+        catchupClaimed = true;
+        return true;
+    }
+
     public synchronized void finish() {
+        confirmed = false;
         pending = false;
         if (timeout != null) {
             timeout.cancel(false);

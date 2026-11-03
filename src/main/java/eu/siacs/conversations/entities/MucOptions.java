@@ -585,7 +585,7 @@ public class MucOptions {
     }
 
     public boolean setOnline() {
-        joinAttempt.finish();
+        joinAttempt.confirm();
         boolean before = this.isOnline;
         this.isOnline = true;
         return !before;
