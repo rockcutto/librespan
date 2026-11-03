@@ -91,6 +91,7 @@ public class AttachFileToConversationRunnable implements Runnable, TranscoderLis
         if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
                 && (SecureOutgoingAttachmentPolicy.isSimpleFile(mimeType)
                         || SecureOutgoingAttachmentPolicy.isImageAttachment(mimeType)
+                        || SecureOutgoingAttachmentPolicy.isAudioAttachment(mimeType)
                         || SecureOutgoingAttachmentPolicy.isVideoAttachment(mimeType)
                         || SecureOutgoingAttachmentPolicy.isInlineVoiceRecording(
                                 mimeType,

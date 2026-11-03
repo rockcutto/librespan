@@ -64,7 +64,8 @@ class SecureOutgoingAttachmentIngressTest {
         assertTrue(store.allocateAttempted)
     }
 
-    private class FakeStore : SecureContentStore {
+    internal class FakeStore : SecureContentStore {
+        var failCommit = false
         var objectSnapshot: SecureContentObject? = null
         var payload = ByteArray(0)
 
@@ -94,6 +95,7 @@ class SecureOutgoingAttachmentIngressTest {
                             get() = objectSnapshot!!.state
 
                         override fun commit(): SecureContentObject {
+                            if (failCommit) throw IOException("simulated commit failure")
                             payload = bytes.toByteArray()
                             val current = objectSnapshot ?: error("missing object")
                             objectSnapshot =
@@ -146,8 +148,23 @@ class SecureOutgoingAttachmentIngressTest {
                 },
             )
 
-        override fun open(accountUuid: String, contentId: String): SecureContentReadSession =
-            throw UnsupportedOperationException()
+        override fun open(accountUuid: String, contentId: String): SecureContentReadSession {
+            val snapshot = find(accountUuid, contentId)
+                ?.takeIf { it.state == SecureContentState.COMMITTED }
+                ?: throw IOException("missing committed object")
+            return object : SecureContentReadSession {
+                override val handle = snapshot.handle
+                override var state = SecureContentReadState.OPEN
+                private val input = ByteArrayInputStream(payload)
+                override fun openPlaintextInputStream() = input
+                override fun verifyTerminal(): SecureContentObject {
+                    check(input.available() == 0)
+                    state = SecureContentReadState.TERMINAL_VERIFIED
+                    return snapshot
+                }
+                override fun close() { state = SecureContentReadState.CLOSED }
+            }
+        }
 
         override fun delete(accountUuid: String, contentId: String) {
             if (objectSnapshot?.accountUuid == accountUuid &&
