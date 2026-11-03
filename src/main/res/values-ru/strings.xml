@@ -1859,4 +1859,21 @@
     <string name="muc_config_loading">Загрузка настроек комнаты…</string>
     <string name="muc_config_rejected">Запрос настроек комнаты отклонён. Проверьте права и повторите попытку.</string>
     <string name="muc_config_timeout">Время ожидания ответа истекло. Откройте настройки заново для проверки результата.</string>
+    <string name="muc_safe_invite_summary">Приглашения переданы на отправку: %1$d/%2$d. Доставка не подтверждена.</string>
+    <string name="muc_safe_invite_reason_count">%1$s: %2$d</string>
+    <string name="muc_safe_invite_checking">Проверка доступа в конференцию…</string>
+    <string name="muc_safe_invite_membership">Для доступа требуется членство; назначьте его отдельно перед приглашением</string>
+    <string name="muc_safe_invite_forbidden">Сервер не позволил проверить права</string>
+    <string name="muc_safe_invite_timeout">Истекло время проверки приглашения</string>
+    <string name="muc_safe_invite_interrupted">Комната или соединение изменились; приглашение прервано</string>
+    <string name="muc_safe_invite_cancelled">Приглашение отменено</string>
+    <string name="muc_safe_invite_busy">Приглашение для этого участника уже выполняется</string>
+    <string name="muc_safe_invite_unconfirmed">Результат отправки не подтверждён; проверьте перед повтором</string>
+    <string name="muc_safe_invite_unverifiable">Не удалось безопасно проверить доступ в конференцию</string>
+    <string name="muc_safe_invite_partial">Часть приглашений не отправлена или результат не подтверждён.</string>
+    <string name="muc_bootstrap_created">Комната создана и настроена.</string>
+    <string name="muc_bootstrap_unknown">Результат настройки комнаты неизвестен. Проверьте комнату перед повторной попыткой.</string>
+    <string name="muc_bootstrap_access">Доступ уже был: %1$d. Участие подтверждено: %2$d.</string>
+    <string name="muc_bootstrap_other_devices">Приглашения другим вашим устройствам переданы на отправку: %1$d/%2$d.</string>
+    <string name="muc_bootstrap_partial">Часть приглашений не отправлена или результат неизвестен. Заблокировано: %1$d. Недостаточно прав: %2$d. Ошибок: %3$d. Неопределённых: %4$d.</string>
 </resources>

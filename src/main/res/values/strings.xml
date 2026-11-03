@@ -1826,4 +1826,21 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_config_loading">Loading room settings…</string>
     <string name="muc_config_rejected">Room settings request was rejected. Check your permissions and try again.</string>
     <string name="muc_config_timeout">The room settings request timed out. Open the settings again to check the result.</string>
+    <string name="muc_safe_invite_summary">Invitations handed off: %1$d/%2$d. Delivery is not confirmed.</string>
+    <string name="muc_safe_invite_reason_count">%1$s: %2$d</string>
+    <string name="muc_safe_invite_checking">Checking room access…</string>
+    <string name="muc_safe_invite_membership">Membership is required; grant it separately before inviting</string>
+    <string name="muc_safe_invite_forbidden">The server did not permit the access check</string>
+    <string name="muc_safe_invite_timeout">The invitation check timed out</string>
+    <string name="muc_safe_invite_interrupted">The room or connection changed; invitation interrupted</string>
+    <string name="muc_safe_invite_cancelled">Invitation cancelled</string>
+    <string name="muc_safe_invite_busy">An invitation for this participant is already pending</string>
+    <string name="muc_safe_invite_unconfirmed">The sending result is unconfirmed; check before retrying</string>
+    <string name="muc_safe_invite_unverifiable">Room access could not be verified safely</string>
+    <string name="muc_safe_invite_partial">Some invitations were not sent or their result is unconfirmed.</string>
+    <string name="muc_bootstrap_created">Room created and configured.</string>
+    <string name="muc_bootstrap_unknown">Room setup result is unknown. Check the room before trying again.</string>
+    <string name="muc_bootstrap_access">Already had access: %1$d. Membership verified: %2$d.</string>
+    <string name="muc_bootstrap_other_devices">Invitations to your other devices handed off: %1$d/%2$d.</string>
+    <string name="muc_bootstrap_partial">Some invitations were not sent or remain unconfirmed. Blocked: %1$d. Permission denied: %2$d. Errors: %3$d. Uncertain: %4$d.</string>
 </resources>

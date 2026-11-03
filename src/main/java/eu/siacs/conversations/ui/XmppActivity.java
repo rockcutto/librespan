@@ -982,11 +982,53 @@ public abstract class XmppActivity extends ActionBarActivity {
         }
     }
 
+    private final java.util.Set<eu.siacs.conversations.services.MucInvitationCoordinator.Ticket> mucInvitationTickets = new java.util.HashSet<>();
+
+    public void startMucInvitations(final Conversation room, final Collection<Jid> recipients) {
+        showMucInvitationChecking();
+        final WeakReference<XmppActivity> reference = new WeakReference<>(this);
+        final XmppConnectionService service = xmppConnectionService;
+        final var ticket = service.inviteMucSafely(room, recipients, summary -> {
+            final XmppActivity activity = reference.get();
+            if (activity == null) return;
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing() || activity.isDestroyed() || activity.xmppConnectionService != service) return;
+                activity.mucInvitationTickets.removeIf(eu.siacs.conversations.services.MucInvitationCoordinator.Ticket::isDone);
+                activity.showMucInvitationSummary(summary);
+            });
+        });
+        if (!ticket.isDone()) mucInvitationTickets.add(ticket);
+    }
+
+    public void showMucInvitationChecking() {
+        mToast = Toast.makeText(this, R.string.muc_safe_invite_checking, Toast.LENGTH_SHORT);
+        mToast.show();
+    }
+
+    public void showMucInvitationSummary(final eu.siacs.conversations.services.MucInvitationCoordinator.Summary summary) {
+        mToast = Toast.makeText(this, summary.describe(this), Toast.LENGTH_LONG);
+        mToast.show();
+    }
+
+    protected void cancelMucInvitationRequests() {
+        final var pending = new ArrayList<>(mucInvitationTickets);
+        mucInvitationTickets.clear();
+        for (final var ticket : pending) ticket.cancel();
+    }
+
+    @Override
+    protected void onDestroy() {
+        cancelMucInvitationRequests();
+        super.onDestroy();
+    }
+
     void handleConferenceInviteResult(final ConferenceInvite.Result result) {
         if (result == null) {
             return;
         }
         switch (result) {
+            case INVITES_PENDING:
+                break; // Final counts and reasons arrive only from the asynchronous summary.
             case CREATING_CONFERENCE:
                 mToast = Toast.makeText(this, R.string.creating_conference, Toast.LENGTH_LONG);
                 mToast.show();
@@ -1205,6 +1247,7 @@ public abstract class XmppActivity extends ActionBarActivity {
     public static class ConferenceInvite {
         public enum Result {
             INVITES_SENT,
+            INVITES_PENDING,
             CREATING_CONFERENCE,
             FAILED
         }
@@ -1235,12 +1278,8 @@ public abstract class XmppActivity extends ActionBarActivity {
                 return Result.FAILED;
             }
             if (conversation.getMode() == Conversation.MODE_MULTI) {
-                boolean accepted = true;
-                for (final Jid jid : jids) {
-                    // TODO use direct invites for public conferences
-                    accepted &= service.invite(conversation, jid.asBareJid());
-                }
-                return accepted ? Result.INVITES_SENT : Result.FAILED;
+                activity.startMucInvitations(conversation, jids);
+                return Result.INVITES_PENDING;
             } else {
                 final ArrayList<Jid> conferenceMembers = new ArrayList<>(jids);
                 conferenceMembers.add(conversation.getJid().asBareJid());

@@ -86,15 +86,20 @@ public class MucInviteAffiliationSafetyTest {
                 .putExtra("contacts", new String[] {"target@example.test"});
         var invite = XmppActivity.ConferenceInvite.parse(data);
         assertNotNull(invite);
-        assertEquals(XmppActivity.ConferenceInvite.Result.FAILED, invite.execute(new Activity(service)));
+        Activity activity = new Activity(service);
+        assertEquals(XmppActivity.ConferenceInvite.Result.INVITES_PENDING, invite.execute(activity));
+        assertEquals(1, activity.pending);
         assertTrue(service.messages.isEmpty());
         user.setAffiliation("member");
-        assertEquals(XmppActivity.ConferenceInvite.Result.INVITES_SENT, invite.execute(new Activity(service)));
-        assertEquals(1, service.messages.size()); assertEquals(0, service.iqs);
+        assertEquals(XmppActivity.ConferenceInvite.Result.INVITES_PENDING, invite.execute(activity));
+        assertEquals(2, activity.pending);
+        assertEquals(0, service.messages.size()); assertEquals(0, service.iqs);
     }
 
     public static final class Activity extends XmppActivity {
+        int pending;
         Activity(Service service) { xmppConnectionService = service; }
+        @Override public void startMucInvitations(Conversation room, java.util.Collection<Jid> jids) { pending++; }
         @Override protected void onBackendConnected() {}
         @Override protected void refreshUiReal() {}
     }
