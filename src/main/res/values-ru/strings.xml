@@ -269,7 +269,7 @@
     <string name="skip">Пропустить</string>
     <string name="disable_notifications">Отключить уведомления</string>
     <string name="enable">Включить</string>
-    <string name="conference_requires_password">Конференция требует авторизации</string>
+    <string name="conference_requires_password">Конференция требует пароль.</string>
     <string name="enter_password">Введите пароль</string>
     <string name="request_presence_updates">Пожалуйста, сначала запросите обновления присутствия у вашего собеседника.\n\n<small>Эта информация будет использоваться для определения того, каким клиентом пользуется ваш собеседник</small>.</string>
     <string name="request_now">Запросить сейчас</string>
@@ -289,7 +289,7 @@
     <string name="pref_expert_options_other">Другие</string>
     <string name="toast_message_omemo_fingerprint">Ключ устройства скопирован</string>
     <string name="conference_banned">Вы заблокированы в этой конференции</string>
-    <string name="conference_members_only">Эта конференция — только для участников</string>
+    <string name="conference_members_only">Эта конференция только для участников.</string>
     <string name="conference_resource_constraint">Ресурсное ограничение</string>
     <string name="conference_kicked">Вас выгнали из этой конференции</string>
     <string name="conference_shutdown">Конференция была остановлена</string>
@@ -1843,4 +1843,5 @@
     <string name="muc_password_retry">Повторить изменение</string>
     <string name="muc_password_unknown">Состояние пароля неизвестно</string>
     <string name="muc_password_set">Установить или изменить пароль</string>
+    <string name="conference_password_incorrect">Неверный пароль конференции. Попробуйте ещё раз.</string>
 </resources>

@@ -9,6 +9,7 @@ import eu.siacs.conversations.entities.Contact;
 import eu.siacs.conversations.entities.Conversation;
 import eu.siacs.conversations.entities.Message;
 import eu.siacs.conversations.entities.MucOptions;
+import eu.siacs.conversations.entities.MucJoinAttempt;
 import eu.siacs.conversations.entities.Presence;
 import eu.siacs.conversations.generator.IqGenerator;
 import eu.siacs.conversations.generator.PresenceGenerator;
@@ -41,30 +42,57 @@ public class PresenceParser extends AbstractParser
         }
 
         for (Conversation conversation : res) {
-            final MucOptions mucOptions = conversation.getMucOptions();
-            boolean before = mucOptions.online();
-            int count = mucOptions.getUserCount();
-            final MucOptions.Role selfRoleBefore = mucOptions.getSelf().getRole();
-            final MucOptions.Affiliation selfAffiliationBefore =
-                    mucOptions.getSelf().getAffiliation();
-            final boolean voiceRequestPendingBefore = mucOptions.isVoiceRequestPending();
-            final List<MucOptions.User> tileUserBefore = mucOptions.getUsers(5);
-            processConferencePresence(packet, conversation);
-            final boolean selfStateChanged =
-                    selfRoleBefore != mucOptions.getSelf().getRole()
-                            || selfAffiliationBefore != mucOptions.getSelf().getAffiliation()
-                            || voiceRequestPendingBefore != mucOptions.isVoiceRequestPending();
-            final List<MucOptions.User> tileUserAfter = mucOptions.getUsers(5);
-            if (Strings.isNullOrEmpty(mucOptions.getAvatar())
-                    && !tileUserAfter.equals(tileUserBefore)) {
-                mXmppConnectionService.getAvatarService().clear(mucOptions);
-            }
-            if (before != mucOptions.online()
-                    || selfStateChanged
-                    || (mucOptions.online() && count != mucOptions.getUserCount())) {
-                mXmppConnectionService.updateConversationUi();
-            } else if (mucOptions.online()) {
-                mXmppConnectionService.updateMucRosterUi();
+            synchronized (conversation) {
+                final MucOptions mucOptions = conversation.getMucOptions();
+                final MucJoinAttempt attempt = mucOptions.getJoinAttempt();
+                final boolean errorPresence = "error".equals(packet.getAttribute("type"));
+                // RFC 6120 8.3.1: errors must mirror the ID supplied on our join presence.
+                // An uncorrelated response must not reject a newer password attempt.
+                if ((errorPresence && attempt.hasStarted()
+                                && !attempt.acceptsResponse(packet.getId())
+                                && !(mucOptions.online() && mucOptions.onRenameListener != null))
+                        || (MucJoinAttempt.isJoinPresenceId(packet.getId())
+                                && !attempt.acceptsResponse(packet.getId()))) {
+                    continue;
+                }
+                if (errorPresence && attempt.isPending()
+                        && !packet.getFrom().equals(mucOptions.getSelf().getFullJid())
+                        && !packet.getFrom().equals(conversation.getJid().asBareJid())) {
+                    continue;
+                }
+                if (packet.getAttribute("type") == null && attempt.hasStarted()
+                        && !attempt.isPending() && !mucOptions.online()) {
+                    continue;
+                }
+                boolean before = mucOptions.online();
+                final MucOptions.Error errorBefore = mucOptions.getError();
+                int count = mucOptions.getUserCount();
+                final MucOptions.Role selfRoleBefore = mucOptions.getSelf().getRole();
+                final MucOptions.Affiliation selfAffiliationBefore =
+                        mucOptions.getSelf().getAffiliation();
+                final boolean voiceRequestPendingBefore = mucOptions.isVoiceRequestPending();
+                final List<MucOptions.User> tileUserBefore = mucOptions.getUsers(5);
+                processConferencePresence(packet, conversation);
+                if (attempt.hasStarted() && !attempt.isPending()) {
+                    mXmppConnectionService.onMucJoinStateChanged(mucOptions);
+                }
+                final boolean selfStateChanged =
+                        selfRoleBefore != mucOptions.getSelf().getRole()
+                                || selfAffiliationBefore != mucOptions.getSelf().getAffiliation()
+                                || voiceRequestPendingBefore != mucOptions.isVoiceRequestPending();
+                final List<MucOptions.User> tileUserAfter = mucOptions.getUsers(5);
+                if (Strings.isNullOrEmpty(mucOptions.getAvatar())
+                        && !tileUserAfter.equals(tileUserBefore)) {
+                    mXmppConnectionService.getAvatarService().clear(mucOptions);
+                }
+                if (before != mucOptions.online()
+                        || errorBefore != mucOptions.getError()
+                        || selfStateChanged
+                        || (mucOptions.online() && count != mucOptions.getUserCount())) {
+                    mXmppConnectionService.updateConversationUi();
+                } else if (mucOptions.online()) {
+                    mXmppConnectionService.updateMucRosterUi();
+                }
             }
         }
     }
@@ -76,7 +104,9 @@ public class PresenceParser extends AbstractParser
         final MucOptions mucOptions = conversation.getMucOptions();
         final Jid jid = conversation.getAccount().getJid();
         final Jid from = packet.getFrom();
-        if (!from.isBareJid()) {
+        if (!from.isBareJid()
+                || ("error".equals(packet.getAttribute("type"))
+                        && mucOptions.getJoinAttempt().acceptsResponse(packet.getId()))) {
             final String type = packet.getAttribute("type");
             final Element x = packet.findChild("x", Namespace.MUC_USER);
             Avatar avatar = Avatar.parsePresence(packet.findChild("x", "vcard-temp:x:update"));
@@ -85,7 +115,6 @@ public class PresenceParser extends AbstractParser
                 if (x != null) {
                     Element item = x.findChild("item");
                     if (item != null && !from.isBareJid()) {
-                        mucOptions.setError(MucOptions.Error.NONE);
                         final MucOptions.User user = parseItem(conversation, item, from);
                         final var occupant = packet.getExtension(OccupantId.class);
                         final String occupantId =
@@ -98,6 +127,7 @@ public class PresenceParser extends AbstractParser
                                         && jid.equals(
                                                 Jid.Invalid.getNullForInvalid(
                                                         item.getAttributeAsJid("jid"))))) {
+                            mucOptions.setError(MucOptions.Error.NONE);
                             if (mucOptions.setOnline()) {
                                 mXmppConnectionService.getAvatarService().clear(mucOptions);
                             }
@@ -237,7 +267,9 @@ public class PresenceParser extends AbstractParser
                         mucOptions.setError(MucOptions.Error.NICK_IN_USE);
                     }
                 } else if (error.hasChild("not-authorized")) {
-                    mucOptions.setError(MucOptions.Error.PASSWORD_REQUIRED);
+                    mucOptions.setError(mucOptions.getJoinAttempt().wasPasswordSupplied()
+                            ? MucOptions.Error.PASSWORD_INCORRECT
+                            : MucOptions.Error.PASSWORD_REQUIRED);
                 } else if (error.hasChild("forbidden")) {
                     mucOptions.setError(MucOptions.Error.BANNED);
                 } else if (error.hasChild("registration-required")) {

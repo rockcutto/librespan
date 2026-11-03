@@ -8326,17 +8326,15 @@ public class ConversationFragment extends XmppFragment
                     }
                     return;
                 case REMOTE_SERVER_TIMEOUT:
-                    if (conversation.receivedMessagesCount() > 0) {
-                        showComposerBlockingState(
-                                R.string.remote_server_timeout, R.string.try_again, joinMuc);
-                    } else {
-                        showComposerBlockingState(
-                                R.string.remote_server_timeout, R.string.leave, leaveMuc);
-                    }
+                    showComposerBlockingState(
+                            R.string.remote_server_timeout, R.string.try_again, joinMuc);
                     return;
                 case PASSWORD_REQUIRED:
+                case PASSWORD_INCORRECT:
                     showComposerBlockingState(
-                            R.string.conference_requires_password,
+                            conversation.getMucOptions().getError() == MucOptions.Error.PASSWORD_INCORRECT
+                                    ? R.string.conference_password_incorrect
+                                    : R.string.conference_requires_password,
                             R.string.enter_password,
                             enterPassword);
                     return;

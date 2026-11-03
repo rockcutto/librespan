@@ -1810,4 +1810,5 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_password_retry">Retry previous change</string>
     <string name="muc_password_unknown">Password status unknown</string>
     <string name="muc_password_set">Set or change password</string>
+    <string name="conference_password_incorrect">Incorrect conference password. Please try again.</string>
 </resources>

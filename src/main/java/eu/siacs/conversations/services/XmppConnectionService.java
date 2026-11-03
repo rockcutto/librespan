@@ -222,6 +222,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -508,6 +509,9 @@ public class XmppConnectionService extends Service {
                 @Override
                 public void onStatusChanged(final Account account) {
                     XmppConnection connection = account.getXmppConnection();
+                    if (account.getStatus() != Account.State.ONLINE) {
+                        cancelPendingMucJoins(account);
+                    }
                     updateAccountUi();
 
                     if (account.getStatus() == Account.State.ONLINE
@@ -6795,6 +6799,72 @@ public class XmppConnectionService extends Service {
                 });
     }
 
+    private boolean isCurrentMucJoin(final Conversation conversation, final MucOptions options) {
+        return !destroyed && conversation.getMucOptions() == options
+                && conversation.getStatus() != Conversation.STATUS_ARCHIVED
+                && conversation.getAccount().getStatus() == Account.State.ONLINE
+                && (options.getJoinAttempt().isPending() || options.online());
+    }
+
+    ScheduledFuture<?> scheduleMucJoinTimeout(final Runnable timeout) {
+        // Use the existing connection budget, not a short authentication-specific delay.
+        return internalPingExecutor.schedule(timeout, Config.CONNECT_TIMEOUT, TimeUnit.SECONDS);
+    }
+
+    void dispatchMucJoinTimeout(final Runnable timeout) {
+        // XmppConnection invokes IQ timeouts while holding its callback-table lock. Never
+        // acquire a Conversation monitor there: a UI join registers IQs in the opposite order.
+        internalPingExecutor.execute(timeout);
+    }
+
+    void timeoutMucJoin(final Conversation conversation, final MucOptions options) {
+        synchronized (conversation) {
+            if (conversation.getMucOptions() != options || !options.getJoinAttempt().isPending()) {
+                return;
+            }
+            if (destroyed || conversation.getStatus() == Conversation.STATUS_ARCHIVED
+                    || conversation.getAccount().getStatus() != Account.State.ONLINE) {
+                options.getJoinAttempt().finish();
+                onMucJoinStateChanged(options);
+                return;
+            }
+            options.setError(MucOptions.Error.REMOTE_SERVER_TIMEOUT);
+            onMucJoinStateChanged(options);
+            updateConversationUi();
+        }
+    }
+
+    public void onMucJoinStateChanged(final MucOptions options) {
+        final Conversation conversation = options.getConversation();
+        synchronized (conversation) {
+            if (conversation.getMucOptions() != options || options.getJoinAttempt().isPending()) {
+                return;
+            }
+            final Account account = conversation.getAccount();
+            synchronized (account.inProgressConferenceJoins) {
+                account.inProgressConferenceJoins.remove(conversation);
+            }
+            synchronized (account.pendingConferenceJoins) {
+                account.pendingConferenceJoins.remove(conversation);
+            }
+        }
+    }
+
+    private void cancelPendingMucJoins(final Account account) {
+        for (final Conversation conversation : getConversations()) {
+            if (conversation.getAccount() != account || conversation.getMode() != Conversation.MODE_MULTI) {
+                continue;
+            }
+            synchronized (conversation) {
+                final MucOptions options = conversation.getMucOptions();
+                if (options.getJoinAttempt().isPending()) {
+                    options.setOffline();
+                    onMucJoinStateChanged(options);
+                }
+            }
+        }
+    }
+
     public void joinMuc(Conversation conversation) {
         if (conversation != null
                 && conversation.getNextCounterpart() == null
@@ -6805,6 +6875,13 @@ public class XmppConnectionService extends Service {
                     conversation.getAccount().getJid().asBareJid()
                             + ": suppressing automatic MUC join after explicit leave "
                             + conversation.getJid().asBareJid());
+            return;
+        }
+        if (conversation != null
+                && (conversation.getMucOptions().getError() == MucOptions.Error.PASSWORD_REQUIRED
+                        || conversation.getMucOptions().getError() == MucOptions.Error.PASSWORD_INCORRECT
+                        || conversation.getMucOptions().getError() == MucOptions.Error.MEMBERS_ONLY
+                        || conversation.getMucOptions().getError() == MucOptions.Error.BANNED)) {
             return;
         }
         joinMuc(conversation, null, false);
@@ -6880,147 +6957,185 @@ public class XmppConnectionService extends Service {
             account.pendingConferenceLeaves.remove(conversation);
         }
         if (account.getStatus() == Account.State.ONLINE) {
-            synchronized (account.inProgressConferenceJoins) {
-                account.inProgressConferenceJoins.add(conversation);
-            }
-            if (Config.MUC_LEAVE_BEFORE_JOIN) {
-                sendPresencePacket(account, mPresenceGenerator.leave(conversation.getMucOptions()));
-            }
-            conversation.resetMucOptions();
-            hydrateConversationSecrets(conversation);
-            if (onConferenceJoined != null) {
-                conversation.getMucOptions().flagNoAutoPushConfiguration();
-            }
-            conversation.setHasMessagesLeftOnServer(false);
-            fetchConferenceConfiguration(
-                    conversation,
-                    new OnConferenceConfigurationFetched() {
+            synchronized (conversation) {
+                if (conversation.getMucOptions().getJoinAttempt().isPending()) {
+                    return;
+                }
+                synchronized (account.inProgressConferenceJoins) {
+                    account.inProgressConferenceJoins.add(conversation);
+                }
+                if (Config.MUC_LEAVE_BEFORE_JOIN) {
+                    sendPresencePacket(account, mPresenceGenerator.leave(conversation.getMucOptions()));
+                }
+                conversation.resetMucOptions();
+                hydrateConversationSecrets(conversation);
+                final MucOptions joiningOptions = conversation.getMucOptions();
+                joiningOptions.getJoinAttempt().begin();
+                joiningOptions.getJoinAttempt().setTimeout(scheduleMucJoinTimeout(
+                        () -> timeoutMucJoin(conversation, joiningOptions)));
+                if (onConferenceJoined != null) {
+                    conversation.getMucOptions().flagNoAutoPushConfiguration();
+                }
+                conversation.setHasMessagesLeftOnServer(false);
+                fetchConferenceConfiguration(
+                        conversation,
+                        new OnConferenceConfigurationFetched() {
 
-                        private void join(Conversation conversation) {
-                            Account account = conversation.getAccount();
-                            final MucOptions mucOptions = conversation.getMucOptions();
-
-                            if (mucOptions.nonanonymous()
-                                    && !mucOptions.membersOnly()
-                                    && !conversation.getBooleanAttribute(
-                                            "accept_non_anonymous", false)) {
-                                synchronized (account.inProgressConferenceJoins) {
-                                    account.inProgressConferenceJoins.remove(conversation);
-                                }
-                                mucOptions.setError(MucOptions.Error.NON_ANONYMOUS);
-                                updateConversationUi();
-                                if (onConferenceJoined != null) {
-                                    onConferenceJoined.onConferenceJoined(conversation);
-                                }
-                                return;
-                            }
-
-                            final Jid joinJid = mucOptions.getSelf().getFullJid();
-                            Log.d(
-                                    Config.LOGTAG,
-                                    account.getJid().asBareJid().toString()
-                                            + ": joining conversation "
-                                            + joinJid.toString());
-                            final var packet =
-                                    mPresenceGenerator.selfPresence(
-                                            account,
-                                            Presence.Status.ONLINE,
-                                            mucOptions.nonanonymous()
-                                                    || onConferenceJoined != null);
-                            packet.setTo(joinJid);
-                            Element x = packet.addChild("x", "http://jabber.org/protocol/muc");
-                            if (conversation.getMucOptions().getPassword() != null) {
-                                x.addChild("password").setContent(mucOptions.getPassword());
-                            }
-
-                            if (mucOptions.mamSupport()) {
-                                // Use MAM instead of the limited muc history to get history
-                                x.addChild("history").setAttribute("maxchars", "0");
-                            } else {
-                                // Fallback to muc history
-                                x.addChild("history")
-                                        .setAttribute(
-                                                "since",
-                                                PresenceGenerator.getTimestamp(
-                                                        conversation
-                                                                .getLastMessageTransmitted()
-                                                                .getTimestamp()));
-                            }
-                            sendPresencePacket(account, packet);
-                            if (onConferenceJoined != null) {
-                                onConferenceJoined.onConferenceJoined(conversation);
-                            }
-                            if (!joinJid.equals(conversation.getJid())) {
-                                conversation.setContactJid(joinJid);
-                                databaseBackend.updateConversation(conversation);
-                            }
-
-                            if (mucOptions.mamSupport()) {
-                                getMessageArchiveService().catchupMUC(conversation);
-                            }
-                            if (mucOptions.isPrivateAndNonAnonymous()) {
-                                fetchConferenceMembers(conversation);
-
-                                if (followedInvite) {
-                                    final Bookmark bookmark = conversation.getBookmark();
-                                    if (bookmark != null) {
-                                        if (!bookmark.autojoin()) {
-                                            bookmark.setAutojoin(true);
-                                            createBookmark(account, bookmark);
-                                        }
-                                    } else {
-                                        saveConversationAsBookmark(conversation, null);
+                            private void join(Conversation conversation) {
+                                synchronized (conversation) {
+                                    if (!isCurrentMucJoin(conversation, joiningOptions)
+                                            || !joiningOptions.getJoinAttempt().isPending()) {
+                                        return;
                                     }
+                                    Account account = conversation.getAccount();
+                                    final MucOptions mucOptions = joiningOptions;
+
+                                    if (mucOptions.nonanonymous()
+                                            && !mucOptions.membersOnly()
+                                            && !conversation.getBooleanAttribute(
+                                                    "accept_non_anonymous", false)) {
+                                        synchronized (account.inProgressConferenceJoins) {
+                                            account.inProgressConferenceJoins.remove(conversation);
+                                        }
+                                        mucOptions.setError(MucOptions.Error.NON_ANONYMOUS);
+                                        onMucJoinStateChanged(mucOptions);
+                                        updateConversationUi();
+                                        if (onConferenceJoined != null) {
+                                            onConferenceJoined.onConferenceJoined(conversation);
+                                        }
+                                        return;
+                                    }
+
+                                    final Jid joinJid = mucOptions.getSelf().getFullJid();
+                                    Log.d(
+                                            Config.LOGTAG,
+                                            account.getJid().asBareJid().toString()
+                                                    + ": joining conversation "
+                                                    + joinJid.toString());
+                                    final var packet =
+                                            mPresenceGenerator.selfPresence(
+                                                    account,
+                                                    Presence.Status.ONLINE,
+                                                    mucOptions.nonanonymous()
+                                                            || onConferenceJoined != null);
+                                    packet.setTo(joinJid);
+                                    Element x = packet.addChild("x", "http://jabber.org/protocol/muc");
+                                    final String password = mucOptions.getPassword();
+                                    if (!mucOptions.getJoinAttempt().markPresenceSent(password != null)) {
+                                        return;
+                                    }
+                                    packet.setId(mucOptions.getJoinAttempt().getPresenceId());
+                                    if (password != null) {
+                                        x.addChild("password").setContent(password);
+                                    }
+
+                                    if (mucOptions.mamSupport()) {
+                                        // Use MAM instead of the limited muc history to get history
+                                        x.addChild("history").setAttribute("maxchars", "0");
+                                    } else {
+                                        // Fallback to muc history
+                                        x.addChild("history")
+                                                .setAttribute(
+                                                        "since",
+                                                        PresenceGenerator.getTimestamp(
+                                                                conversation
+                                                                        .getLastMessageTransmitted()
+                                                                        .getTimestamp()));
+                                    }
+                                    sendPresencePacket(account, packet);
+                                    if (onConferenceJoined != null) {
+                                        onConferenceJoined.onConferenceJoined(conversation);
+                                    }
+                                    if (!joinJid.equals(conversation.getJid())) {
+                                        conversation.setContactJid(joinJid);
+                                        databaseBackend.updateConversation(conversation);
+                                    }
+
+                                    if (mucOptions.mamSupport()) {
+                                        getMessageArchiveService().catchupMUC(conversation);
+                                    }
+                                    if (mucOptions.isPrivateAndNonAnonymous()) {
+                                        fetchConferenceMembers(conversation);
+
+                                        if (followedInvite) {
+                                            final Bookmark bookmark = conversation.getBookmark();
+                                            if (bookmark != null) {
+                                                if (!bookmark.autojoin()) {
+                                                    bookmark.setAutojoin(true);
+                                                    createBookmark(account, bookmark);
+                                                }
+                                            } else {
+                                                saveConversationAsBookmark(conversation, null);
+                                            }
+                                        }
+                                    }
+                                    synchronized (account.inProgressConferenceJoins) {
+                                        account.inProgressConferenceJoins.remove(conversation);
+                                    }
+                                    sendUnsentMessages(conversation);
                                 }
                             }
-                            synchronized (account.inProgressConferenceJoins) {
-                                account.inProgressConferenceJoins.remove(conversation);
-                                sendUnsentMessages(conversation);
-                            }
-                        }
 
-                        @Override
-                        public void onConferenceConfigurationFetched(Conversation conversation) {
-                            if (conversation.getStatus() == Conversation.STATUS_ARCHIVED) {
-                                Log.d(
-                                        Config.LOGTAG,
-                                        account.getJid().asBareJid()
-                                                + ": conversation ("
-                                                + conversation.getJid()
-                                                + ") got archived before IQ result");
-                                return;
-                            }
-                            join(conversation);
-                        }
-
-                        @Override
-                        public void onFetchFailed(
-                                final Conversation conversation, final String errorCondition) {
-                            if (conversation.getStatus() == Conversation.STATUS_ARCHIVED) {
-                                Log.d(
-                                        Config.LOGTAG,
-                                        account.getJid().asBareJid()
-                                                + ": conversation ("
-                                                + conversation.getJid()
-                                                + ") got archived before IQ result");
-                                return;
-                            }
-                            if ("remote-server-not-found".equals(errorCondition)) {
-                                synchronized (account.inProgressConferenceJoins) {
-                                    account.inProgressConferenceJoins.remove(conversation);
+                            @Override
+                            public void onConferenceConfigurationFetched(Conversation conversation) {
+                                if (!joiningOptions.getJoinAttempt().isPending()) {
+                                    return;
                                 }
-                                conversation
-                                        .getMucOptions()
-                                        .setError(MucOptions.Error.SERVER_NOT_FOUND);
-                                updateConversationUi();
-                            } else {
+                                if (!isCurrentMucJoin(conversation, joiningOptions)) {
+                                    joiningOptions.getJoinAttempt().finish();
+                                    onMucJoinStateChanged(joiningOptions);
+                                    Log.d(
+                                            Config.LOGTAG,
+                                            account.getJid().asBareJid()
+                                                    + ": conversation ("
+                                                    + conversation.getJid()
+                                                    + ") got archived before IQ result");
+                                    return;
+                                }
                                 join(conversation);
-                                fetchConferenceConfiguration(conversation);
                             }
-                        }
-                    });
-            updateConversationUi();
+
+                            @Override
+                            public void onFetchFailed(
+                                    final Conversation conversation, final String errorCondition) {
+                                if (!joiningOptions.getJoinAttempt().isPending()) {
+                                    return;
+                                }
+                                if (!isCurrentMucJoin(conversation, joiningOptions)) {
+                                    joiningOptions.getJoinAttempt().finish();
+                                    onMucJoinStateChanged(joiningOptions);
+                                    Log.d(
+                                            Config.LOGTAG,
+                                            account.getJid().asBareJid()
+                                                    + ": conversation ("
+                                                    + conversation.getJid()
+                                                    + ") got archived before IQ result");
+                                    return;
+                                }
+                                if ("remote-server-not-found".equals(errorCondition)
+                                        || "remote-server-timeout".equals(errorCondition)) {
+                                    synchronized (account.inProgressConferenceJoins) {
+                                        account.inProgressConferenceJoins.remove(conversation);
+                                    }
+                                    conversation
+                                            .getMucOptions()
+                                            .setError("remote-server-not-found".equals(errorCondition)
+                                                    ? MucOptions.Error.SERVER_NOT_FOUND
+                                                    : MucOptions.Error.REMOTE_SERVER_TIMEOUT);
+                                    onMucJoinStateChanged(joiningOptions);
+                                    updateConversationUi();
+                                } else {
+                                    join(conversation);
+                                    fetchConferenceConfiguration(conversation, null, joiningOptions);
+                                }
+                            }
+                        }, joiningOptions);
+                updateConversationUi();
+            }
         } else {
+            synchronized (account.inProgressConferenceJoins) {
+                account.inProgressConferenceJoins.remove(conversation);
+            }
             synchronized (account.pendingConferenceJoins) {
                 account.pendingConferenceJoins.add(conversation);
             }
@@ -7272,7 +7387,7 @@ public class XmppConnectionService extends Service {
                 createBookmark(conversation.getAccount(), bookmark);
             }
             updateConversation(conversation);
-            joinMuc(conversation);
+            joinMucExplicitly(conversation);
         }
     }
 
@@ -8093,30 +8208,34 @@ public class XmppConnectionService extends Service {
     }
 
     private void leaveMuc(Conversation conversation, boolean now) {
-        final Account account = conversation.getAccount();
-        synchronized (account.pendingConferenceJoins) {
-            account.pendingConferenceJoins.remove(conversation);
-        }
-        synchronized (account.pendingConferenceLeaves) {
-            account.pendingConferenceLeaves.remove(conversation);
-        }
-        if (account.getStatus() == Account.State.ONLINE || now) {
-            sendPresencePacket(
-                    conversation.getAccount(),
-                    mPresenceGenerator.leave(conversation.getMucOptions()));
-            conversation.getMucOptions().setOffline();
-            Bookmark bookmark = conversation.getBookmark();
-            if (bookmark != null) {
-                bookmark.setConversation(null);
+        synchronized (conversation) {
+            conversation.getMucOptions().getJoinAttempt().finish();
+            onMucJoinStateChanged(conversation.getMucOptions());
+            final Account account = conversation.getAccount();
+            synchronized (account.pendingConferenceJoins) {
+                account.pendingConferenceJoins.remove(conversation);
             }
-            Log.d(
-                    Config.LOGTAG,
-                    conversation.getAccount().getJid().asBareJid()
-                            + ": leaving muc "
-                            + conversation.getJid());
-        } else {
             synchronized (account.pendingConferenceLeaves) {
-                account.pendingConferenceLeaves.add(conversation);
+                account.pendingConferenceLeaves.remove(conversation);
+            }
+            if (account.getStatus() == Account.State.ONLINE || now) {
+                sendPresencePacket(
+                        conversation.getAccount(),
+                        mPresenceGenerator.leave(conversation.getMucOptions()));
+                conversation.getMucOptions().setOffline();
+                Bookmark bookmark = conversation.getBookmark();
+                if (bookmark != null) {
+                    bookmark.setConversation(null);
+                }
+                Log.d(
+                        Config.LOGTAG,
+                        conversation.getAccount().getJid().asBareJid()
+                                + ": leaving muc "
+                                + conversation.getJid());
+            } else {
+                synchronized (account.pendingConferenceLeaves) {
+                    account.pendingConferenceLeaves.add(conversation);
+                }
             }
         }
     }
@@ -8322,54 +8441,68 @@ public class XmppConnectionService extends Service {
 
     public void fetchConferenceConfiguration(
             final Conversation conversation, final OnConferenceConfigurationFetched callback) {
+        fetchConferenceConfiguration(conversation, callback, null);
+    }
+
+    private void fetchConferenceConfiguration(
+            final Conversation conversation, final OnConferenceConfigurationFetched callback,
+            final MucOptions expected) {
         final Iq request = mIqGenerator.queryDiscoInfo(conversation.getJid().asBareJid());
         final var account = conversation.getAccount();
         sendIqPacket(
                 account,
                 request,
                 response -> {
-                    if (response.getType() == Iq.Type.RESULT) {
-                        final MucOptions mucOptions = conversation.getMucOptions();
-                        final Bookmark bookmark = conversation.getBookmark();
-                        final boolean sameBefore =
-                                StringUtils.equals(
-                                        bookmark == null ? null : bookmark.getBookmarkName(),
-                                        mucOptions.getName());
-
-                        if (mucOptions.updateConfiguration(new ServiceDiscoveryResult(response))) {
-                            Log.d(
-                                    Config.LOGTAG,
-                                    account.getJid().asBareJid()
-                                            + ": muc configuration changed for "
-                                            + conversation.getJid().asBareJid());
-                            updateConversation(conversation);
+                    if (response.getType() == Iq.Type.TIMEOUT) {
+                        Log.d(Config.LOGTAG, "MUC configuration request timed out");
+                        if (expected != null && callback != null) {
+                            dispatchMucJoinTimeout(() -> timeoutMucJoin(conversation, expected));
                         }
+                        return;
+                    }
+                    synchronized (conversation) {
+                        if (expected != null && !isCurrentMucJoin(conversation, expected)) {
+                            expected.getJoinAttempt().finish();
+                            onMucJoinStateChanged(expected);
+                            return;
+                        }
+                        if (response.getType() == Iq.Type.RESULT) {
+                            final MucOptions mucOptions = conversation.getMucOptions();
+                            final Bookmark bookmark = conversation.getBookmark();
+                            final boolean sameBefore =
+                                    StringUtils.equals(
+                                            bookmark == null ? null : bookmark.getBookmarkName(),
+                                            mucOptions.getName());
 
-                        if (bookmark != null
-                                && (sameBefore || bookmark.getBookmarkName() == null)) {
-                            if (bookmark.setBookmarkName(
-                                    StringUtils.nullOnEmpty(mucOptions.getName()))) {
-                                createBookmark(account, bookmark);
+                            if (mucOptions.updateConfiguration(new ServiceDiscoveryResult(response))) {
+                                Log.d(
+                                        Config.LOGTAG,
+                                        account.getJid().asBareJid()
+                                                + ": muc configuration changed for "
+                                                + conversation.getJid().asBareJid());
+                                updateConversation(conversation);
+                            }
+
+                            if (bookmark != null
+                                    && (sameBefore || bookmark.getBookmarkName() == null)) {
+                                if (bookmark.setBookmarkName(
+                                        StringUtils.nullOnEmpty(mucOptions.getName()))) {
+                                    createBookmark(account, bookmark);
+                                }
+                            }
+
+                            if (callback != null) {
+                                callback.onConferenceConfigurationFetched(conversation);
+                            }
+
+                            updateConversationUi();
+                        } else {
+                            if (callback != null) {
+                                callback.onFetchFailed(conversation, response.getErrorCondition());
                             }
                         }
-
-                        if (callback != null) {
-                            callback.onConferenceConfigurationFetched(conversation);
-                        }
-
-                        updateConversationUi();
-                    } else if (response.getType() == Iq.Type.TIMEOUT) {
-                        Log.d(
-                                Config.LOGTAG,
-                                account.getJid().asBareJid()
-                                        + ": received timeout waiting for conference configuration"
-                                        + " fetch");
-                    } else {
-                        if (callback != null) {
-                            callback.onFetchFailed(conversation, response.getErrorCondition());
-                        }
                     }
-                });
+                }, expected == null ? null : (long) Config.CONNECT_DISCO_TIMEOUT);
     }
 
     public void pushNodeConfiguration(

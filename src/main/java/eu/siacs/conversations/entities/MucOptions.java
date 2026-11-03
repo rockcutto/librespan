@@ -56,6 +56,7 @@ public class MucOptions {
     private Error error = Error.NONE;
     private User self;
     private long voiceRequestPendingSince = 0L;
+    private final MucJoinAttempt joinAttempt = new MucJoinAttempt();
     private String password = null;
     private String passwordFallback = null;
 
@@ -584,6 +585,7 @@ public class MucOptions {
     }
 
     public boolean setOnline() {
+        joinAttempt.finish();
         boolean before = this.isOnline;
         this.isOnline = true;
         return !before;
@@ -715,6 +717,8 @@ public class MucOptions {
         }
     }
 
+    public MucJoinAttempt getJoinAttempt() { return joinAttempt; }
+
     public boolean online() {
         return this.isOnline;
     }
@@ -724,6 +728,7 @@ public class MucOptions {
     }
 
     public void setError(Error error) {
+        if (error != Error.NONE) joinAttempt.finish();
         this.isOnline = isOnline && error == Error.NONE;
         this.error = error;
     }
@@ -733,6 +738,7 @@ public class MucOptions {
     }
 
     public void setOffline() {
+        joinAttempt.finish();
         synchronized (users) {
             this.users.clear();
         }
@@ -837,7 +843,8 @@ public class MucOptions {
     }
 
     public String getPassword() {
-        if (this.error == Error.PASSWORD_REQUIRED && passwordFallback != null) return passwordFallback;
+        if ((this.error == Error.PASSWORD_REQUIRED || this.error == Error.PASSWORD_INCORRECT)
+                && passwordFallback != null) return passwordFallback;
         if (this.password != null) {
             return this.password;
         }
@@ -972,6 +979,7 @@ public class MucOptions {
         NONE,
         NICK_IN_USE,
         PASSWORD_REQUIRED,
+        PASSWORD_INCORRECT,
         BANNED,
         MEMBERS_ONLY,
         RESOURCE_CONSTRAINT,

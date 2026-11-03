@@ -34,6 +34,8 @@ public class MucPasswordBookmarkBoundaryTest {
         assertEquals("candidate", options.getPassword());
         options.setError(MucOptions.Error.PASSWORD_REQUIRED);
         assertEquals("previous", options.getPassword());
+        options.setError(MucOptions.Error.PASSWORD_INCORRECT);
+        assertEquals("previous", options.getPassword());
         options.setPassword(null);
         assertNull(options.getPassword());
     }
