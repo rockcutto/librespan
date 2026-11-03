@@ -207,7 +207,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         final AudioAttachmentPresentation.Metadata metadata = SecureAudioPresentation.peek(context, message);
         if (metadata == null) return;
         holder.metadataEpoch = SecureContentCryptoSessionRuntimeV1.snapshot(context).getEpoch();
-        final String title = metadata.titleOrFileName(message.getSecureMediaFileName());
+        final String title = metadata.titleOrFileNameForChat(message.getSecureMediaFileName());
         if (title != null) {
             holder.title.setText(title);
             holder.title.setVisibility(View.VISIBLE);

@@ -9,10 +9,20 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 import java.util.function.BooleanSupplier;
+import java.util.regex.Pattern;
 
 /** Shared audio-card policy. Duration and message direction/type are deliberately not inputs. */
 public final class AudioAttachmentPresentation {
     private AudioAttachmentPresentation() {}
+
+    // Both LibreSpan voice recorders generate RECORDING_yyyyMMdd_HHmmssSSS.m4a/.oga.
+    // This presentation-only check must not classify every .m4a/.oga as a voice message.
+    private static final Pattern APP_VOICE_RECORDING_NAME =
+            Pattern.compile("RECORDING_[0-9]{8}_[0-9]{9}\\.(?:m4a|oga)");
+
+    public static boolean isAppVoiceRecordingName(final String fileName) {
+        return fileName != null && APP_VOICE_RECORDING_NAME.matcher(fileName).matches();
+    }
 
     public enum Tracks { UNKNOWN, AUDIO, VIDEO }
 
@@ -153,6 +163,13 @@ public final class AudioAttachmentPresentation {
 
         public String titleOrFileName(String fileName) {
             return title == null ? clean(fileName) : title;
+        }
+
+        /** Chat UI: generated recorder filenames are not music titles. Preserve real tags. */
+        public String titleOrFileNameForChat(String fileName) {
+            return title == null && isAppVoiceRecordingName(fileName)
+                    ? null
+                    : titleOrFileName(fileName);
         }
     }
 
