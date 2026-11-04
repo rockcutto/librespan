@@ -1897,4 +1897,11 @@
     <string name="muc_bootstrap_access">Доступ уже был: %1$d. Участие подтверждено: %2$d.</string>
     <string name="muc_bootstrap_other_devices">Приглашения другим вашим устройствам переданы на отправку: %1$d/%2$d.</string>
     <string name="muc_bootstrap_partial">Часть приглашений не отправлена или результат неизвестен. Заблокировано: %1$d. Недостаточно прав: %2$d. Ошибок: %3$d. Неопределённых: %4$d.</string>
+    <string name="muc_users_owners">Владельцы</string>
+    <string name="muc_users_admins">Администраторы</string>
+    <string name="muc_users_moderators">Модераторы</string>
+    <string name="muc_users_participants">Участники</string>
+    <string name="muc_users_visitors">Посетители</string>
+    <string name="muc_users_not_in_room">Вне комнаты</string>
+    <string name="muc_users_banned">Заблокированные</string>
 </resources>

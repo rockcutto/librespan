@@ -45,7 +45,7 @@ public class UserPreviewAdapter extends ListAdapter<MucOptions.User, UserPreview
         AvatarWorkerTask.loadAvatar(user, viewHolder.binding.avatar, R.dimen.media_size);
 
         Contact contact = user.getContact();
-        if (contact != null) {
+        if (contact != null && user.getRole() != MucOptions.Role.NONE) {
             viewHolder.binding.presenceIndicator.setStatus(user.getContact());
         } else {
             viewHolder.binding.presenceIndicator.setStatus(null);

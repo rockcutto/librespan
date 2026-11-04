@@ -2141,4 +2141,11 @@
     <string name="muc_permissions_pm_label">Private Nachrichten für alle erlauben</string>
     <string name="muc_permissions_pm_summary">Ist die Option aus, dürfen nur Moderatoren private Nachrichten über den Raum senden.</string>
     <string name="omemo_chat_no_active_keys">Noch keine aktiven OMEMO-Geräteschlüssel verfügbar.</string>
+    <string name="muc_users_owners">Eigentümer</string>
+    <string name="muc_users_admins">Administratoren</string>
+    <string name="muc_users_moderators">Moderatoren</string>
+    <string name="muc_users_participants">Teilnehmer</string>
+    <string name="muc_users_visitors">Besucher</string>
+    <string name="muc_users_not_in_room">Nicht im Raum</string>
+    <string name="muc_users_banned">Gesperrte</string>
 </resources>

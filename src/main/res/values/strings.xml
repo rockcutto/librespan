@@ -1864,4 +1864,11 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_bootstrap_access">Already had access: %1$d. Membership verified: %2$d.</string>
     <string name="muc_bootstrap_other_devices">Invitations to your other devices handed off: %1$d/%2$d.</string>
     <string name="muc_bootstrap_partial">Some invitations were not sent or remain unconfirmed. Blocked: %1$d. Permission denied: %2$d. Errors: %3$d. Uncertain: %4$d.</string>
+    <string name="muc_users_owners">Owners</string>
+    <string name="muc_users_admins">Administrators</string>
+    <string name="muc_users_moderators">Moderators</string>
+    <string name="muc_users_participants">Participants</string>
+    <string name="muc_users_visitors">Visitors</string>
+    <string name="muc_users_not_in_room">Not in room</string>
+    <string name="muc_users_banned">Banned</string>
 </resources>

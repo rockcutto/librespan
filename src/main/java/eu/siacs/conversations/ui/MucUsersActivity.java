@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.Editable;
-import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -17,25 +16,20 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.widget.PopupMenu;
 import androidx.databinding.DataBindingUtil;
 
-import com.google.common.collect.Collections2;
-import com.google.common.collect.Ordering;
-
 import java.util.ArrayList;
-import java.util.Locale;
 
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.databinding.ActivityMucUsersBinding;
-import eu.siacs.conversations.entities.Contact;
 import eu.siacs.conversations.entities.Conversation;
 import eu.siacs.conversations.entities.MucOptions;
 import eu.siacs.conversations.services.XmppConnectionService;
-import eu.siacs.conversations.ui.adapter.UserAdapter;
+import eu.siacs.conversations.ui.adapter.MucUsersGroupedAdapter;
 import eu.siacs.conversations.ui.util.MucDetailsContextMenuHelper;
 import eu.siacs.conversations.xmpp.Jid;
 
 public class MucUsersActivity extends XmppActivity implements XmppConnectionService.OnMucRosterUpdate, XmppConnectionService.OnAffiliationChanged, MenuItem.OnActionExpandListener, TextWatcher {
 
-    private UserAdapter userAdapter;
+    private MucUsersGroupedAdapter userAdapter;
     private ActivityMucUsersBinding binding;
 
     private Conversation mConversation = null;
@@ -72,7 +66,8 @@ public class MucUsersActivity extends XmppActivity implements XmppConnectionServ
         if (mConversation != null) {
             final MucOptions mucOptions = mConversation.getMucOptions();
             allUsers = mucOptions.getUsers();
-            if (mucOptions.canSelfRevokeOwner()) {
+            if (mucOptions.online()) {
+                // The local occupant does not appear in getUsers(), but belongs in the list.
                 allUsers.add(mucOptions.getSelf());
             }
             submitFilteredList(mSearchEditText != null ? mSearchEditText.getText().toString() : null);
@@ -80,29 +75,7 @@ public class MucUsersActivity extends XmppActivity implements XmppConnectionServ
     }
 
     private void submitFilteredList(final String search) {
-        if (TextUtils.isEmpty(search)) {
-            userAdapter.submitList(Ordering.natural().immutableSortedCopy(allUsers));
-        } else {
-            final String needle = search.toLowerCase(Locale.getDefault());
-            userAdapter.submitList(
-                    Ordering.natural()
-                            .immutableSortedCopy(
-                                    Collections2.filter(
-                                            this.allUsers,
-                                            user -> {
-                                                final String name = user.getName();
-                                                final Contact contact = user.getContact();
-                                                return name != null
-                                                                && name.toLowerCase(
-                                                                                Locale.getDefault())
-                                                                        .contains(needle)
-                                                        || contact != null
-                                                                && contact.getDisplayName()
-                                                                        .toLowerCase(
-                                                                                Locale.getDefault())
-                                                                        .contains(needle);
-                                            })));
-        }
+        userAdapter.submitUsers(allUsers, search);
     }
 
     @Override
@@ -120,7 +93,7 @@ public class MucUsersActivity extends XmppActivity implements XmppConnectionServ
         setSupportActionBar(binding.toolbar);
         configureActionBar(getSupportActionBar(), true);
         setTitle(R.string.muc_admin_people);
-        this.userAdapter = new UserAdapter(true);
+        this.userAdapter = new MucUsersGroupedAdapter();
         binding.list.setAdapter(this.userAdapter);
     }
 
