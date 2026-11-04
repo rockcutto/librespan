@@ -57,6 +57,7 @@ public class MucOptions {
     private User self;
     private long voiceRequestPendingSince = 0L;
     private final MucJoinAttempt joinAttempt = new MucJoinAttempt();
+    private final MucSelfNickEchoGuard selfNickEchoGuard = new MucSelfNickEchoGuard();
     private String password = null;
     private String passwordFallback = null;
 
@@ -73,6 +74,8 @@ public class MucOptions {
     }
 
     public boolean setSelf(final User user) {
+        // The new self-presence settles a pending 303 rename, whether accepted or superseded.
+        selfNickEchoGuard.clear();
         this.self = user;
         if (user.role.ranks(Role.PARTICIPANT)) {
             this.voiceRequestPendingSince = 0L;
@@ -208,6 +211,20 @@ public class MucOptions {
 
     public boolean isSelf(final String occupantId) {
         return occupantId != null && occupantId.equals(self.getOccupantId());
+    }
+
+    /** Called only after a self-presence 110 + nickname-change 303 from our current nick. */
+    public void noteServerConfirmedSelfNickChange(final Jid previousFullJid, final Jid newFullJid) {
+        if (isOnline) {
+            selfNickEchoGuard.observe303(self.getFullJid(), previousFullJid, newFullJid);
+        }
+    }
+
+    /** Never classify an uncorrelated room occupant as self during a nickname transition. */
+    public boolean isVerifiedPendingSelfNickEcho(
+            final Jid from, final String messageId,
+            final java.util.function.Predicate<String> locallySentMessageId) {
+        return isOnline && selfNickEchoGuard.matchesEcho(from, messageId, locallySentMessageId);
     }
 
     public void resetChatState() {
@@ -728,7 +745,10 @@ public class MucOptions {
     }
 
     public void setError(Error error) {
-        if (error != Error.NONE) joinAttempt.finish();
+        if (error != Error.NONE) {
+            joinAttempt.finish();
+            selfNickEchoGuard.clear();
+        }
         this.isOnline = isOnline && error == Error.NONE;
         this.error = error;
     }
@@ -739,6 +759,7 @@ public class MucOptions {
 
     public void setOffline() {
         joinAttempt.finish();
+        selfNickEchoGuard.clear();
         synchronized (users) {
             this.users.clear();
         }

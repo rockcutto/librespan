@@ -196,7 +196,12 @@ public class ConferenceDetailsActivity extends XmppActivity
     private AlertDialog roomConfigDialog;
     private AlertDialog roomConfigConfirmation;
     private MucRoomConfigurationController roomConfigController;
-    private final OnClickListener mChangeConferenceSettings = v -> openRoomConfiguration();
+    private final OnClickListener mChangeConferenceSettings = v -> {
+        if (xmppConnectionService == null || !MucPasswordController.canManage(mConversation)) return;
+        final Intent intent = new Intent(this, MucPermissionsActivity.class);
+        intent.putExtra(MucPermissionsActivity.EXTRA_ROOM_UUID, mConversation.getUuid());
+        startActivity(intent);
+    };
 
     private void openRoomConfiguration() {
         if (roomConfigBusy || roomConfigDialog != null || xmppConnectionService == null

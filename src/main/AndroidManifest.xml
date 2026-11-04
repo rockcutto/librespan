@@ -307,6 +307,11 @@
             android:label="@string/action_muc_details"
             android:windowSoftInputMode="stateHidden|adjustResize" />
         <activity
+            android:name=".ui.MucPermissionsActivity"
+            android:exported="false"
+            android:label="@string/muc_admin_permissions"
+            android:parentActivityName=".ui.ConferenceDetailsActivity" />
+        <activity
             android:name=".ui.ContactDetailsActivity"
             android:windowSoftInputMode="stateHidden" />
         <activity

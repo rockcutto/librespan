@@ -251,7 +251,21 @@ public class PresenceParser extends AbstractParser
                         mucOptions.setError(MucOptions.Error.MEMBERS_ONLY);
                     } else if (codes.contains(MucOptions.STATUS_CODE_SHUTDOWN)) {
                         mucOptions.setError(MucOptions.Error.SHUTDOWN);
-                    } else if (!codes.contains(MucOptions.STATUS_CODE_CHANGED_NICK)) {
+                    } else if (codes.contains(MucOptions.STATUS_CODE_CHANGED_NICK)) {
+                        // This branch is reached only with status 110. A server-confirmed 303
+                        // from our *current* occupant can precede the new self-presence.
+                        // Preserve the announced nick solely for exact outgoing-message echo IDs.
+                        if (fullJidMatches) {
+                            final Element item = x.findChild("item");
+                            final String newNick = item == null ? null : item.getAttribute("nick");
+                            if (!Strings.isNullOrEmpty(newNick)) {
+                                final Jid newFullJid = mucOptions.createJoinJid(newNick);
+                                if (newFullJid != null) {
+                                    mucOptions.noteServerConfirmedSelfNickChange(from, newFullJid);
+                                }
+                            }
+                        }
+                    } else {
                         mucOptions.setError(MucOptions.Error.UNKNOWN);
                         Log.d(Config.LOGTAG, "unknown error in conference: " + eu.siacs.conversations.xml.SecretStanzaLog.forLog(packet));
                     }

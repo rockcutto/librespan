@@ -33,17 +33,17 @@ public class MucConfiguration {
         List<Option> options = new ArrayList<>();
         add(context, form, names, values, options, MucRoomConfiguration.MEMBERS, R.string.muc_members_only_label);
         add(context, form, names, values, options, MucRoomConfiguration.PUBLIC, R.string.muc_public_room_label);
-        add(context, form, names, values, options, MucRoomConfiguration.SUBJECT, R.string.allow_participants_to_edit_subject);
+        add(context, form, names, values, options, MucRoomConfiguration.SUBJECT, R.string.muc_permissions_subject_label);
         add(context, form, names, values, options,
                 form.supports(MucRoomConfiguration.INVITES) ? MucRoomConfiguration.INVITES
                         : MucRoomConfiguration.MEMBER_INVITES,
-                R.string.allow_participants_to_invite_others);
+                R.string.muc_permissions_invites_label);
         if (form.canChangeWhois(mucOptions)) {
-            add(context, form, names, values, options, MucRoomConfiguration.WHOIS, R.string.non_anonymous);
+            add(context, form, names, values, options, MucRoomConfiguration.WHOIS, R.string.muc_permissions_whois_label);
         }
         if (advanced) {
-            add(context, form, names, values, options, MucRoomConfiguration.MODERATED, R.string.moderated);
-            add(context, form, names, values, options, MucRoomConfiguration.PM, R.string.allow_private_messages);
+            add(context, form, names, values, options, MucRoomConfiguration.MODERATED, R.string.muc_permissions_moderated_label);
+            add(context, form, names, values, options, MucRoomConfiguration.PM, R.string.muc_permissions_pm_label);
         }
         boolean[] checked = new boolean[values.size()];
         for (int i = 0; i < checked.length; i++) checked[i] = values.get(i);
@@ -62,6 +62,21 @@ public class MucConfiguration {
 
     public boolean isMembersOption(int index) {
         return MucRoomConfiguration.MEMBERS.equals(options[index].name);
+    }
+
+    /** Matching supporting text for the owner form's documented controls. */
+    public @StringRes int descriptionForOption(int index) {
+        final String name = options[index].name;
+        if (MucRoomConfiguration.MEMBERS.equals(name)) return R.string.muc_permissions_members_summary;
+        if (MucRoomConfiguration.PUBLIC.equals(name)) return R.string.muc_permissions_public_summary;
+        if (MucRoomConfiguration.SUBJECT.equals(name)) return R.string.muc_permissions_subject_summary;
+        if (MucRoomConfiguration.INVITES.equals(name) || MucRoomConfiguration.MEMBER_INVITES.equals(name)) {
+            return R.string.muc_permissions_invites_summary;
+        }
+        if (MucRoomConfiguration.WHOIS.equals(name)) return R.string.muc_permissions_whois_summary;
+        if (MucRoomConfiguration.MODERATED.equals(name)) return R.string.muc_permissions_moderated_summary;
+        if (MucRoomConfiguration.PM.equals(name)) return R.string.muc_permissions_pm_summary;
+        throw new IllegalArgumentException("Unsupported MUC owner setting");
     }
 
     public static String describe(final Context context, final MucOptions mucOptions) {

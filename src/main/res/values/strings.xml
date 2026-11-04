@@ -1825,6 +1825,27 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_invite_banned">This user is banned. Change the ban explicitly before inviting them.</string>
     <string name="muc_config_loading">Loading room settings…</string>
     <string name="muc_config_rejected">Room settings request was rejected. Check your permissions and try again.</string>
+
+    <!-- Full-screen MUC owner permissions; titles and supporting text. -->
+    <string name="muc_permissions_intro">Changes are sent to the room server when you tap Save.</string>
+    <string name="muc_permissions_members_summary">Only users granted room membership can join.</string>
+    <string name="muc_permissions_members_locked_summary">The access rule cannot be changed for this room.</string>
+    <string name="muc_permissions_reload">Reload</string>
+    <string name="muc_permissions_saving">Saving room settings…</string>
+    <string name="muc_permissions_discard_title">Discard changes?</string>
+    <string name="muc_permissions_discard_summary">These room settings have not been saved.</string>
+    <string name="muc_permissions_discard">Discard</string>
+    <string name="muc_permissions_public_summary">The room can appear in directories. Hiding it does not prevent others from joining.</string>
+    <string name="muc_permissions_subject_label">Members can change the room topic</string>
+    <string name="muc_permissions_subject_summary">Allow participants to change the topic shown in the conversation.</string>
+    <string name="muc_permissions_invites_label">Participants can invite others</string>
+    <string name="muc_permissions_invites_summary">Allow invitations from participants. In members-only rooms, an invitation may not grant access on its own.</string>
+    <string name="muc_permissions_whois_label">Show XMPP addresses to everyone</string>
+    <string name="muc_permissions_whois_summary">Other occupants can see participants’ XMPP addresses, not just moderators.</string>
+    <string name="muc_permissions_moderated_label">Restrict who can send messages</string>
+    <string name="muc_permissions_moderated_summary">Only occupants with voice can post messages; visitors may need a moderator’s approval.</string>
+    <string name="muc_permissions_pm_label">Allow everyone to send private messages</string>
+    <string name="muc_permissions_pm_summary">When turned off, only moderators can start private messages through this room.</string>
     <string name="muc_config_timeout">The room settings request timed out. Open the settings again to check the result.</string>
     <string name="muc_safe_invite_summary">Invitations handed off: %1$d/%2$d. Delivery is not confirmed.</string>
     <string name="muc_safe_invite_reason_count">%1$s: %2$d</string>

@@ -389,7 +389,7 @@ public class MucRoomConfigurationTest {
                 original.removeChild(field);
             }
             MucConfiguration model = ui(f, original);
-            assertFalse(List.of(model.names).contains(Integer.toString(eu.siacs.conversations.R.string.non_anonymous)));
+            assertFalse(List.of(model.names).contains(Integer.toString(eu.siacs.conversations.R.string.muc_permissions_whois_label)));
             boolean[] checked = model.values.clone();
             int publicIndex = List.of(model.names).indexOf(Integer.toString(eu.siacs.conversations.R.string.muc_public_room_label));
             assertTrue(publicIndex >= 0); checked[publicIndex] = true;
@@ -404,7 +404,7 @@ public class MucRoomConfigurationTest {
         for (String from : List.of("anyone", "moderators")) {
             Fixture f = new Fixture(); cache(f, "open", from);
             MucConfiguration model = ui(f, form("0", "0", from));
-            int index = List.of(model.names).indexOf(Integer.toString(eu.siacs.conversations.R.string.non_anonymous));
+            int index = List.of(model.names).indexOf(Integer.toString(eu.siacs.conversations.R.string.muc_permissions_whois_label));
             assertTrue(index >= 0);
             boolean[] checked = model.values.clone(); checked[index] = !checked[index];
             Bundle delta = model.toBundle(checked);
