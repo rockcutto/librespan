@@ -101,6 +101,7 @@ import java.util.regex.Pattern;
 import eu.siacs.conversations.AppSettings;
 import eu.siacs.conversations.BuildConfig;
 import eu.siacs.conversations.Config;
+import eu.siacs.conversations.storage.secure.ScsTextDiagnosticsRuntime;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.crypto.axolotl.FingerprintStatus;
 import eu.siacs.conversations.entities.Account;
@@ -135,6 +136,7 @@ import eu.siacs.conversations.ui.ConversationsActivity;
 import eu.siacs.conversations.ui.DraggableListView;
 import eu.siacs.conversations.ui.XmppActivity;
 import eu.siacs.conversations.ui.service.AudioPlayer;
+import eu.siacs.conversations.storage.secure.SecureAudioPresentation;
 import eu.siacs.conversations.ui.text.DividerSpan;
 import eu.siacs.conversations.ui.text.QuoteSpan;
 import eu.siacs.conversations.ui.text.TypographyHelper;
@@ -2440,7 +2442,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                 contextPreviewDoc.setVisibility(View.GONE);
                 contextPreviewAudio.setVisibility(View.GONE);
                 activity.loadBitmap(replyMessage, contextPreviewImage);
-            } else if (replyMessage.getFileParams().runtime > 0) {
+            } else if (SecureAudioPresentation.isAudio(activity, replyMessage)) {
                 iconsContainer.setVisibility(View.VISIBLE);
                 contextPreviewImage.setVisibility(View.GONE);
                 contextPreviewDoc.setVisibility(View.GONE);
@@ -3431,6 +3433,13 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
         if (message != null
                 && message.getSecureMessagePayloadMode()
                         == eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.PROTECTED
+                && !message.hasVerifiedProtectedBody()) {
+            ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG bind-missing obj="
+                    + System.identityHashCode(message));
+        }
+        if (message != null
+                && message.getSecureMessagePayloadMode()
+                        == eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.PROTECTED
                 && !message.hasVerifiedProtectedBody()
                 && activity.xmppConnectionService != null) {
             activity.xmppConnectionService.scheduleProtectedTextRehydrateForVisibleMessage(message);
@@ -3456,6 +3465,9 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                 && !message.isSecureMediaPresentationMetadataResolved()) {
             SecureMessageMediaUiBridge.hydratePresentationMetadata(
                     activity, message, () -> notifyDataSetChanged());
+        }
+        if (message.isFileOrImage() && !message.isDeleted() && message.getTransferable() == null) {
+            SecureAudioPresentation.hydrate(activity, message, () -> notifyDataSetChanged());
         }
         final int type = getItemViewType(position);
 
@@ -3617,7 +3629,12 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
 
         final boolean revealResolvedProtectedText =
                 prepareProtectedTextRevealForBind(viewHolder, message);
+        if (revealResolvedProtectedText) {
+            ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG bind-resolved obj="
+                    + System.identityHashCode(message));
+        }
 
+        AudioPlayer.rebind(viewHolder.audioPlayer, message);
         resetMessageBubbleInteraction(viewHolder);
         viewHolder.message_box.setOnLongClickListener(messageActionLongClickListener(message));
 
@@ -3721,7 +3738,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
         } else if (message.isFileOrImage() && message.getEncryption() != Message.ENCRYPTION_PGP && message.getEncryption() != Message.ENCRYPTION_DECRYPTION_FAILED) {
             if (shouldRenderMediaPreview(message)) {
                 displayMediaPreviewMessage(viewHolder, message, bubbleColor);
-            } else if (message.getFileParams().runtime > 0) {
+            } else if (SecureAudioPresentation.isAudio(activity, message)) {
                 displayAudioMessage(viewHolder, message, bubbleColor);
             } else {
                 displayOpenableMessage(viewHolder, message, bubbleColor);
@@ -3737,6 +3754,18 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
             displayInfoMessage(viewHolder, activity.getString(R.string.not_encrypted_for_this_device), bubbleColor);
         } else if (message.getEncryption() == Message.ENCRYPTION_AXOLOTL_FAILED) {
             displayInfoMessage(viewHolder, activity.getString(R.string.omemo_decryption_failed), bubbleColor);
+        } else if (message.getSecureMessagePayloadMode()
+                == eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.PENDING) {
+            displayInfoMessage(
+                    viewHolder,
+                    activity.getString(R.string.protected_message_pending),
+                    bubbleColor);
+        } else if (message.getSecureMessagePayloadMode()
+                == eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.UNAVAILABLE) {
+            displayInfoMessage(
+                    viewHolder,
+                    activity.getString(R.string.protected_message_unavailable),
+                    bubbleColor);
         } else {
             if (message.isGeoUri()) {
                 displayLocationMessage(viewHolder, message, bubbleColor);

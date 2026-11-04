@@ -50,6 +50,27 @@ public class HttpConnectionManager extends AbstractConnectionManager {
 
     public static final Executor EXECUTOR = Executors.newFixedThreadPool(4);
 
+    // Automatic SCS receive never enters EXECUTOR's unbounded queue. A connection keeps one
+    // automatic slot across preflight and download; newer waiting work precedes archive backlog.
+    private static final AutomaticDownloadQueue AUTOMATIC_DOWNLOADS =
+            new AutomaticDownloadQueue(Executors.newFixedThreadPool(4), 4, 16);
+
+    void submitAutomaticDownload(Object key, Runnable work, Runnable deferred) {
+        AUTOMATIC_DOWNLOADS.submit(key, work, deferred);
+    }
+
+    void submitManualDownload(Runnable work) {
+        EXECUTOR.execute(work);
+    }
+
+    boolean removePendingAutomaticDownload(Object key) {
+        return AUTOMATIC_DOWNLOADS.removePending(key);
+    }
+
+    boolean isAccountCleanupInProgress(String accountUuid) {
+        return accountCleanupInProgress.contains(accountUuid);
+    }
+
     private static final OkHttpClient OK_HTTP_CLIENT;
 
     static {
@@ -98,7 +119,7 @@ public class HttpConnectionManager extends AbstractConnectionManager {
                 return;
             }
             for (HttpDownloadConnection connection : this.downloadConnections) {
-                if (connection.getMessage() == message) {
+                if (sameDownload(connection.getMessage(), message)) {
                     Log.d(Config.LOGTAG, message.getConversation().getAccount().getJid().asBareJid() + ": download already in progress");
                     return;
                 }
@@ -113,6 +134,12 @@ public class HttpConnectionManager extends AbstractConnectionManager {
             this.downloadConnections.add(connection);
             connection.init(interactive);
         }
+    }
+
+    static boolean sameDownload(final Message first, final Message second) {
+        return first.getUuid().equals(second.getUuid())
+                && first.getConversation().getAccount().getUuid()
+                        .equals(second.getConversation().getAccount().getUuid());
     }
 
     public void createNewUploadConnection(final Message message, boolean delay) {
@@ -137,13 +164,13 @@ public class HttpConnectionManager extends AbstractConnectionManager {
 
     public void beginAccountCleanup(final Account account) {
         accountCleanupInProgress.add(account.getUuid());
+        final List<HttpDownloadConnection> downloads;
         synchronized (this.downloadConnections) {
-            for (final HttpDownloadConnection connection
-                    : new ArrayList<>(this.downloadConnections)) {
-                if (connection.getMessage().getConversation().getAccount() == account) {
-                    connection.cancel();
-                    this.downloadConnections.remove(connection);
-                }
+            downloads = new ArrayList<>(this.downloadConnections);
+        }
+        for (final HttpDownloadConnection connection : downloads) {
+            if (connection.getMessage().getConversation().getAccount().getUuid().equals(account.getUuid())) {
+                connection.cancel();
             }
         }
         synchronized (this.uploadConnections) {

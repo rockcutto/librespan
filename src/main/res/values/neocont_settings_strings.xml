@@ -259,6 +259,17 @@
     <string name="neocont_delivery_notifications">Notification delivery</string>
     <string name="neocont_background_connection">Background connection</string>
     <string name="neocont_background_connection_summary">Helps the app stay connected in the background</string>
+    <string name="neocont_delivery_reliability">Background delivery reliability</string>
+    <string name="neocont_delivery_reliability_summary">Check the foreground service and Android power restrictions</string>
+    <string name="neocont_delivery_status_running">Running</string>
+    <string name="neocont_delivery_status_stopped">Not running</string>
+    <string name="neocont_delivery_status_unknown">Unable to check</string>
+    <string name="neocont_delivery_battery_unrestricted">Exempt from optimization</string>
+    <string name="neocont_delivery_battery_restricted">Optimization enabled</string>
+    <string name="neocont_delivery_status_summary">Service: %1$s · Battery: %2$s</string>
+    <string name="neocont_delivery_status_details">Foreground service: %1$s\nBattery optimization: %2$s\n\nIf Android restricts LibreSpan, open battery settings and allow background operation. Check manufacturer-specific limits in app settings. A running foreground service does not guarantee immediate delivery.</string>
+    <string name="neocont_delivery_battery_settings">Battery settings</string>
+    <string name="neocont_delivery_app_settings">App settings</string>
     <string name="neocont_push_settings">Unified Push</string>
     <string name="neocont_push_settings_summary">Background notification delivery settings</string>
     <string name="neocont_presence_settings">Status and availability</string>

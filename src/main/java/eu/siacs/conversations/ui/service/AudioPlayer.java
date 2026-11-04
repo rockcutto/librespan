@@ -17,6 +17,7 @@ import android.view.View;
 import android.widget.RelativeLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
@@ -38,8 +39,11 @@ import eu.siacs.conversations.Config;
 import eu.siacs.conversations.Conversations;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.entities.Message;
+import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1;
 import eu.siacs.conversations.services.MediaPlayer;
 import eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaReadCache;
+import eu.siacs.conversations.storage.secure.SecureAudioPresentation;
+import eu.siacs.conversations.utils.AudioAttachmentPresentation;
 import eu.siacs.conversations.ui.ConversationsActivity;
 import eu.siacs.conversations.ui.adapter.MessageAdapter;
 import eu.siacs.conversations.ui.attachments.AttachmentWaveformSeekBar;
@@ -54,6 +58,10 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
     private static final Object LOCK = new Object();
     private static MediaPlayer player = null;
     private static Message currentlyPlayingMessage = null;
+    private static Message pendingPlaybackMessage = null;
+    private static boolean preparing = false;
+    private static long playbackGeneration;
+    private static final WeakReferenceSet<RelativeLayout> METADATA_LAYOUTS = new WeakReferenceSet<>();
     @Nullable private static AndroidSecureMessageMediaReadCache.Lease currentlyPlayingLease = null;
     private static PowerManager.WakeLock wakeLock;
     private final MessageAdapter messageAdapter;
@@ -65,6 +73,51 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
     private static final int MAX_WAVEFORM_CACHE_ENTRIES = 128;
     private static final Map<String, float[]> WAVEFORM_CACHE = new HashMap<>();
     private static final Set<String> WAVEFORM_IN_FLIGHT = new HashSet<>();
+
+    /** Retire in-app audio and its derived waveform presentation on High Security suspension. */
+    public static void suspendForPrivacy() {
+        SecureAudioPresentation.clear();
+        synchronized (LOCK) {
+            playbackGeneration++;
+            pendingPlaybackMessage = null;
+            preparing = false;
+            for (WeakReference<RelativeLayout> reference : METADATA_LAYOUTS) {
+                final RelativeLayout layout = reference.get();
+                if (layout != null) {
+                    layout.post(() -> {
+                        synchronized (LOCK) {
+                            final ViewHolder holder = ViewHolder.get(layout);
+                            final Context context = layout.getContext().getApplicationContext();
+                            if (holder.metadataEpoch != SecureContentCryptoSessionRuntimeV1.snapshot(context).getEpoch()
+                                    || !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(context)) {
+                                clearMetadata(holder);
+                            }
+                        }
+                    });
+                }
+            }
+            METADATA_LAYOUTS.clear();
+            final MediaPlayer toRelease = player;
+            player = null;
+            currentlyPlayingMessage = null;
+            closeLease(currentlyPlayingLease);
+            currentlyPlayingLease = null;
+            if (toRelease != null) {
+                try {
+                    toRelease.setOnCompletionListener(null);
+                    toRelease.release();
+                } catch (final RuntimeException error) {
+                    Log.w(Config.LOGTAG, "unable to retire audio player", error);
+                }
+            }
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+            }
+        }
+        synchronized (WAVEFORM_CACHE) {
+            WAVEFORM_CACHE.clear();
+        }
+    }
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ExecutorService waveformExecutor = Executors.newSingleThreadExecutor();
@@ -80,7 +133,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         synchronized (AudioPlayer.LOCK) {
             if (AudioPlayer.player != null) {
                 AudioPlayer.player.setOnCompletionListener(this);
-                if (AudioPlayer.player.isPlaying() && sensorManager != null) {
+                if (!preparing && AudioPlayer.player.isPlaying() && sensorManager != null) {
                     sensorManager.registerListener(this, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL);
                 }
             }
@@ -97,7 +150,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                 if (AudioPlayer.wakeLock == null) {
                     final PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
                     AudioPlayer.wakeLock = powerManager == null ? null : powerManager.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, AudioPlayer.class.getSimpleName());
-                    AudioPlayer.wakeLock.setReferenceCounted(false);
+                    if (AudioPlayer.wakeLock != null) AudioPlayer.wakeLock.setReferenceCounted(false);
                 }
             }
         } else {
@@ -108,6 +161,8 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
     public void init(RelativeLayout audioPlayer, Message message) {
         synchronized (AudioPlayer.LOCK) {
             audioPlayer.setTag(message);
+            ViewHolder.get(audioPlayer).boundMessage = message;
+            bindMetadata(audioPlayer, message);
             bindWaveform(audioPlayer, message);
             if (init(ViewHolder.get(audioPlayer), message)) {
                 this.audioPlayerLayouts.addWeakReferenceTo(audioPlayer);
@@ -118,13 +173,68 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         }
     }
 
+    public static void rebind(final RelativeLayout layout, final Message message) {
+        if (layout == null) return;
+        synchronized (LOCK) {
+            layout.setTag(message);
+            final ViewHolder holder = ViewHolder.get(layout);
+            holder.boundMessage = message;
+            clearMetadata(holder);
+        }
+    }
+
+    private static void clearMetadata(final ViewHolder holder) {
+        holder.metadataEpoch = -1;
+        holder.title.setText(null);
+        holder.artist.setText(null);
+        holder.title.setVisibility(View.GONE);
+        holder.artist.setVisibility(View.GONE);
+        holder.metadata.setVisibility(View.GONE);
+    }
+
+    private static int knownDuration(final Message message, final Context context) {
+        final AudioAttachmentPresentation.Metadata metadata = SecureAudioPresentation.peek(context, message);
+        return metadata != null && metadata.durationMillis > 0
+                ? metadata.durationMillis : message.getFileParams().runtime;
+    }
+
+    private void bindMetadata(final RelativeLayout layout, final Message message) {
+        final ViewHolder holder = ViewHolder.get(layout);
+        clearMetadata(holder);
+        METADATA_LAYOUTS.removeIf(reference -> reference.get() == null);
+        METADATA_LAYOUTS.addWeakReferenceTo(layout);
+        final Context context = layout.getContext();
+        final AudioAttachmentPresentation.Metadata metadata = SecureAudioPresentation.peek(context, message);
+        if (metadata == null) return;
+        holder.metadataEpoch = SecureContentCryptoSessionRuntimeV1.snapshot(context).getEpoch();
+        final String title = metadata.titleOrFileNameForChat(message.getSecureMediaFileName());
+        if (title != null) {
+            holder.title.setText(title);
+            holder.title.setVisibility(View.VISIBLE);
+            MessageAdapter.setTextColor(holder.title, holder.bubbleColor);
+        }
+        if (metadata.artist != null) {
+            holder.artist.setText(metadata.artist);
+            holder.artist.setVisibility(View.VISIBLE);
+            MessageAdapter.setTextColor(holder.artist, holder.bubbleColor);
+        }
+        holder.metadata.setVisibility(title != null || metadata.artist != null ? View.VISIBLE : View.GONE);
+    }
+
     private void bindWaveform(final RelativeLayout audioPlayer, final Message message) {
         final ViewHolder viewHolder = ViewHolder.get(audioPlayer);
         final String key = waveformKey(message);
+        final Context waveformContext = audioPlayer.getContext().getApplicationContext();
+        final long waveformEpoch = SecureContentCryptoSessionRuntimeV1.snapshot(waveformContext).getEpoch();
+        if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                && !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(waveformContext)) {
+            viewHolder.progress.clearAmplitudes();
+            return;
+        }
         final float[] cached;
         synchronized (WAVEFORM_CACHE) {
             cached = WAVEFORM_CACHE.get(key);
-            if (cached == null && !WAVEFORM_IN_FLIGHT.add(key)) {
+            if (cached == null && (WAVEFORM_IN_FLIGHT.size() >= 32 || !WAVEFORM_IN_FLIGHT.add(key))) {
                 viewHolder.progress.clearAmplitudes();
                 return;
             }
@@ -138,7 +248,13 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         waveformExecutor.execute(
                 () -> {
                     AndroidSecureMessageMediaReadCache.Lease lease = null;
+                    final Context applicationContext =
+                            messageAdapter.getActivity().getApplicationContext();
                     try {
+                        if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                                && (SecureContentCryptoSessionRuntimeV1.snapshot(applicationContext).getEpoch()
+                                        != waveformEpoch || !SecureContentCryptoSessionRuntimeV1
+                                        .isBackgroundCryptoAvailable(applicationContext))) return;
                         final float[] amplitudes;
                         if (Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
                             final Conversations application =
@@ -151,6 +267,9 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                                     cache.acquire(
                                             message.getConversation().getAccount().getUuid(),
                                             message.getUuid());
+                        }
+                        if (lease == null && Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
+                            throw new IllegalStateException("Secure audio is not yet available");
                         }
                         if (lease != null) {
                             amplitudes =
@@ -170,6 +289,17 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                         }
 
                         synchronized (WAVEFORM_CACHE) {
+                            // The lock path clears this cache under the same monitor after
+                            // retiring crypto. Old workers must not repopulate it after unlock.
+                            if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                                    && (SecureContentCryptoSessionRuntimeV1
+                                                    .snapshot(applicationContext)
+                                                    .getEpoch()
+                                            != waveformEpoch
+                                            || !SecureContentCryptoSessionRuntimeV1
+                                                    .isBackgroundCryptoAvailable(applicationContext))) {
+                                return;
+                            }
                             if (WAVEFORM_CACHE.size() >= MAX_WAVEFORM_CACHE_ENTRIES) {
                                 WAVEFORM_CACHE.clear();
                             }
@@ -177,6 +307,15 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                         }
                         messageAdapter.getActivity().runOnUiThread(
                                 () -> {
+                                    if (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                                            && (SecureContentCryptoSessionRuntimeV1
+                                                            .snapshot(applicationContext)
+                                                            .getEpoch()
+                                                    != waveformEpoch
+                                                    || !SecureContentCryptoSessionRuntimeV1
+                                                            .isBackgroundCryptoAvailable(applicationContext))) {
+                                        return;
+                                    }
                                     if (audioPlayer.getTag() == message) {
                                         ViewHolder.get(audioPlayer)
                                                 .progress
@@ -221,7 +360,11 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         viewHolder.playPause.setOnClickListener(this);
         final Context context = viewHolder.playPause.getContext();
         if (message == currentlyPlayingMessage) {
-            if (AudioPlayer.player != null && AudioPlayer.player.isPlaying()) {
+            if (preparing) {
+                viewHolder.runtime.setText(formatTime(knownDuration(message, viewHolder.runtime.getContext())));
+                viewHolder.progress.setProgress(0);
+            }
+            if (AudioPlayer.player != null && !preparing && AudioPlayer.player.isPlaying()) {
                 showPauseIcon(viewHolder);
                 viewHolder.playPause.setContentDescription(context.getString(R.string.pause_audio));
                 viewHolder.progress.setEnabled(true);
@@ -234,7 +377,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         } else {
             showPlayIcon(viewHolder);
             viewHolder.playPause.setContentDescription(context.getString(R.string.play_audio));
-            viewHolder.runtime.setText(formatTime(message.getFileParams().runtime));
+            viewHolder.runtime.setText(formatTime(knownDuration(message, viewHolder.runtime.getContext())));
             viewHolder.progress.setProgress(0);
             viewHolder.progress.setEnabled(false);
             return false;
@@ -256,6 +399,10 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         final ViewHolder viewHolder = ViewHolder.get(audioPlayer);
         final Message message = (Message) audioPlayer.getTag();
 
+        if (message == pendingPlaybackMessage || (message == currentlyPlayingMessage && preparing)) {
+            stop();
+            return;
+        }
         if (message == currentlyPlayingMessage && player != null) {
             if (startStop(viewHolder, message, currentlyPlayingLease)) {
                 this.audioPlayerLayouts.clear();
@@ -265,18 +412,57 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
             return;
         }
 
+        final long requestedGeneration = ++playbackGeneration;
+        pendingPlaybackMessage = message;
+        if (player != null) {
+            stopCurrent();
+        }
         if (Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
-            executor.execute(() -> prepareSecurePlayback(playPause, audioPlayer, viewHolder, message));
+            // Bind the queued request to the current crypto epoch before any worker is started.
+            final long scheduledEpoch =
+                    SecureContentCryptoSessionRuntimeV1
+                            .snapshot(playPause.getContext().getApplicationContext())
+                            .getEpoch();
+            executor.execute(
+                    () ->
+                            prepareSecurePlayback(
+                                    audioPlayer, viewHolder, message, scheduledEpoch, requestedGeneration));
             return;
         }
         startStopLegacy(playPause, audioPlayer, viewHolder, message);
     }
 
+    private void showPlaybackError() {
+        Toast.makeText(messageAdapter.getActivity(), R.string.attachments_audio_playback_error,
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private void failPendingPlayback(final long generation, final boolean showError) {
+        handler.post(() -> {
+            synchronized (LOCK) {
+                if (generation == playbackGeneration && pendingPlaybackMessage != null) {
+                    pendingPlaybackMessage = null;
+                    if (showError) showPlaybackError();
+                }
+            }
+        });
+    }
+
     private void prepareSecurePlayback(
-            final View playPause,
             final RelativeLayout audioPlayer,
             final ViewHolder viewHolder,
-            final Message message) {
+            final Message message,
+            final long scheduledEpoch,
+            final long requestedGeneration) {
+        final Context appContext = messageAdapter.getActivity().getApplicationContext();
+        if (SecureContentCryptoSessionRuntimeV1.snapshot(appContext).getEpoch() != scheduledEpoch
+                || !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(appContext)) {
+            failPendingPlayback(requestedGeneration, false);
+            return;
+        }
+        synchronized (LOCK) {
+            if (requestedGeneration != playbackGeneration) return;
+        }
         final AndroidSecureMessageMediaReadCache.Lease lease;
         try {
             final Conversations application =
@@ -289,20 +475,35 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                     message.getConversation().getAccount().getUuid(), message.getUuid());
         } catch (final Exception e) {
             Log.e(Config.LOGTAG, "unable to prepare secure audio playback", e);
+            failPendingPlayback(requestedGeneration, true);
             return;
         }
 
         messageAdapter.getActivity().runOnUiThread(
                 () -> {
-                    if (audioPlayer.getTag() != message) {
+                    if (audioPlayer.getTag() != message
+                            || messageAdapter.getActivity().isFinishing()
+                            || messageAdapter.getActivity().isDestroyed()) {
                         closeLease(lease);
+                        failPendingPlayback(requestedGeneration, false);
                         return;
                     }
                     synchronized (LOCK) {
+                        // Privacy suspension retires crypto before acquiring the audio lock.
+                        // A late completion from the old epoch must close its lease, not play.
+                        if (requestedGeneration != playbackGeneration
+                                || SecureContentCryptoSessionRuntimeV1.snapshot(appContext).getEpoch()
+                                        != scheduledEpoch
+                                || !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(
+                                        appContext)) {
+                            closeLease(lease);
+                            failPendingPlayback(requestedGeneration, false);
+                            return;
+                        }
                         if (lease == null) {
-                            // Only an absent secure relation is allowed to use the rollout legacy
-                            // population. Inconsistent secure state throws before this point.
-                            startStopLegacy(playPause, audioPlayer, viewHolder, message);
+                            // Missing or still-downloading SCS media must not use FileBackend.
+                            Log.w(Config.LOGTAG, "secure audio is not yet available");
+                            failPendingPlayback(requestedGeneration, true);
                             return;
                         }
                         if (AudioPlayer.player != null) {
@@ -331,6 +532,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                                 messageAdapter.getActivity(),
                                 Manifest.permission.WRITE_EXTERNAL_STORAGE)
                         != PackageManager.PERMISSION_GRANTED) {
+            pendingPlaybackMessage = null;
             pendingOnClickView.push(new WeakReference<>(playPause));
             ActivityCompat.requestPermissions(
                     messageAdapter.getActivity(),
@@ -373,9 +575,11 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
             double progress,
             @Nullable AndroidSecureMessageMediaReadCache.Lease lease) {
         if (play(viewHolder, message, earpiece, lease)) {
-            AudioPlayer.player.seekTo((int) (AudioPlayer.player.getDuration() * progress));
+            pendingSeekFraction = progress;
         }
     }
+
+    private double pendingSeekFraction;
 
     private boolean play(
             ViewHolder viewHolder,
@@ -387,29 +591,77 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
             AudioPlayer.currentlyPlayingMessage = message;
             AudioPlayer.player.setAudioStreamType(
                     earpiece ? AudioManager.STREAM_VOICE_CALL : AudioManager.STREAM_MUSIC);
+            if (lease == null && Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
+                throw new IllegalStateException("SCS-only audio cannot play a legacy file");
+            }
             if (lease != null) {
                 AudioPlayer.player.setDataSource(messageAdapter.getActivity(), lease.getUri());
             } else {
                 AudioPlayer.player.setDataSource(
                         messageAdapter.getFileBackend().getFile(message).getAbsolutePath());
             }
-            AudioPlayer.player.setOnCompletionListener(this);
-            AudioPlayer.player.prepare();
-            AudioPlayer.player.start();
+            final MediaPlayer prepared = AudioPlayer.player;
+            final long generation = playbackGeneration;
+            final Context appContext = messageAdapter.getActivity().getApplicationContext();
+            final long epoch = SecureContentCryptoSessionRuntimeV1.snapshot(appContext).getEpoch();
             AudioPlayer.currentlyPlayingLease = lease;
-            messageAdapter.flagScreenOn();
-            acquireProximityWakeLock();
-            viewHolder.progress.setEnabled(true);
-            showPauseIcon(viewHolder);
-            viewHolder.playPause.setContentDescription(
-                    viewHolder.playPause.getContext().getString(R.string.pause_audio));
-            if (sensorManager != null && proximitySensor != null) {
-                sensorManager.registerListener(
-                        this, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL);
-            }
+            pendingPlaybackMessage = null;
+            preparing = true;
+            pendingSeekFraction = 0;
+            prepared.setOnCompletionListener(this);
+            prepared.setOnErrorListener((failed, what, extra) -> {
+                synchronized (LOCK) {
+                    if (player == prepared) {
+                        preparing = false;
+                        stopCurrent();
+                        showPlaybackError();
+                    }
+                }
+                return true;
+            });
+            prepared.setOnPreparedListener(ready -> {
+                synchronized (LOCK) {
+                    if (player != prepared || generation != playbackGeneration) return;
+                    if (viewHolder.boundMessage != message
+                            || !SecureAudioPresentation.isAudio(appContext, message)
+                            || messageAdapter.getActivity().isFinishing()
+                            || messageAdapter.getActivity().isDestroyed()
+                            || (Config.SECURE_CONTENT_MEDIA_ROLLOUT
+                                && (SecureContentCryptoSessionRuntimeV1.snapshot(appContext).getEpoch() != epoch
+                                    || !SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(appContext)))) {
+                        preparing = false;
+                        stopCurrent();
+                        return;
+                    }
+                    preparing = false;
+                    try {
+                        if (pendingSeekFraction > 0) {
+                            prepared.seekTo((int) (prepared.getDuration() * pendingSeekFraction));
+                        }
+                        prepared.start();
+                        messageAdapter.flagScreenOn();
+                        acquireProximityWakeLock();
+                        viewHolder.progress.setEnabled(true);
+                        showPauseIcon(viewHolder);
+                        viewHolder.playPause.setContentDescription(
+                                viewHolder.playPause.getContext().getString(R.string.pause_audio));
+                        if (sensorManager != null && proximitySensor != null) {
+                            sensorManager.registerListener(this, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL);
+                        }
+                        stopRefresher(true);
+                    } catch (RuntimeException error) {
+                        stopCurrent();
+                        showPlaybackError();
+                    }
+                }
+            });
+            prepared.prepareAsync();
             return true;
         } catch (final Exception e) {
+            preparing = false;
+            pendingPlaybackMessage = null;
             Log.w(Config.LOGTAG, "unable to start audio playback", e);
+            showPlaybackError();
             messageAdapter.flagScreenOff();
             releaseProximityWakeLock();
             AudioPlayer.currentlyPlayingMessage = null;
@@ -451,14 +703,16 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
 
     private void stopCurrent() {
         if (AudioPlayer.player != null) {
-            if (AudioPlayer.player.isPlaying()) {
-                AudioPlayer.player.stop();
-            }
+            AudioPlayer.player.setOnPreparedListener(null);
+            AudioPlayer.player.setOnErrorListener(null);
+            AudioPlayer.player.setOnCompletionListener(null);
             AudioPlayer.player.release();
         }
         messageAdapter.flagScreenOff();
         releaseProximityWakeLock();
         AudioPlayer.player = null;
+        AudioPlayer.currentlyPlayingMessage = null;
+        preparing = false;
         closeLease(AudioPlayer.currentlyPlayingLease);
         AudioPlayer.currentlyPlayingLease = null;
         resetPlayerUi();
@@ -489,7 +743,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                 viewHolder.playPause.getContext().getString(R.string.play_audio));
         showPlayIcon(viewHolder);
         if (message != null) {
-            viewHolder.runtime.setText(formatTime(message.getFileParams().runtime));
+            viewHolder.runtime.setText(formatTime(knownDuration(message, viewHolder.runtime.getContext())));
         }
         viewHolder.progress.setProgress(0);
         viewHolder.progress.setEnabled(false);
@@ -498,6 +752,8 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
     @Override
     public void onCompletion(android.media.MediaPlayer mediaPlayer) {
         synchronized (AudioPlayer.LOCK) {
+            if (AudioPlayer.player != mediaPlayer) return;
+            preparing = false;
             this.stopRefresher(false);
             if (AudioPlayer.player == mediaPlayer) {
                 AudioPlayer.currentlyPlayingMessage = null;
@@ -520,7 +776,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         synchronized (AudioPlayer.LOCK) {
             final RelativeLayout audioPlayer = (RelativeLayout) seekBar.getParent();
             final Message message = (Message) audioPlayer.getTag();
-            if (fromUser && message == AudioPlayer.currentlyPlayingMessage && AudioPlayer.player != null) {
+            if (fromUser && !preparing && message == AudioPlayer.currentlyPlayingMessage && AudioPlayer.player != null) {
                 float percent = progress / 100f;
                 int duration = AudioPlayer.player.getDuration();
                 int seekTo = Math.round(duration * percent);
@@ -539,6 +795,8 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
 
     public void stop() {
         synchronized (AudioPlayer.LOCK) {
+            playbackGeneration++;
+            pendingPlaybackMessage = null;
             stopRefresher(false);
             if (AudioPlayer.player != null) {
                 stopCurrent();
@@ -573,7 +831,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
     @Override
     public void run() {
         synchronized (AudioPlayer.LOCK) {
-            if (AudioPlayer.player != null) {
+            if (AudioPlayer.player != null && !preparing) {
                 boolean renew = false;
                 final int current = player.getCurrentPosition();
                 final int duration = player.getDuration();
@@ -607,7 +865,7 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
         if (event.sensor.getType() != Sensor.TYPE_PROXIMITY) {
             return;
         }
-        if (AudioPlayer.player == null || !AudioPlayer.player.isPlaying()) {
+        if (AudioPlayer.player == null || preparing || !AudioPlayer.player.isPlaying()) {
             return;
         }
         final int streamType;
@@ -635,6 +893,8 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
                                 streamType == AudioManager.STREAM_VOICE_CALL,
                                 progress,
                                 lease);
+                    } else {
+                        stopCurrent();
                     }
                 } catch (Exception e) {
                     Log.w(Config.LOGTAG, e);
@@ -679,6 +939,11 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
     }
 
     public static class ViewHolder {
+        private long metadataEpoch = -1;
+        private Message boundMessage;
+        private View metadata;
+        private TextView title;
+        private TextView artist;
         private TextView runtime;
         private AttachmentWaveformSeekBar progress;
         private MaterialButton playPause;
@@ -688,6 +953,9 @@ public class AudioPlayer implements View.OnClickListener, MediaPlayer.OnCompleti
             ViewHolder viewHolder = (ViewHolder) audioPlayer.getTag(R.id.TAG_AUDIO_PLAYER_VIEW_HOLDER);
             if (viewHolder == null) {
                 viewHolder = new ViewHolder();
+                viewHolder.metadata = audioPlayer.findViewById(R.id.audio_metadata);
+                viewHolder.title = audioPlayer.findViewById(R.id.audio_title);
+                viewHolder.artist = audioPlayer.findViewById(R.id.audio_artist);
                 viewHolder.runtime = audioPlayer.findViewById(R.id.runtime);
                 viewHolder.progress = audioPlayer.findViewById(R.id.progress);
                 viewHolder.playPause = audioPlayer.findViewById(R.id.play_pause);

@@ -608,7 +608,7 @@ public class StartConversationActivity extends XmppActivity
                         mActivatedAccounts,
                         getString(R.string.start_conversation),
                         getString(R.string.message),
-                "Call",
+                getString(R.string.make_call),
                 prefilledJid,
                 invite == null ? null : invite.account,
                 invite == null || !invite.hasFingerprints(),

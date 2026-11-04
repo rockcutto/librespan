@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
 import com.google.crypto.tink.Aead
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import org.json.JSONArray
@@ -175,10 +176,11 @@ internal class AccountProtectedSecureContentMetadataStore(
         accountUuid: String,
         messageUuid: String,
     ): List<SecureContentMetadataRecord> {
-        val persistedCandidates = readRelationCandidates(accountUuid, messageUuid)
+        val persistedCandidates =
+            readRelationCandidates(accountUuid, messageUuid)
+                ?: throw IOException("Secure media relation index is unreadable")
         val contentIds =
             when {
-                persistedCandidates == null -> emptyList()
                 persistedCandidates.isNotEmpty() -> persistedCandidates.toList()
                 fullSnapshotLoaded -> messageRelationIndex.contentIds(accountUuid, messageUuid)
                 else -> emptyList()
@@ -187,9 +189,10 @@ internal class AccountProtectedSecureContentMetadataStore(
 
         val readScope = SecureContentMetadataAeadReadScope(::aeadForRead)
         return try {
-            contentIds.mapNotNull { contentId ->
+            contentIds.map { contentId ->
                 findInternal(accountUuid, contentId, readScope)
                     ?.takeIf { it.messageUuid == messageUuid }
+                    ?: throw IOException("Secure media relation metadata is unreadable")
             }
         } finally {
             SecureColdStartPerfTrace.increment(

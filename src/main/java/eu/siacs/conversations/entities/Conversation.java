@@ -1365,7 +1365,8 @@ public class Conversation extends AbstractEntity
         return this.mucOptions;
     }
 
-    public void resetMucOptions() {
+    public synchronized void resetMucOptions() {
+        if (this.mucOptions != null) this.mucOptions.getJoinAttempt().finish();
         this.mucOptions = null;
     }
 

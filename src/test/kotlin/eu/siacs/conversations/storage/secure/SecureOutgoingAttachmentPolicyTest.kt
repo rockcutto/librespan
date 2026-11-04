@@ -6,6 +6,20 @@ import org.junit.Test
 
 class SecureOutgoingAttachmentPolicyTest {
     @Test
+    fun externalAudioDoesNotRequireRecorderOwnership() {
+        for (mime in listOf("audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/aac",
+            "audio/ogg", "audio/opus", " AUDIO/OGG ")) {
+            assertTrue(SecureOutgoingAttachmentPolicy.isAudioAttachment(mime))
+            assertFalse(SecureOutgoingAttachmentPolicy.isInlineVoiceRecording(mime, false))
+        }
+        // This ambiguous container already uses generic secure ingress; do not reclassify it.
+        assertTrue(SecureOutgoingAttachmentPolicy.isSimpleFile("application/ogg"))
+        for (mime in listOf(null, "image/jpeg", "video/mp4", "application/pdf", "application/ogg")) {
+            assertFalse(SecureOutgoingAttachmentPolicy.isAudioAttachment(mime))
+        }
+    }
+
+    @Test
     fun acceptsGenericFilesAndDocuments() {
         assertTrue(SecureOutgoingAttachmentPolicy.isSimpleFile(null))
         assertTrue(SecureOutgoingAttachmentPolicy.isSimpleFile("application/pdf"))

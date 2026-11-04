@@ -102,6 +102,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import eu.siacs.conversations.Config;
+import eu.siacs.conversations.storage.secure.ScsTextDiagnosticsRuntime;
 import eu.siacs.conversations.Conversations;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.crypto.axolotl.AxolotlService;
@@ -7022,34 +7023,10 @@ public class ConversationFragment extends XmppFragment
                         final var secureBinding =
                                 coordinator.resolve(accountUuid, message.getUuid());
                         if (secureBinding == null) {
-                            final boolean deletedLegacyFile =
-                                    targetActivity
-                                            .xmppConnectionService
-                                            .getFileBackend()
-                                            .deleteFile(message);
-                            if (deletedLegacyFile) {
-                                targetActivity.runOnUiThread(
-                                        () -> markMessageFileDeleted(targetActivity, message));
-                            }
-                            return;
+                            throw new IOException("Secure media is not available for deletion");
                         }
 
-                        final DownloadableFile legacyFile =
-                                targetActivity
-                                        .xmppConnectionService
-                                        .getFileBackend()
-                                        .getFile(message);
-                        if (legacyFile.exists()
-                                && !targetActivity
-                                        .xmppConnectionService
-                                        .getFileBackend()
-                                        .deleteFile(message)
-                                && legacyFile.exists()) {
-                            throw new IOException(
-                                    "Unable to delete legacy plaintext before secure media"
-                                            + " retirement");
-                        }
-
+                        // Do not touch a FileBackend path: it may be a user-selected source file.
                         coordinator.retire(secureBinding);
                         targetActivity.runOnUiThread(
                                 () -> markMessageFileDeleted(targetActivity, message));
@@ -7536,7 +7513,12 @@ public class ConversationFragment extends XmppFragment
                 conversation.getMode() == Conversational.MODE_SINGLE
                         || conversation.getMucOptions().participating();
         if (participating) {
+            final long vaultStartMs = android.os.SystemClock.elapsedRealtime();
+            ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG vault-begin muc="
+                    + (conversation.getMode() == Conversational.MODE_MULTI));
             this.activity.xmppConnectionService.hydrateConversationSecrets(this.conversation);
+            ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG vault-end elapsedMs="
+                    + (android.os.SystemClock.elapsedRealtime() - vaultStartMs));
             this.binding.textinput.setText(this.conversation.getNextMessage());
             this.binding.textinput.setSelection(this.binding.textinput.length());
         } else {
@@ -8199,10 +8181,13 @@ public class ConversationFragment extends XmppFragment
         }
 
         final boolean trustRequired = state == OmemoTrustChatState.TRUST_REQUIRED;
-        binding.omemoTrustMessage.setText(
+        final int bannerText =
                 trustRequired
                         ? R.string.omemo_chat_trust_required
-                        : R.string.omemo_chat_fetching_keys);
+                        : state == OmemoTrustChatState.NO_ACTIVE_KEYS
+                                ? R.string.omemo_chat_no_active_keys
+                                : R.string.omemo_chat_fetching_keys;
+        binding.omemoTrustMessage.setText(bannerText);
         binding.omemoTrustAction.setVisibility(trustRequired ? View.VISIBLE : View.GONE);
         if (trustRequired) {
             binding.omemoTrustAction.setOnClickListener(v -> openOmemoTrustKeysFromChat());
@@ -8341,17 +8326,15 @@ public class ConversationFragment extends XmppFragment
                     }
                     return;
                 case REMOTE_SERVER_TIMEOUT:
-                    if (conversation.receivedMessagesCount() > 0) {
-                        showComposerBlockingState(
-                                R.string.remote_server_timeout, R.string.try_again, joinMuc);
-                    } else {
-                        showComposerBlockingState(
-                                R.string.remote_server_timeout, R.string.leave, leaveMuc);
-                    }
+                    showComposerBlockingState(
+                            R.string.remote_server_timeout, R.string.try_again, joinMuc);
                     return;
                 case PASSWORD_REQUIRED:
+                case PASSWORD_INCORRECT:
                     showComposerBlockingState(
-                            R.string.conference_requires_password,
+                            conversation.getMucOptions().getError() == MucOptions.Error.PASSWORD_INCORRECT
+                                    ? R.string.conference_password_incorrect
+                                    : R.string.conference_requires_password,
                             R.string.enter_password,
                             enterPassword);
                     return;
@@ -8567,6 +8550,11 @@ public class ConversationFragment extends XmppFragment
                                 presentationRevisionAfter);
                 final boolean requestedAdapterRefresh =
                         refreshAction != TimelineRefreshGate.RefreshAction.NONE;
+                if (renderedConversationPresentationRevision != presentationRevisionAfter) {
+                    ScsTextDiagnosticsRuntime.record(activity, "SCS_DIAG refresh action=" + refreshAction
+                            + " previous=" + renderedConversationPresentationRevision
+                            + " current=" + presentationRevisionAfter);
+                }
                 boolean visibleRetractionPending = false;
                 for (final Message visible : this.messageList) {
                     if (visible.isRetracted()) {
@@ -8575,7 +8563,7 @@ public class ConversationFragment extends XmppFragment
                     }
                 }
                 final boolean deferTimelineRefresh =
-                        requestedAdapterRefresh
+                        refreshAction == TimelineRefreshGate.RefreshAction.REBUILD
                                 && !visibleRetractionPending
                                 && !forceTimelineRebuild
                                 && !conversationChanged

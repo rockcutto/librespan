@@ -253,19 +253,23 @@ public class MediaAdapter extends RecyclerView.Adapter<MediaAdapter.MediaViewHol
                                 onAttachmentClickListener.onAttachmentClick(attachment);
                                 return;
                             }
-                            if (attachment.isSecureMedia() && accountUuid != null) {
+                            if (attachment.isSecureMedia()) {
+                                if (accountUuid == null) {
+                                    android.widget.Toast.makeText(
+                                                    activity,
+                                                    R.string.error_io_exception,
+                                                    android.widget.Toast.LENGTH_SHORT)
+                                            .show();
+                                    return;
+                                }
                                 SecureMessageMediaUiBridge.openOrFallback(
                                         activity,
                                         accountUuid,
                                         attachment.getUuid().toString(),
                                         attachment.getMime(),
-                                        () ->
-                                                android.widget.Toast.makeText(
-                                                                activity,
-                                                                R.string.file_deleted,
-                                                                android.widget.Toast.LENGTH_SHORT)
-                                                        .show());
+                                        () -> {});
                             } else {
+                                // Non-secure attachments here may be user-selected source files.
                                 ViewUtil.view(activity, attachment);
                             }
                         });
@@ -414,6 +418,11 @@ public class MediaAdapter extends RecyclerView.Adapter<MediaAdapter.MediaViewHol
                                             mediaSize,
                                             true);
                     if (bitmap != null) {
+                        if (!eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
+                                .isBackgroundCryptoAvailable(activity.getApplicationContext())) {
+                            bitmap.recycle();
+                            return null;
+                        }
                         final String key =
                                 "attachment_"
                                         + this.attachment.getUuid().toString()

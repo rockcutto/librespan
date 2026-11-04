@@ -454,7 +454,7 @@ public class MessageParser extends AbstractParser
                 final Jid from = Jid.Invalid.getNullForInvalid(invite.getAttributeAsJid("from"));
                 final Jid to = Jid.Invalid.getNullForInvalid(invite.getAttributeAsJid("to"));
                 if (to != null && from == null) {
-                    Log.d(Config.LOGTAG, "do not parse outgoing mediated invite " + message);
+                    Log.d(Config.LOGTAG, "do not parse outgoing mediated invite");
                     return null;
                 }
                 final Jid room = Jid.Invalid.getNullForInvalid(message.getAttributeAsJid("from"));
@@ -1149,7 +1149,13 @@ public class MessageParser extends AbstractParser
             }
 
             if (isTypeGroupChat) {
-                if (conversation.getMucOptions().isSelf(counterpart)) {
+                final var mucOptions = conversation.getMucOptions();
+                final boolean currentSelf = mucOptions.isSelf(counterpart);
+                final boolean verifiedRenameEcho = !currentSelf
+                        && mucOptions.isVerifiedPendingSelfNickEcho(
+                                counterpart, remoteMsgId,
+                                id -> conversation.findSentMessageWithUuid(id) != null);
+                if (currentSelf || verifiedRenameEcho) {
                     status = Message.STATUS_SEND_RECEIVED;
                     isCarbon = true; // not really carbon but received from another resource
                     final String reflectedRoomStanzaId =
@@ -1172,6 +1178,10 @@ public class MessageParser extends AbstractParser
                             Strings.isNullOrEmpty(replacementId) ? serverMsgId : null;
                     if (mXmppConnectionService.markMessage(
                             conversation, remoteMsgId, status, reflectedServerMsgId, body)) {
+                        return;
+                    } else if (verifiedRenameEcho) {
+                        // The exact local UUID existed when we identified this transition echo.
+                        // Never create a second, incoming bubble if it disappeared meanwhile.
                         return;
                     } else if (remoteMsgId == null || Config.IGNORE_ID_REWRITE_IN_MUC) {
                         if (body != null) {
@@ -1798,10 +1808,14 @@ public class MessageParser extends AbstractParser
                             && remoteFileParams.url != null
                             && remoteFileParams.size != null;
             if (!message.isModerated()
-                    && message.trusted()
+                    && (message.trusted()
+                            || (conversationMultiMode
+                                    && isTypeGroupChat
+                                    && conversation.getStatus() == Conversation.STATUS_AVAILABLE
+                                    && !conversation.isMucExplicitlyLeft()))
                     && (message.treatAsDownloadable() || hasKnownRemoteAttachment)
                     && manager.getAutoAcceptFileSize() > 0) {
-                // Classification is presentation-only. A trusted remote attachment must enter the
+                // Classification is presentation-only. An eligible remote attachment enters the
                 // same metadata/size policy even when an earlier pass already rewrote the body to
                 // the canonical "url|size" form and treatAsDownloadable() no longer sees a bare URL.
                 manager.createNewDownloadConnection(message);

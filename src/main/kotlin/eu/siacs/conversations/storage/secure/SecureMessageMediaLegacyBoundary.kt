@@ -17,9 +17,8 @@ class SecureMessageMediaLegacyBoundary(
 
     @Throws(IOException::class)
     fun requireLegacyAllowed(accountUuid: String, messageUuid: String) {
-        if (coordinator.resolve(accountUuid, messageUuid) != null) {
-            throw IOException("Legacy FileBackend is forbidden for secure media relation")
-        }
+        // Keep the old signature for callers, but SCS-only never authorizes FileBackend reads.
+        throw IOException("Legacy FileBackend is forbidden in SCS-only mode")
     }
 
     @Throws(IOException::class)

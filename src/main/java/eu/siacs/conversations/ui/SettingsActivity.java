@@ -1,5 +1,6 @@
 package eu.siacs.conversations.ui;
 
+import android.app.ActivityManager;
 import android.app.KeyguardManager;
 import android.database.Cursor;
 import android.content.ActivityNotFoundException;
@@ -18,6 +19,7 @@ import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
@@ -91,6 +93,7 @@ import eu.siacs.conversations.services.CallIntegration;
 import eu.siacs.conversations.services.MemorizingTrustManager;
 import eu.siacs.conversations.services.NotificationService;
 import eu.siacs.conversations.services.QuickConversationsService;
+import eu.siacs.conversations.services.XmppConnectionService;
 import eu.siacs.conversations.receiver.UnifiedPushDistributor;
 import eu.siacs.conversations.security.applock.AppLockController;
 import eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1;
@@ -257,6 +260,7 @@ public class SettingsActivity extends XmppActivity implements OnSharedPreference
         final Preference accountPreference =
                 mSettingsFragment.findPreference(UnifiedPushDistributor.PREFERENCE_ACCOUNT);
         reconfigureUpAccountPreference(accountPreference);
+        refreshBackgroundDeliveryPreference();
         configureNeoContAccountPreferences();
         configureLocalAccountDataCleanup();
         refreshLocalStorageUsage();
@@ -2148,6 +2152,106 @@ public class SettingsActivity extends XmppActivity implements OnSharedPreference
         }
     }
 
+    private void configureBackgroundDeliveryPreference() {
+        final Preference preference =
+                mSettingsFragment.findPreference("background_delivery_reliability");
+        if (preference == null) {
+            return;
+        }
+        // On Android 7, the legacy Foreground Service switch is still functional.
+        preference.setVisible(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O);
+        preference.setOnPreferenceClickListener(
+                clicked -> {
+                    showBackgroundDeliveryDiagnostics();
+                    return true;
+                });
+        refreshBackgroundDeliveryPreference();
+    }
+
+    private void refreshBackgroundDeliveryPreference() {
+        final Preference preference =
+                mSettingsFragment.findPreference("background_delivery_reliability");
+        if (preference == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+        preference.setSummary(
+                getString(
+                        R.string.neocont_delivery_status_summary,
+                        getString(foregroundServiceStatus()),
+                        getString(batteryOptimizationStatus())));
+    }
+
+    @SuppressWarnings("deprecation") // Android still returns this app's own services on API 26+.
+    private int foregroundServiceStatus() {
+        final ActivityManager manager = getSystemService(ActivityManager.class);
+        if (manager == null) {
+            return R.string.neocont_delivery_status_unknown;
+        }
+        try {
+            for (final ActivityManager.RunningServiceInfo info :
+                    manager.getRunningServices(Integer.MAX_VALUE)) {
+                if (info.service != null
+                        && XmppConnectionService.class.getName().equals(info.service.getClassName())) {
+                    return info.foreground
+                            ? R.string.neocont_delivery_status_running
+                            : R.string.neocont_delivery_status_stopped;
+                }
+            }
+            return R.string.neocont_delivery_status_stopped;
+        } catch (final RuntimeException e) {
+            Log.w(Config.LOGTAG, "Unable to read foreground service state", e);
+            return R.string.neocont_delivery_status_unknown;
+        }
+    }
+
+    private int batteryOptimizationStatus() {
+        final PowerManager manager = getSystemService(PowerManager.class);
+        if (manager == null) {
+            return R.string.neocont_delivery_status_unknown;
+        }
+        return manager.isIgnoringBatteryOptimizations(getPackageName())
+                ? R.string.neocont_delivery_battery_unrestricted
+                : R.string.neocont_delivery_battery_restricted;
+    }
+
+    private void showBackgroundDeliveryDiagnostics() {
+        final String details =
+                getString(
+                        R.string.neocont_delivery_status_details,
+                        getString(foregroundServiceStatus()),
+                        getString(batteryOptimizationStatus()));
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.neocont_delivery_reliability)
+                .setMessage(details)
+                .setPositiveButton(
+                        R.string.neocont_delivery_battery_settings,
+                        (dialog, which) -> openBackgroundBatterySettings())
+                .setNeutralButton(
+                        R.string.neocont_delivery_app_settings,
+                        (dialog, which) -> openBackgroundAppSettings())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void openBackgroundBatterySettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        } catch (final ActivityNotFoundException | SecurityException e) {
+            Log.w(Config.LOGTAG, "Battery optimization settings are unavailable", e);
+            openBackgroundAppSettings();
+        }
+    }
+
+    private void openBackgroundAppSettings() {
+        final Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        intent.setData(Uri.parse("package:" + getPackageName()));
+        try {
+            startActivity(intent);
+        } catch (final ActivityNotFoundException | SecurityException e) {
+            Log.w(Config.LOGTAG, "Application settings are unavailable", e);
+        }
+    }
+
     private void configureNotificationPreferences() {
         final PreferenceGroup messages =
                 (PreferenceGroup) mSettingsFragment.findPreference(
@@ -2396,6 +2500,7 @@ public class SettingsActivity extends XmppActivity implements OnSharedPreference
         configureNeoContChatPreferences();
         configureNeoContDataPreferences();
         configureNotificationPreferences();
+        configureBackgroundDeliveryPreference();
         configureAppLockPreference();
         configureHighSecurityPreference();
         configureCallPreferences();
@@ -3098,6 +3203,7 @@ public class SettingsActivity extends XmppActivity implements OnSharedPreference
         SettingsUtils.applyScreenshotSetting(this);
         configureDeveloperSettings();
         configureHighSecurityPreference();
+        refreshBackgroundDeliveryPreference();
     }
 
     @Override

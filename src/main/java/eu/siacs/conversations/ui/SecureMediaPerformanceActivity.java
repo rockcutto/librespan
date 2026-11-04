@@ -18,6 +18,7 @@ import com.google.android.material.button.MaterialButton;
 import eu.siacs.conversations.R;
 import eu.siacs.conversations.storage.secure.SecureColdStartPerfRuntime;
 import eu.siacs.conversations.storage.secure.SecureMediaPerfRuntime;
+import eu.siacs.conversations.storage.secure.ScsTextDiagnosticsRuntime;
 
 /**
  * In-app Secure Media timing report that does not depend on Android Logcat visibility.
@@ -89,6 +90,7 @@ public final class SecureMediaPerformanceActivity extends ActionBarActivity {
                 view -> {
                     SecureMediaPerfRuntime.clear(this);
                     SecureColdStartPerfRuntime.clear(this);
+                    ScsTextDiagnosticsRuntime.clear(this);
                     refreshReport();
                 });
         actions.addView(clear);
@@ -133,7 +135,9 @@ public final class SecureMediaPerformanceActivity extends ActionBarActivity {
     private String combinedReport() {
         return SecureColdStartPerfRuntime.report(this)
                 + "\n\n"
-                + SecureMediaPerfRuntime.report(this);
+                + SecureMediaPerfRuntime.report(this)
+                + "\n\n"
+                + ScsTextDiagnosticsRuntime.report(this);
     }
 
     private int dp(final int value) {

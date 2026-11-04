@@ -167,18 +167,15 @@ public class MediaAlbumActivity extends XmppActivity {
             final boolean secureRollout,
             final boolean secureRelationPresent,
             final boolean secureResolutionFailed) {
-        if (!secureRollout) {
-            return ViewerSourcePolicy.LEGACY;
-        }
-        if (secureResolutionFailed) {
+        if (!secureRollout || secureResolutionFailed) {
             return ViewerSourcePolicy.UNAVAILABLE;
         }
-        return secureRelationPresent ? ViewerSourcePolicy.SECURE : ViewerSourcePolicy.LEGACY;
+        return secureRelationPresent ? ViewerSourcePolicy.SECURE : ViewerSourcePolicy.UNAVAILABLE;
     }
 
     private ViewerSourcePolicy resolveViewerSourcePolicy(@NonNull final Message message) {
         if (!Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
-            return ViewerSourcePolicy.LEGACY;
+            return ViewerSourcePolicy.UNAVAILABLE;
         }
         synchronized (viewerSourcePolicies) {
             final ViewerSourcePolicy cached = viewerSourcePolicies.get(message.getUuid());
@@ -199,8 +196,10 @@ public class MediaAlbumActivity extends XmppActivity {
                             != null;
             final ViewerSourcePolicy resolved =
                     viewerSourcePolicy(true, secureRelationPresent, false);
-            synchronized (viewerSourcePolicies) {
-                viewerSourcePolicies.put(message.getUuid(), resolved);
+            if (resolved == ViewerSourcePolicy.SECURE) {
+                synchronized (viewerSourcePolicies) {
+                    viewerSourcePolicies.put(message.getUuid(), resolved);
+                }
             }
             return resolved;
         } catch (final Exception error) {
@@ -533,14 +532,9 @@ public class MediaAlbumActivity extends XmppActivity {
                                     viewerSourcePolicies.put(
                                             message.getUuid(), ViewerSourcePolicy.SECURE);
                                 }
-                            } else {
-                                // resolveMetadata() returning null is the authoritative clean
-                                // "no SCS relation" result used by the viewer source policy.
-                                synchronized (viewerSourcePolicies) {
-                                    viewerSourcePolicies.put(
-                                            message.getUuid(), ViewerSourcePolicy.LEGACY);
-                                }
                             }
+                            // A missing or still-pending secure relation must not cache a
+                            // legacy source; a later page refresh can retry after commit.
                         } catch (final Exception ignoredPerMessage) {
                             // Source resolution later remains fail-closed for a broken secure
                             // relation. Metadata hydration must not let one bad page hide the rest
@@ -1970,6 +1964,11 @@ public class MediaAlbumActivity extends XmppActivity {
                                 "result=null");
                         return null;
                     }
+                    if (!eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
+                            .isBackgroundCryptoAvailable(getApplicationContext())) {
+                        lease.close();
+                        return null;
+                    }
                     logVideoTelemetry(
                             "cache_acquire_success",
                             message,
@@ -1987,37 +1986,8 @@ public class MediaAlbumActivity extends XmppActivity {
                     return null;
                 }
             }
-            if (sourcePolicy == ViewerSourcePolicy.UNAVAILABLE) {
-                logVideoTelemetry("source_unavailable", message, sourcePolicy, null, null);
-                return null;
-            }
-
-            // Secure rollout is a producer/default policy, not a declaration that every
-            // historical attachment has already been migrated. A cleanly absent SCS relation may
-            // still be backed by the legacy FileBackend and remains readable.
-            final File file = xmppConnectionService.getFileBackend().getFile(message);
-            if (!file.isFile()) {
-                logVideoTelemetry(
-                        "legacy_source_failure",
-                        message,
-                        sourcePolicy,
-                        null,
-                        "result=missing");
-                return null;
-            }
-            try {
-                final Uri uri = FileBackend.getUriForFile(MediaAlbumActivity.this, file);
-                logVideoTelemetry("legacy_source_success", message, sourcePolicy, uri, null);
-                return new VideoSource(uri, null);
-            } catch (final Exception error) {
-                logVideoTelemetry(
-                        "legacy_source_failure",
-                        message,
-                        sourcePolicy,
-                        null,
-                        "error=" + error.getClass().getSimpleName());
-                return null;
-            }
+            logVideoTelemetry("source_unavailable", message, sourcePolicy, null, null);
+            return null;
         }
 
         @Override
@@ -2207,6 +2177,11 @@ public class MediaAlbumActivity extends XmppActivity {
                         }
                     }
                     if (bitmap != null) {
+                        if (!eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
+                                .isBackgroundCryptoAvailable(getApplicationContext())) {
+                            bitmap.recycle();
+                            return null;
+                        }
                         xmppConnectionService.cacheMessageBitmap(targetMessage, size, variant, bitmap);
                     }
                     return bitmap;
@@ -2216,16 +2191,7 @@ public class MediaAlbumActivity extends XmppActivity {
                     return null;
                 }
             }
-            if (sourcePolicy == ViewerSourcePolicy.UNAVAILABLE) {
-                return null;
-            }
-            try {
-                return xmppConnectionService
-                        .getFileBackend()
-                        .getThumbnail(targetMessage, size, false, variant);
-            } catch (final IOException e) {
-                return null;
-            }
+            return null;
         }
 
         private Bitmap decodeSecureBitmap(

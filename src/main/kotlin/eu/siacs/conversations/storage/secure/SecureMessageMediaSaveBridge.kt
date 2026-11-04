@@ -71,11 +71,11 @@ object SecureMessageMediaSaveBridge {
     fun saveOrFallback(
         activity: XmppActivity,
         message: Message,
-        legacyFallback: Runnable,
+        @Suppress("UNUSED_PARAMETER") legacyFallback: Runnable,
         callback: Callback,
     ) {
         if (!Config.SECURE_CONTENT_MEDIA_ROLLOUT) {
-            legacyFallback.run()
+            callback.error(R.string.error_io_exception)
             return
         }
         val accountUuid = message.conversation.account.uuid
@@ -108,12 +108,7 @@ object SecureMessageMediaSaveBridge {
                         }
                     }
                 if (!saved) {
-                    activity.runOnUiThread {
-                        if (!activity.isFinishing && !activity.isDestroyed) {
-                            legacyFallback.run()
-                        }
-                    }
-                    return@execute
+                    throw IOException("Secure media is not available for export")
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val uri =

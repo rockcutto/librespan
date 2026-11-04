@@ -198,6 +198,7 @@
     <string name="channel_full_jid_example">channel@conference.domain.de/Nickname</string>
     <string name="channel_bare_jid_example">channel@conference.domain.de</string>
     <string name="save_as_bookmark">Als Lesezeichen speichern</string>
+    <string name="save_as_contact_or_bookmark">Als Kontakt / Lesezeichen speichern</string>
     <string name="delete_bookmark">Lesezeichen löschen</string>
     <string name="destroy_room">Gruppenchat löschen</string>
     <string name="destroy_channel">Channel löschen</string>
@@ -2118,5 +2119,33 @@
     <string name="omemo_chat_trust_required">Bestätige den OMEMO-Schlüssel, um Nachrichten zu senden.</string>
     <string name="omemo_chat_fetching_keys">OMEMO-Schlüssel werden geladen…</string>
     <string name="omemo_chat_verify_keys">Schlüssel prüfen</string>
+
+    <!-- Full-screen MUC owner permissions; titles and supporting text. -->
+    <string name="muc_permissions_intro">Änderungen werden erst mit „Speichern“ an den Server gesendet.</string>
+    <string name="muc_permissions_members_summary">Nur Personen mit einer Mitgliedschaft dürfen dem Raum beitreten.</string>
+    <string name="muc_permissions_members_locked_summary">Die Zugangsregel kann für diesen Raum nicht geändert werden.</string>
+    <string name="muc_permissions_reload">Neu laden</string>
+    <string name="muc_permissions_saving">Raumeinstellungen werden gespeichert…</string>
+    <string name="muc_permissions_discard_title">Änderungen verwerfen?</string>
+    <string name="muc_permissions_discard_summary">Die Änderungen an Berechtigungen und Zugriff sind noch nicht gespeichert.</string>
+    <string name="muc_permissions_discard">Verwerfen</string>
+    <string name="muc_permissions_public_summary">Der Raum kann im Verzeichnis erscheinen. Das Ausblenden verhindert den Beitritt nicht.</string>
+    <string name="muc_permissions_subject_label">Teilnehmende dürfen das Thema ändern</string>
+    <string name="muc_permissions_subject_summary">Teilnehmende können das im Chat angezeigte Thema ändern.</string>
+    <string name="muc_permissions_invites_label">Teilnehmende dürfen einladen</string>
+    <string name="muc_permissions_invites_summary">Teilnehmende können andere einladen. In geschlossenen Räumen kann zusätzlich eine Mitgliedschaft nötig sein.</string>
+    <string name="muc_permissions_whois_label">XMPP-Adressen für alle sichtbar</string>
+    <string name="muc_permissions_whois_summary">Alle im Raum können XMPP-Adressen sehen, nicht nur Moderatoren.</string>
+    <string name="muc_permissions_moderated_label">Nachrichtenversand einschränken</string>
+    <string name="muc_permissions_moderated_summary">Nur Personen mit Schreibrecht dürfen Nachrichten senden. Gäste benötigen eventuell eine Freigabe.</string>
+    <string name="muc_permissions_pm_label">Private Nachrichten für alle erlauben</string>
+    <string name="muc_permissions_pm_summary">Ist die Option aus, dürfen nur Moderatoren private Nachrichten über den Raum senden.</string>
     <string name="omemo_chat_no_active_keys">Noch keine aktiven OMEMO-Geräteschlüssel verfügbar.</string>
+    <string name="muc_users_owners">Eigentümer</string>
+    <string name="muc_users_admins">Administratoren</string>
+    <string name="muc_users_moderators">Moderatoren</string>
+    <string name="muc_users_participants">Teilnehmer</string>
+    <string name="muc_users_visitors">Besucher</string>
+    <string name="muc_users_not_in_room">Nicht im Raum</string>
+    <string name="muc_users_banned">Gesperrte</string>
 </resources>

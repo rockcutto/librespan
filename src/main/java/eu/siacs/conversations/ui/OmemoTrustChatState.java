@@ -7,7 +7,8 @@ package eu.siacs.conversations.ui;
 public enum OmemoTrustChatState {
     HIDDEN,
     FETCHING,
-    TRUST_REQUIRED;
+    TRUST_REQUIRED,
+    NO_ACTIVE_KEYS;
 
     public static OmemoTrustChatState resolve(
             final boolean omemoDirectChat,
@@ -23,6 +24,6 @@ public enum OmemoTrustChatState {
         if (hasKnownActiveRemoteSession) {
             return TRUST_REQUIRED;
         }
-        return HIDDEN;
+        return NO_ACTIVE_KEYS;
     }
 }

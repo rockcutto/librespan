@@ -5,8 +5,8 @@ import java.util.Locale
 /**
  * Scope gate for the first producer migration.
  *
- * Generic files/documents, images, and completed app-owned inline voice recordings use Secure
- * Content first. Video/transcoding remains owned by its bounded checkpoint.
+ * Generic files/documents, images, and audio use Secure Content first. Video/transcoding remains
+ * owned by its bounded checkpoint.
  */
 object SecureOutgoingAttachmentPolicy {
     @JvmStatic
@@ -21,6 +21,11 @@ object SecureOutgoingAttachmentPolicy {
     @JvmStatic
     fun isImageAttachment(mimeType: String?): Boolean =
         mimeType?.trim()?.lowercase(Locale.ROOT)?.startsWith("image/") == true
+
+    /** External audio uses the same committed URI ingress as completed voice recordings. */
+    @JvmStatic
+    fun isAudioAttachment(mimeType: String?): Boolean =
+        mimeType?.trim()?.lowercase(Locale.ROOT)?.startsWith("audio/") == true
 
     /** Video is secure once producer staging has completed or generic ingress is selected. */
     @JvmStatic

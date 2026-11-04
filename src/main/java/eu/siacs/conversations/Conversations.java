@@ -161,6 +161,14 @@ public class Conversations extends Application {
         CONTEXT = this.getApplicationContext();
         initializeUiStateTracking();
         SecureContentCryptoSessionRuntimeV1.initialize(getApplicationContext());
+        // Process death may leave previously authorized, seekable plaintext export files.
+        // Clear those paths before reusing the app while High Security is locked.
+        if (!SecureContentCryptoSessionRuntimeV1.isBackgroundCryptoAvailable(getApplicationContext())) {
+            eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaReadCache
+                    .clearAllTemporaryFiles(getApplicationContext());
+            eu.siacs.conversations.storage.secure.AndroidSecureMessageMediaExporter
+                    .clearAllTemporaryFiles(getApplicationContext());
+        }
         AppLockController.initialize(getApplicationContext());
         SecureColdStartPerfRuntime.initialize(getApplicationContext());
         SecureColdStartPerfTrace.start();

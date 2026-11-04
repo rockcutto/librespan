@@ -33,10 +33,9 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!--    New permissions required to run as foreground service on Android 14.
-            SYSTEM_EXEMPTED is used when the app is on the doze allow list. This is normal
-            and the expected default behaviour. The other two hijack RECORD_AUDIO and CAMERA if they
-            happen to be granted. -->
+    <!-- Foreground service types for Android 14+. XMPP background connectivity uses
+         specialUse (or systemExempted when Doze-exempt); microphone/camera types are
+         selected only for an ongoing call, not merely because permissions were granted. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -307,6 +306,11 @@
             android:name=".ui.ConferenceDetailsActivity"
             android:label="@string/action_muc_details"
             android:windowSoftInputMode="stateHidden|adjustResize" />
+        <activity
+            android:name=".ui.MucPermissionsActivity"
+            android:exported="false"
+            android:label="@string/muc_admin_permissions"
+            android:parentActivityName=".ui.ConferenceDetailsActivity" />
         <activity
             android:name=".ui.ContactDetailsActivity"
             android:windowSoftInputMode="stateHidden" />

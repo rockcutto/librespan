@@ -56,7 +56,10 @@ public class MucOptions {
     private Error error = Error.NONE;
     private User self;
     private long voiceRequestPendingSince = 0L;
+    private final MucJoinAttempt joinAttempt = new MucJoinAttempt();
+    private final MucSelfNickEchoGuard selfNickEchoGuard = new MucSelfNickEchoGuard();
     private String password = null;
+    private String passwordFallback = null;
 
     public MucOptions(final Conversation conversation) {
         this.account = conversation.getAccount();
@@ -71,6 +74,8 @@ public class MucOptions {
     }
 
     public boolean setSelf(final User user) {
+        // The new self-presence settles a pending 303 rename, whether accepted or superseded.
+        selfNickEchoGuard.clear();
         this.self = user;
         if (user.role.ranks(Role.PARTICIPANT)) {
             this.voiceRequestPendingSince = 0L;
@@ -206,6 +211,20 @@ public class MucOptions {
 
     public boolean isSelf(final String occupantId) {
         return occupantId != null && occupantId.equals(self.getOccupantId());
+    }
+
+    /** Called only after a self-presence 110 + nickname-change 303 from our current nick. */
+    public void noteServerConfirmedSelfNickChange(final Jid previousFullJid, final Jid newFullJid) {
+        if (isOnline) {
+            selfNickEchoGuard.observe303(self.getFullJid(), previousFullJid, newFullJid);
+        }
+    }
+
+    /** Never classify an uncorrelated room occupant as self during a nickname transition. */
+    public boolean isVerifiedPendingSelfNickEcho(
+            final Jid from, final String messageId,
+            final java.util.function.Predicate<String> locallySentMessageId) {
+        return isOnline && selfNickEchoGuard.matchesEcho(from, messageId, locallySentMessageId);
     }
 
     public void resetChatState() {
@@ -583,6 +602,7 @@ public class MucOptions {
     }
 
     public boolean setOnline() {
+        joinAttempt.confirm();
         boolean before = this.isOnline;
         this.isOnline = true;
         return !before;
@@ -714,6 +734,8 @@ public class MucOptions {
         }
     }
 
+    public MucJoinAttempt getJoinAttempt() { return joinAttempt; }
+
     public boolean online() {
         return this.isOnline;
     }
@@ -723,6 +745,10 @@ public class MucOptions {
     }
 
     public void setError(Error error) {
+        if (error != Error.NONE) {
+            joinAttempt.finish();
+            selfNickEchoGuard.clear();
+        }
         this.isOnline = isOnline && error == Error.NONE;
         this.error = error;
     }
@@ -732,6 +758,8 @@ public class MucOptions {
     }
 
     public void setOffline() {
+        joinAttempt.finish();
+        selfNickEchoGuard.clear();
         synchronized (users) {
             this.users.clear();
         }
@@ -836,6 +864,8 @@ public class MucOptions {
     }
 
     public String getPassword() {
+        if ((this.error == Error.PASSWORD_REQUIRED || this.error == Error.PASSWORD_INCORRECT)
+                && passwordFallback != null) return passwordFallback;
         if (this.password != null) {
             return this.password;
         }
@@ -845,10 +875,18 @@ public class MucOptions {
 
     public void setPassword(String password) {
         this.password = password;
+        this.passwordFallback = null;
         final Bookmark bookmark = conversation.getBookmark();
-        if (bookmark != null) {
-            bookmark.setPassword(password);
+        // Runtime join credentials must never enter a serializable bookmark. Preserve the
+        // existing null cleanup used by High Security without copying non-null secrets.
+        if (bookmark != null && password == null) {
+            bookmark.setPassword(null);
         }
+    }
+
+    /** Only the existing password-required prompt selects this; no automatic rejoin is added. */
+    public void setPasswordFallback(final String password) {
+        this.passwordFallback = password;
     }
 
     public Conversation getConversation() {
@@ -962,6 +1000,7 @@ public class MucOptions {
         NONE,
         NICK_IN_USE,
         PASSWORD_REQUIRED,
+        PASSWORD_INCORRECT,
         BANNED,
         MEMBERS_ONLY,
         RESOURCE_CONSTRAINT,

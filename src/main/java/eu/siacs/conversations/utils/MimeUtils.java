@@ -594,7 +594,8 @@ public final class MimeUtils {
      * filename to turn an explicit document into media.
      */
     public static String resolvePresentationMime(String mimeType, String fileName) {
-        final String normalized = normalizeMimeType(mimeType);
+        final String supplied = normalizeMimeType(mimeType);
+        final String normalized = "application/x-flac".equals(supplied) ? "audio/flac" : supplied;
         final String inferredFromName =
                 guessMimeTypeFromExtension(extractRelevantExtension(fileName));
 
@@ -605,6 +606,11 @@ public final class MimeUtils {
                 || isExplicitDocumentMime(normalized)
                 || AMBIGUOUS_CONTAINER_FORMATS.contains(normalized)) {
             return normalized;
+        }
+        if ("application/octet-stream".equals(normalized)
+                && "application/ogg".equals(inferredFromName)) {
+            // .ogg remains ambiguous until its actual tracks have been inspected.
+            return inferredFromName;
         }
         if (normalized.startsWith("application/") && isMediaMime(inferredFromName)) {
             return inferredFromName;

@@ -5,9 +5,9 @@ import org.junit.Test
 
 class MediaAlbumViewerSourcePolicyTest {
     @Test
-    fun rolloutDisabledKeepsLegacySource() {
+    fun rolloutDisabledFailsClosed() {
         assertEquals(
-            MediaAlbumActivity.ViewerSourcePolicy.LEGACY,
+            MediaAlbumActivity.ViewerSourcePolicy.UNAVAILABLE,
             MediaAlbumActivity.viewerSourcePolicy(false, true, false),
         )
     }
@@ -21,9 +21,9 @@ class MediaAlbumViewerSourcePolicyTest {
     }
 
     @Test
-    fun cleanlyMissingSecureRelationFallsBackToHistoricalLegacySource() {
+    fun missingSecureRelationNeverFallsBackToLegacy() {
         assertEquals(
-            MediaAlbumActivity.ViewerSourcePolicy.LEGACY,
+            MediaAlbumActivity.ViewerSourcePolicy.UNAVAILABLE,
             MediaAlbumActivity.viewerSourcePolicy(true, false, false),
         )
     }
@@ -33,6 +33,14 @@ class MediaAlbumViewerSourcePolicyTest {
         assertEquals(
             MediaAlbumActivity.ViewerSourcePolicy.UNAVAILABLE,
             MediaAlbumActivity.viewerSourcePolicy(true, false, true),
+        )
+    }
+
+    @Test
+    fun resolutionFailureOverridesExistingRelation() {
+        assertEquals(
+            MediaAlbumActivity.ViewerSourcePolicy.UNAVAILABLE,
+            MediaAlbumActivity.viewerSourcePolicy(true, true, true),
         )
     }
 }

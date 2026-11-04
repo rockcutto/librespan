@@ -83,6 +83,7 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
     public static final String PEP_OMEMO_WHITELISTED = PEP_PREFIX + ".whitelisted";
 
     public static final String LOGPREFIX = "AxolotlService";
+    private static final long OMEMO_IQ_TIMEOUT_SECONDS = 15L;
 
     private static final int NUM_KEYS_TO_PUBLISH = 100;
     private static final int publishTriesThreshold = 3;
@@ -660,6 +661,11 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
     }
 
     public void registerDevices(final Jid jid, @NonNull final Set<Integer> deviceIds) {
+        registerDevices(jid, deviceIds, true);
+    }
+
+    private void registerDevices(final Jid jid, @NonNull final Set<Integer> deviceIds,
+                                 final boolean notifyKeyStatus) {
         final int hash = deviceIds.hashCode();
         final boolean me = jid.asBareJid().equals(account.getJid().asBareJid());
         if (me) {
@@ -722,7 +728,9 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
         this.deviceIds.put(jid, deviceIds);
         if (changed) {
             mXmppConnectionService.updateConversationUi(); //update the lock icon
-            mXmppConnectionService.keyStatusUpdated(null);
+            if (notifyKeyStatus) {
+                mXmppConnectionService.keyStatusUpdated(null);
+            }
             if (me) {
                 mXmppConnectionService.updateAccountUi();
             }
@@ -1304,17 +1312,7 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
         Map<Integer, FetchStatus> own = fetchStatusMap.getAll(ownAddress.getName());
         Map<Integer, FetchStatus> remote = fetchStatusMap.getAll(address.getName());
         if (!own.containsValue(FetchStatus.PENDING) && !remote.containsValue(FetchStatus.PENDING)) {
-            FetchStatus report = null;
-            if (own.containsValue(FetchStatus.SUCCESS) || remote.containsValue(FetchStatus.SUCCESS)) {
-                report = FetchStatus.SUCCESS;
-            } else if (own.containsValue(FetchStatus.SUCCESS_VERIFIED) || remote.containsValue(FetchStatus.SUCCESS_VERIFIED)) {
-                report = FetchStatus.SUCCESS_VERIFIED;
-            } else if (own.containsValue(FetchStatus.SUCCESS_TRUSTED) || remote.containsValue(FetchStatus.SUCCESS_TRUSTED)) {
-                report = FetchStatus.SUCCESS_TRUSTED;
-            } else if (own.containsValue(FetchStatus.ERROR) || remote.containsValue(FetchStatus.ERROR)) {
-                report = FetchStatus.ERROR;
-            }
-            mXmppConnectionService.keyStatusUpdated(report);
+            mXmppConnectionService.keyStatusUpdated(completedFetchReport(own, remote));
         }
         if (Config.REMOVE_BROKEN_DEVICES) {
             Set<Integer> ownDeviceIds = new HashSet<>(getOwnDeviceIds());
@@ -1332,6 +1330,40 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
         }
     }
 
+    static FetchStatus completedFetchReport(
+            final Map<Integer, FetchStatus> own, final Map<Integer, FetchStatus> remote) {
+        if (own.containsValue(FetchStatus.PENDING) || remote.containsValue(FetchStatus.PENDING)) {
+            return null;
+        }
+        if (own.containsValue(FetchStatus.ERROR) || remote.containsValue(FetchStatus.ERROR)) {
+            return FetchStatus.ERROR;
+        }
+        if (own.containsValue(FetchStatus.TIMEOUT) || remote.containsValue(FetchStatus.TIMEOUT)) {
+            return FetchStatus.TIMEOUT;
+        }
+        if (own.isEmpty() && remote.isEmpty()) {
+            return null;
+        }
+        if (own.values().stream().allMatch(status -> status == FetchStatus.SUCCESS_VERIFIED)
+                && remote.values().stream().allMatch(status -> status == FetchStatus.SUCCESS_VERIFIED)) {
+            return FetchStatus.SUCCESS_VERIFIED;
+        }
+        if (own.values().stream().allMatch(status -> status == FetchStatus.SUCCESS_TRUSTED)
+                && remote.values().stream().allMatch(status -> status == FetchStatus.SUCCESS_TRUSTED)) {
+            return FetchStatus.SUCCESS_TRUSTED;
+        }
+        return FetchStatus.SUCCESS;
+    }
+
+    static List<OnDeviceIdsFetched> claimDeviceIdsCallbacks(
+            final Map<Jid, List<OnDeviceIdsFetched>> pending,
+            final Jid jid,
+            final List<OnDeviceIdsFetched> requestCallbacks) {
+        synchronized (pending) {
+            return pending.get(jid) == requestCallbacks ? pending.remove(jid) : null;
+        }
+    }
+
     public boolean hasEmptyDeviceList(Jid jid) {
         return !hasAny(jid) && (!deviceIds.containsKey(jid) || deviceIds.get(jid).isEmpty());
     }
@@ -1342,6 +1374,7 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
 
     private void fetchDeviceIds(final Jid jid, OnDeviceIdsFetched callback) {
         final Iq packet;
+        final List<OnDeviceIdsFetched> requestCallbacks;
         synchronized (this.fetchDeviceIdsMap) {
             List<OnDeviceIdsFetched> callbacks = this.fetchDeviceIdsMap.get(jid);
             if (callbacks != null) {
@@ -1350,49 +1383,60 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
                 }
                 Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": fetching device ids for " + jid + " already running. adding callback");
                 packet = null;
+                requestCallbacks = null;
             } else {
                 callbacks = new ArrayList<>();
                 if (callback != null) {
                     callbacks.add(callback);
                 }
                 this.fetchDeviceIdsMap.put(jid, callbacks);
+                requestCallbacks = callbacks;
                 Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": fetching device ids for " + jid);
                 packet = mXmppConnectionService.getIqGenerator().retrieveDeviceIds(jid);
             }
         }
         if (packet != null) {
-            mXmppConnectionService.sendIqPacket(account, packet, response -> {
-                if (response.getType() == Iq.Type.RESULT) {
-                    fetchDeviceListStatus.put(jid, true);
-                    final Element item = IqParser.getItem(response);
-                    final Set<Integer> deviceIds = IqParser.deviceIds(item);
-                    registerDevices(jid, deviceIds);
-                    final List<OnDeviceIdsFetched> callbacks;
-                    synchronized (fetchDeviceIdsMap) {
-                        callbacks = fetchDeviceIdsMap.remove(jid);
-                    }
-                    if (callbacks != null) {
-                        for (OnDeviceIdsFetched c : callbacks) {
-                            c.fetched(jid, deviceIds);
+            mXmppConnectionService.sendIqPacket(account, packet, response -> executor.execute(() -> {
+                // Claim this IQ before registration or listeners can reenter fetchDeviceIds.
+                final List<OnDeviceIdsFetched> callbacks =
+                        claimDeviceIdsCallbacks(fetchDeviceIdsMap, jid, requestCallbacks);
+                if (callbacks == null) {
+                    return;
+                }
+                Set<Integer> ids = null;
+                FetchStatus report = response.getType() == Iq.Type.TIMEOUT
+                        ? FetchStatus.TIMEOUT : FetchStatus.ERROR;
+                try {
+                    if (response.getType() == Iq.Type.RESULT) {
+                        final Element item = IqParser.getItem(response);
+                        if (item == null || item.findChild("list", PEP_PREFIX) == null) {
+                            throw new IllegalArgumentException("invalid OMEMO device-list result");
                         }
-                    }
-                } else {
-                    if (response.getType() == Iq.Type.TIMEOUT) {
+                        ids = IqParser.deviceIds(item);
+                        registerDevices(jid, ids, false);
+                        fetchDeviceListStatus.put(jid, true);
+                        report = FetchStatus.SUCCESS;
+                    } else if (report == FetchStatus.TIMEOUT) {
                         fetchDeviceListStatus.remove(jid);
                     } else {
                         fetchDeviceListStatus.put(jid, false);
                     }
-                    final List<OnDeviceIdsFetched> callbacks;
-                    synchronized (fetchDeviceIdsMap) {
-                        callbacks = fetchDeviceIdsMap.remove(jid);
-                    }
-                    if (callbacks != null) {
-                        for (OnDeviceIdsFetched c : callbacks) {
-                            c.fetched(jid, null);
-                        }
+                } catch (RuntimeException e) {
+                    Log.e(Config.LOGTAG, getLogprefix(account) + "failed to process device list", e);
+                    ids = null;
+                    report = FetchStatus.ERROR;
+                    fetchDeviceListStatus.put(jid, false);
+                }
+                // Subscribers start their bundle fetches before the terminal UI notification.
+                for (OnDeviceIdsFetched c : callbacks) {
+                    try {
+                        c.fetched(jid, ids);
+                    } catch (RuntimeException e) {
+                        Log.e(Config.LOGTAG, getLogprefix(account) + "device-list callback failed", e);
                     }
                 }
-            });
+                mXmppConnectionService.keyStatusUpdated(report);
+            }), OMEMO_IQ_TIMEOUT_SECONDS);
         }
     }
 
@@ -1425,9 +1469,13 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
         final Jid jid = Jid.of(address.getName());
         final boolean oneOfOurs = jid.asBareJid().equals(account.getJid().asBareJid());
         final Iq bundlesPacket = mXmppConnectionService.getIqGenerator().retrieveBundlesForDevice(jid, address.getDeviceId());
-        mXmppConnectionService.sendIqPacket(account, bundlesPacket, packet -> {
+        mXmppConnectionService.sendIqPacket(account, bundlesPacket, packet -> executor.execute(() -> {
             if (packet.getType() == Iq.Type.TIMEOUT) {
                 fetchStatusMap.put(address, FetchStatus.TIMEOUT);
+                finishBuildingSessionsFromPEP(address);
+                if (callback != null) {
+                    callback.onSessionBuildFailed();
+                }
                 sessionSettableFuture.setException(new CryptoFailedException("Unable to build session. Timeout"));
             } else if (packet.getType() == Iq.Type.RESULT) {
                 Log.d(Config.LOGTAG, AxolotlService.getLogprefix(account) + "Received preKey IQ packet, processing...");
@@ -1512,7 +1560,7 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
                 }
                 sessionSettableFuture.setException(new CryptoFailedException("Unable to build session. IQ Packet Error"));
             }
-        });
+        }), OMEMO_IQ_TIMEOUT_SECONDS);
         return sessionSettableFuture;
     }
 
@@ -1575,6 +1623,8 @@ public class AxolotlService implements OnAdvancedStreamFeaturesLoaded {
 
         return addresses;
     }
+
+
 
     public boolean createSessionsIfNeeded(final Conversation conversation) {
         final List<Jid> jidsWithEmptyDeviceList = getCryptoTargets(conversation);

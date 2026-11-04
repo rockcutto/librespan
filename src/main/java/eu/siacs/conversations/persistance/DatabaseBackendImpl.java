@@ -1645,6 +1645,99 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
         db.insert(Message.TABLENAME, null, message.getContentValues());
     }
 
+    private static boolean isOutgoingAttachment(final Message message) {
+        return message != null && message.isFileOrImage()
+                && message.getStatus() > Message.STATUS_RECEIVED
+                && !message.isModerated() && !message.isRetracted() && !message.isDeleted()
+                && !message.hasProtectedTextPayload()
+                && message.getConversation() != null
+                && message.getConversation().getAccount() != null;
+    }
+
+    @Override
+    public boolean prepareOutgoingAttachmentMessage(final Message message, final boolean insert) {
+        if (message == null) {
+            return false;
+        }
+        applyModerationMarker(message);
+        if (!isOutgoingAttachment(message) || !AttachmentUploadBody.isPending(message.getBody())) {
+            return false;
+        }
+        final ContentValues values = message.getContentValues();
+        if (!AttachmentUploadBody.isPending(values.getAsString(Message.BODY))) {
+            return false;
+        }
+        final var db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            final String account = message.getConversation().getAccount().getUuid();
+            if (getSecureMessagePayloadMode(account, message.getUuid()) != null) {
+                return false;
+            }
+            try (final Cursor owner = db.query(Conversation.TABLENAME,
+                    new String[] {Conversation.UUID}, Conversation.UUID + "=? AND "
+                            + Conversation.ACCOUNT + "=?",
+                    new String[] {message.getConversationUuid(), account}, null, null, null)) {
+                if (!owner.moveToFirst()) {
+                    return false;
+                }
+            }
+            if (!insert) {
+                try (final Cursor existing = db.query(Message.TABLENAME,
+                        new String[] {Message.UUID}, Message.UUID + "=? AND "
+                                + Message.CONVERSATION + "=? AND " + Message.BODY + "=? AND "
+                                + Message.TYPE + " IN (1,2,5) AND " + Message.STATUS + ">0 AND "
+                                + Message.MODERATED + "=0 AND " + Message.RETRACTED + "=0 AND "
+                                + Message.DELETED + "=0",
+                        new String[] {message.getUuid(), message.getConversationUuid(),
+                                values.getAsString(Message.BODY)}, null, null, null)) {
+                    return existing.moveToFirst();
+                }
+            }
+            if (db.insert(Message.TABLENAME, null, values) == -1) {
+                return false;
+            }
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    @Override
+    public boolean persistOutgoingAttachmentUpload(
+            final Message message, final String expectedBody, final String remoteUrl) {
+        final String body = message == null ? null : message.getBody();
+        if (!isOutgoingAttachment(message)
+                || !AttachmentUploadBody.isPending(expectedBody)
+                || !AttachmentUploadBody.isComplete(body, remoteUrl)) {
+            return false;
+        }
+        final var db = getWritableDatabase();
+        final ContentValues values = new ContentValues();
+        values.put(Message.BODY, body);
+        // Do not write status, deletion, payloads or encryption from a potentially stale object.
+        final String account = message.getConversation().getAccount().getUuid();
+        return db.update(Message.TABLENAME, values, outgoingAttachmentUploadSelection(), new String[] {
+            message.getUuid(), message.getConversationUuid(), expectedBody, account, account
+        }) == 1;
+    }
+
+    /** Shared by the SQLCipher writer and the SQLite regression harness. */
+    static String outgoingAttachmentUploadSelection() {
+        return Message.UUID + "=? AND " + Message.CONVERSATION + "=? AND "
+                + Message.BODY + "=? AND " + Message.TYPE + " IN (1,2,5) AND "
+                + Message.STATUS + ">0 AND " + Message.MODERATED + "=0 AND "
+                + Message.RETRACTED + "=0 AND " + Message.DELETED + "=0 AND EXISTS (SELECT 1 FROM "
+                + Conversation.TABLENAME + " c WHERE c." + Conversation.UUID + "="
+                + Message.TABLENAME + "." + Message.CONVERSATION + " AND c."
+                + Conversation.ACCOUNT + "=?) AND NOT EXISTS (SELECT 1 FROM "
+                + SECURE_MESSAGE_PAYLOAD_MODE_TABLENAME + " s WHERE s."
+                + SECURE_MESSAGE_PAYLOAD_ACCOUNT_UUID + "=? AND s."
+                + SECURE_MESSAGE_PAYLOAD_MESSAGE_UUID + "=" + Message.TABLENAME + "." + Message.UUID
+                + ")";
+    }
+
     @Override
     public boolean createProtectedTextMessage(
             final Message message, final String accountUuid) {

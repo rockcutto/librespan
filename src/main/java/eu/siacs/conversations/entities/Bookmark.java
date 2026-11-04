@@ -253,6 +253,17 @@ public class Bookmark extends Element implements ListItem {
         element.setContent(password);
     }
 
+    /** A publication snapshot never includes a local/incoming room password. */
+    public Element forPublication() {
+        final Element safe = new Element(getName());
+        safe.getAttributes().putAll(getAttributes());
+        safe.getAttributes().remove("password");
+        for (final Element child : getChildren()) {
+            if (!"password".equals(child.getName())) safe.addChild(child);
+        }
+        return safe;
+    }
+
     @Override
     public boolean match(Context context, String needle) {
         if (needle == null) {
