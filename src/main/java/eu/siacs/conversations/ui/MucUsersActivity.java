@@ -40,6 +40,7 @@ public class MucUsersActivity extends XmppActivity implements XmppConnectionServ
 
     @Override
     protected void refreshUiReal() {
+        loadAndSubmitUsers();
     }
 
     @Override
@@ -50,12 +51,8 @@ public class MucUsersActivity extends XmppActivity implements XmppConnectionServ
             mConversation = xmppConnectionService.findConversationByUuid(uuid);
         }
         if (mConversation != null && binding != null) {
-            final MucOptions.User self = mConversation.getMucOptions().getSelf();
-            final boolean canManage =
-                    self.getAffiliation().ranks(MucOptions.Affiliation.ADMIN)
-                            || self.getRole().ranks(MucOptions.Role.MODERATOR);
-            binding.mucAdminUsersHint.setVisibility(canManage ? View.VISIBLE : View.GONE);
-            if (self.getAffiliation() == MucOptions.Affiliation.OWNER) {
+            if (mConversation.getMucOptions().getSelf().getAffiliation()
+                    == MucOptions.Affiliation.OWNER) {
                 xmppConnectionService.refreshMucOwnerAdminAffiliations(mConversation);
             }
         }
@@ -65,6 +62,11 @@ public class MucUsersActivity extends XmppActivity implements XmppConnectionServ
     private void loadAndSubmitUsers() {
         if (mConversation != null) {
             final MucOptions mucOptions = mConversation.getMucOptions();
+            final MucOptions.User self = mucOptions.getSelf();
+            final boolean canManage = mucOptions.online()
+                    && (self.getAffiliation().ranks(MucOptions.Affiliation.ADMIN)
+                            || self.getRole().ranks(MucOptions.Role.MODERATOR));
+            binding.mucAdminUsersHint.setVisibility(canManage ? View.VISIBLE : View.GONE);
             allUsers = mucOptions.getUsers();
             if (mucOptions.online()) {
                 // The local occupant does not appear in getUsers(), but belongs in the list.
@@ -100,7 +102,7 @@ public class MucUsersActivity extends XmppActivity implements XmppConnectionServ
 
     @Override
     public void onMucRosterUpdate() {
-        loadAndSubmitUsers();
+        refreshUi();
     }
 
      private void displayToast(final String msg) {
@@ -109,7 +111,7 @@ public class MucUsersActivity extends XmppActivity implements XmppConnectionServ
 
     @Override
     public void onAffiliationChangedSuccessful(Jid jid) {
-        loadAndSubmitUsers();
+        refreshUi();
     }
 
     @Override

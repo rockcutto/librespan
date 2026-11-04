@@ -49,13 +49,23 @@ public class PresenceParser extends AbstractParser
                 final MucOptions mucOptions = conversation.getMucOptions();
                 final MucJoinAttempt attempt = mucOptions.getJoinAttempt();
                 final boolean errorPresence = "error".equals(packet.getAttribute("type"));
+                final boolean liveSelfUpdate = isLiveSelfUpdate(packet, mucOptions);
+                if (packet.getAttribute("type") == null
+                        && (packet.hasChild("delay", "urn:xmpp:delay")
+                                || packet.hasChild("x", "jabber:x:delay"))
+                        && getStatusCodes(packet.findChild("x", Namespace.MUC_USER))
+                                .contains(MucOptions.STATUS_CODE_SELF_PRESENCE)) {
+                    continue;
+                }
                 // RFC 6120 8.3.1: errors must mirror the ID supplied on our join presence.
                 // An uncorrelated response must not reject a newer password attempt.
                 if ((errorPresence && attempt.hasStarted()
                                 && !attempt.acceptsResponse(packet.getId())
                                 && !(mucOptions.online() && mucOptions.onRenameListener != null))
                         || (MucJoinAttempt.isJoinPresenceId(packet.getId())
-                                && !attempt.acceptsResponse(packet.getId()))) {
+                                && !attempt.acceptsResponse(packet.getId())
+                                && !(liveSelfUpdate
+                                        && attempt.getPresenceId().equals(packet.getId())))) {
                     continue;
                 }
                 if (errorPresence && attempt.isPending()
@@ -65,6 +75,14 @@ public class PresenceParser extends AbstractParser
                 }
                 if (packet.getAttribute("type") == null && attempt.hasStarted()
                         && !attempt.isPending() && !mucOptions.online()) {
+                    continue;
+                }
+                // Cached presence can retain the current join ID. It is not a join reply.
+                // Never use delayed or contradictory self data to change live permissions.
+                if (mucOptions.online()
+                        && packet.getAttribute("type") == null
+                        && packet.getFrom().equals(mucOptions.getSelf().getFullJid())
+                        && !liveSelfUpdate) {
                     continue;
                 }
                 boolean before = mucOptions.online();
@@ -101,7 +119,8 @@ public class PresenceParser extends AbstractParser
                         || selfStateChanged
                         || (mucOptions.online() && count != mucOptions.getUserCount())) {
                     mXmppConnectionService.updateConversationUi();
-                } else if (mucOptions.online()) {
+                }
+                if (mucOptions.online()) {
                     mXmppConnectionService.updateMucRosterUi();
                 }
             }
@@ -112,6 +131,43 @@ public class PresenceParser extends AbstractParser
                 mXmppConnectionService.onMucJoinConfirmed(joined);
             }
         }
+    }
+
+    private static boolean isLiveSelfUpdate(
+            final im.conversations.android.xmpp.model.stanza.Presence packet,
+            final MucOptions options) {
+        if (!options.online() || options.getJoinAttempt().isPending()
+                || packet.getAttribute("type") != null
+                || !packet.getFrom().equals(options.getSelf().getFullJid())
+                || packet.hasChild("delay", "urn:xmpp:delay")
+                || packet.hasChild("x", "jabber:x:delay")) {
+            return false;
+        }
+        final Element x = packet.findChild("x", Namespace.MUC_USER);
+        final Element item = x == null ? null : x.findChild("item");
+        if (item == null
+                || !List.of("owner", "admin", "member", "none")
+                        .contains(Strings.nullToEmpty(item.getAttribute("affiliation")))
+                || !List.of("moderator", "participant", "visitor")
+                        .contains(Strings.nullToEmpty(item.getAttribute("role")))) {
+            return false;
+        }
+        final Jid realJid = item.getAttributeAsJid("jid");
+        final boolean matchingRealJid = realJid != null
+                && Jid.Invalid.isValid(realJid)
+                && options.getAccount().getJid().asBareJid()
+                        .equals(realJid.asBareJid());
+        // An explicit but conflicting JID is never a valid self update.
+        // Without status 110 require the server to identify our own real JID.
+        if ((item.getAttribute("jid") != null && !matchingRealJid)
+                || (!getStatusCodes(x).contains(MucOptions.STATUS_CODE_SELF_PRESENCE)
+                        && !matchingRealJid)) {
+            return false;
+        }
+        final var occupant = packet.getExtension(OccupantId.class);
+        final String currentOccupantId = options.getSelf().getOccupantId();
+        return occupant == null || currentOccupantId == null
+                || currentOccupantId.equals(occupant.getId());
     }
 
     private void processConferencePresence(
@@ -140,6 +196,7 @@ public class PresenceParser extends AbstractParser
                                         : mucOptions.acceptedOccupantId(occupant.getId());
                         user.setOccupantId(occupantId);
                         if (codes.contains(MucOptions.STATUS_CODE_SELF_PRESENCE)
+                                || isLiveSelfUpdate(packet, mucOptions)
                                 || (codes.contains(MucOptions.STATUS_CODE_ROOM_CREATED)
                                         && jid.equals(
                                                 Jid.Invalid.getNullForInvalid(
