@@ -174,6 +174,7 @@ public class Conversation extends AbstractEntity
             "formerly_private_non_anonymous";
     public static final String ATTRIBUTE_PINNED_ON_TOP = "pinned_on_top";
     public static final String ATTRIBUTE_MUC_EXPLICITLY_LEFT = "muc_explicitly_left";
+    private static final String ATTRIBUTE_MUC_RECOVERY_ANCHOR = "muc_recovery_anchor";
     static final String ATTRIBUTE_MUC_PASSWORD = "muc_password";
     static final String ATTRIBUTE_MEMBERS_ONLY = "members_only";
     static final String ATTRIBUTE_MODERATED = "moderated";
@@ -1585,6 +1586,39 @@ public class Conversation extends AbstractEntity
         return false;
     }
 
+    /** Recovery floor is scoped to this account and bare room; archive IDs are opaque strings. */
+    public MamReference getMucRecoveryAnchor() {
+        final String encoded = getAttribute(ATTRIBUTE_MUC_RECOVERY_ANCHOR);
+        if (encoded == null || account == null || mode != MODE_MULTI || nextCounterpart != null) return null;
+        try {
+            final JSONObject value = new JSONObject(encoded);
+            if (!account.getUuid().equals(value.getString("account"))
+                    || !contactJid.asBareJid().toString().equals(value.getString("room"))) return null;
+            return MamReference.max(new MamReference(value.getLong("time"), value.optString("id", null)),
+                    getLastClearHistory());
+        } catch (JSONException invalid) {
+            // A malformed marker must not silently advance recovery to the latest live message.
+            return MamReference.max(new MamReference(0), getLastClearHistory());
+        }
+    }
+
+    public void setMucRecoveryAnchor(final MamReference start) {
+        if (start == null) {
+            setAttribute(ATTRIBUTE_MUC_RECOVERY_ANCHOR, (String) null);
+            return;
+        }
+        try {
+            final JSONObject value = new JSONObject();
+            value.put("account", account.getUuid());
+            value.put("room", contactJid.asBareJid().toString());
+            value.put("time", start.getTimestamp());
+            if (start.getReference() != null) value.put("id", start.getReference());
+            setAttribute(ATTRIBUTE_MUC_RECOVERY_ANCHOR, value.toString());
+        } catch (JSONException invalid) {
+            throw new IllegalStateException("Cannot encode MUC recovery anchor", invalid);
+        }
+    }
+
     public MamReference getLastMessageTransmitted() {
         final MamReference lastClear = getLastClearHistory();
         MamReference lastReceived = new MamReference(0);
@@ -1773,6 +1807,29 @@ public class Conversation extends AbstractEntity
         if (added) {
             markTimelineChanged();
         }
+    }
+
+    /**
+     * A MUC archive catch-up can deliver old messages while newer live messages are present.
+     * Keep the canonical timeline ordered at publication time, not only at the next MAM fin.
+     * Normal sends, live messages, private chats and reverse history keep their existing paths.
+     */
+    public void addMucCatchupMessage(final Message message) {
+        if (mode != MODE_MULTI || nextCounterpart != null
+                || message.isPrivateMessage() || message.encryption == Message.ENCRYPTION_OTR) {
+            return;
+        }
+        synchronized (this.messages) {
+            // Pages are ordered after fin. Walk backwards only across newer live messages;
+            // the common in-order path is an O(1) append. Equal timestamps remain stable.
+            int index = this.messages.size();
+            while (index > 0 && this.messages.get(index - 1).getTimeSent() > message.getTimeSent()) {
+                --index;
+            }
+            this.messages.add(index, message);
+            actualizeReplyMessages(this.messages, List.of(message));
+        }
+        markTimelineChanged();
     }
 
     public void prepend(int offset, Message message) {

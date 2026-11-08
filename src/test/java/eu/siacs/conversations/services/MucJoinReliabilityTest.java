@@ -148,6 +148,9 @@ public class MucJoinReliabilityTest {
         f.service.joinMuc(f.room);
         assertEquals(Long.valueOf(eu.siacs.conversations.Config.CONNECT_DISCO_TIMEOUT), f.service.iqTimeouts.get(0));
         f.service.iqs.get(0).accept(Iq.TIMEOUT);
+        assertTrue(f.options().getJoinAttempt().isPending());
+        assertEquals(2, f.service.iqs.size());
+        f.service.iqs.get(1).accept(Iq.TIMEOUT);
         assertEquals(MucOptions.Error.REMOTE_SERVER_TIMEOUT, f.options().getError());
         f.assertTerminal();
         assertEquals(0, f.service.sent.size());
@@ -324,11 +327,22 @@ public class MucJoinReliabilityTest {
     }
 
     static final class Fixture {
-        final TestService service = new TestService();
-        final Account account = new Account(Jid.of("guest@example.test/device"), "");
-        final Conversation room = new Conversation("room", account, Jid.of("room@conference.example"), Conversation.MODE_MULTI, null);
-        final PresenceParser parser = new PresenceParser(service, account);
-        Fixture() throws Exception {
+        final TestService service;
+        final Account account;
+        final Conversation room;
+        final PresenceParser parser;
+        Fixture() throws Exception { this(new TestService()); }
+        Fixture(TestService service) throws Exception {
+            this(service, new Account(Jid.of("guest@example.test/device"), ""), null);
+        }
+        Fixture(TestService service, Account account, Conversation restored) throws Exception {
+            this.service = service;
+            this.account = account;
+            this.room = restored == null
+                    ? new Conversation("room", account, Jid.of("room@conference.example"), Conversation.MODE_MULTI, null)
+                    : restored;
+            this.room.setAccount(account);
+            this.parser = new PresenceParser(service, account);
             account.setStatus(Account.State.ONLINE);
             service.room = room;
             service.databaseBackend = new DatabaseBackendStub();
@@ -377,14 +391,34 @@ public class MucJoinReliabilityTest {
         }
     }
 
-    static final class TestService extends XmppConnectionService {
+    static class TestService extends XmppConnectionService {
         TestService() { attachBaseContext(RuntimeEnvironment.getApplication()); }
         Conversation room;
+        final List<Conversation> extraRooms = new ArrayList<>();
         String password;
         boolean acceptPassword = true;
         int ui;
         int roster;
         Runnable duringJoinSend;
+        Runnable afterJoinTerminated;
+        Runnable conversationsHook;
+        final List<Runnable> membershipRetries = new ArrayList<>();
+        final List<Runnable> roomRecoveries = new ArrayList<>();
+        final List<Integer> roomRecoveryDelays = new ArrayList<>();
+        final List<Conversation> secretHydrations = new ArrayList<>();
+        ScheduledFuture<?> scheduleMucRoomRecovery(Runnable retry, int seconds) {
+            roomRecoveries.add(retry);
+            roomRecoveryDelays.add(seconds);
+            return new Deadline(retry);
+        }
+        @Override public void onMucJoinStateChanged(MucOptions options) {
+            super.onMucJoinStateChanged(options);
+            if (afterJoinTerminated != null) afterJoinTerminated.run();
+        }
+        @Override ScheduledFuture<?> scheduleMucMembershipRetry(Runnable retry) {
+            membershipRetries.add(retry);
+            return new Deadline(retry);
+        }
         final List<Consumer<Iq>> iqs = new ArrayList<>();
         final List<Long> iqTimeouts = new ArrayList<>();
         final List<Presence> sent = new ArrayList<>();
@@ -396,15 +430,38 @@ public class MucJoinReliabilityTest {
             @Override public void clear(MucOptions options) {}
             @Override public void clear(MucOptions.User user) {}
         };
-        @Override public List<Conversation> findAll(Account account, Jid jid) { return List.of(room); }
-        @Override public List<Conversation> getConversations() { return List.of(room); }
+        @Override public List<Conversation> findAll(Account account, Jid jid) {
+            List<Conversation> matches = new ArrayList<>();
+            for (Conversation candidate : getConversations()) {
+                if (candidate.getAccount() == account && candidate.getJid().asBareJid().equals(jid.asBareJid())) matches.add(candidate);
+            }
+            return matches;
+        }
+        @Override public List<Conversation> getConversations() {
+            if (conversationsHook != null) conversationsHook.run();
+            List<Conversation> rooms = new ArrayList<>();
+            rooms.add(room);
+            rooms.addAll(extraRooms);
+            return rooms;
+        }
         @Override public AvatarService getAvatarService() { return avatars; }
         @Override public long getAutomaticMessageDeletionDate() { return 0L; }
+        @Override public void updateAccountUi() {}
+        @Override public void scheduleWakeUpCall(long millis, int requestCode) {}
+        @Override public boolean useTorToConnect() { return true; }
+        @Override public NotificationService getNotificationService() {
+            return new NotificationService(this) {
+                @Override void updateErrorNotification() {}
+            };
+        }
         @Override public void updateConversationUi() { ui++; }
         @Override public void updateMucRosterUi() { roster++; }
         @Override public void updateConversation(Conversation conversation) {}
         @Override public void persistSelfNick(MucOptions.User self, boolean modified) {}
-        @Override public void hydrateConversationSecrets(Conversation conversation) { conversation.getMucOptions().setPassword(password); }
+        @Override public void hydrateConversationSecrets(Conversation conversation) {
+            secretHydrations.add(conversation);
+            conversation.getMucOptions().setPassword(password);
+        }
         @Override public boolean rememberMucPassword(Conversation conversation, String value) {
             if (!acceptPassword) return false;
             password = value;
@@ -419,7 +476,9 @@ public class MucJoinReliabilityTest {
             if (duringJoinSend != null && packet.hasChild("x", Namespace.MUC)) duringJoinSend.run();
         }
         @Override public void sendIqPacket(Account account, Iq iq, Consumer<Iq> callback) {
-            assertFalse("MAM must not run under Conversation", Thread.holdsLock(room));
+            if (!iq.hasChild("ping", Namespace.PING)) {
+                assertFalse("MAM must not run under Conversation", Thread.holdsLock(room));
+            }
             mamRequests.add(iq);
             mamCallbacks.add(callback);
         }

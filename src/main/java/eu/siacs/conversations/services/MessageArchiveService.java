@@ -134,17 +134,18 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
     }
 
     void catchupMUC(final Conversation conversation) {
-        if (conversation.getLastMessageTransmitted().getTimestamp() < 0 && conversation.countMessages() == 0) {
-            query(conversation,
-                    new MamReference(0),
-                    0,
-                    true);
-        } else {
-            query(conversation,
-                    conversation.getLastMessageTransmitted(),
-                    0,
-                    true);
-        }
+        final MamReference start = conversation.getLastMessageTransmitted();
+        catchupMUC(conversation,
+                start.getTimestamp() < 0 && conversation.countMessages() == 0 ? new MamReference(0) : start);
+    }
+
+    void catchupMUC(final Conversation conversation, final MamReference start) {
+        query(conversation, start, 0, true);
+    }
+
+    void catchupMUC(final Conversation conversation, final MamReference start,
+            java.util.function.Consumer<Boolean> completed) {
+        query(conversation, start, 0, true, completed);
     }
 
     public Query query(final Conversation conversation) {
@@ -182,12 +183,19 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
     }
 
     public Query query(Conversation conversation, MamReference start, long end, boolean allowCatchup) {
+        return query(conversation, start, end, allowCatchup, null);
+    }
+
+    private Query query(Conversation conversation, MamReference start, long end, boolean allowCatchup,
+            java.util.function.Consumer<Boolean> completed) {
         if (conversation.getNextCounterpart() != null) {
             return null;
         }
 
         synchronized (this.queries) {
             final Query query;
+            Query reverseCatchup = null;
+            if (end != 0 && start.greaterThan(end)) return null;
             final MamReference startActual = MamReference.max(start, mXmppConnectionService.getAutomaticMessageDeletionDate());
             if (start.getTimestamp() == 0) {
                 query = new Query(conversation, startActual, end, false);
@@ -199,19 +207,22 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                 if (allowCatchup) {
                     MamReference maxCatchup = MamReference.max(startActual, System.currentTimeMillis() - Config.MAM_MAX_CATCHUP);
                     if (maxCatchup.greaterThan(startActual)) {
-                        Query reverseCatchup = new Query(conversation, startActual, maxCatchup.getTimestamp(), false);
-                        this.queries.add(reverseCatchup);
-                        this.execute(reverseCatchup);
+                        reverseCatchup = new Query(conversation, startActual, maxCatchup.getTimestamp(), false);
                     }
                     query = new Query(conversation, maxCatchup, end, true);
                 } else {
                     query = new Query(conversation, startActual, end, false);
                 }
             }
-            if (end != 0 && start.greaterThan(end)) {
-                return null;
-            }
+            final CatchupCompletion completion = completed == null ? null
+                    : new CatchupCompletion(reverseCatchup == null ? 1 : 2, completed);
+            query.mucCatchupCompleted = completion;
             this.queries.add(query);
+            if (reverseCatchup != null) {
+                reverseCatchup.mucCatchupCompleted = completion;
+                this.queries.add(reverseCatchup);
+                this.execute(reverseCatchup);
+            }
             this.execute(query);
             return query;
         }
@@ -302,6 +313,10 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
     }
 
     private void finishTerminalQuery(final Query query, final boolean done) {
+        finishTerminalQuery(query, done, false);
+    }
+
+    private void finishTerminalQuery(final Query query, final boolean done, final boolean complete) {
         try {
             finalizeQuery(query, done);
         } catch (final IllegalStateException e) {
@@ -313,11 +328,20 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                     .getNotificationService()
                     .finishBacklog(true, query.getAccount());
         }
+        final java.util.function.Consumer<Boolean> completed = query.mucCatchupCompleted;
+        query.mucCatchupCompleted = null;
+        if (completed != null) completed.accept(complete);
+        final Conversation conversation = query.getConversation();
+        if (conversation != null && conversation.getMode() == Conversation.MODE_MULTI) {
+            mXmppConnectionService.onMucHistoryQueryFinished(conversation);
+        }
         processPostponed(query);
     }
 
     private void retryQueryWithoutReference(final Query query) {
         final Query retry = query.retryWithoutReference();
+        retry.mucCatchupCompleted = query.mucCatchupCompleted;
+        query.mucCatchupCompleted = null;
         synchronized (this.queries) {
             if (!this.queries.remove(query)) {
                 return;
@@ -343,7 +367,8 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             if (query.getActualMessageCount() > 0) {
                 conversation.sort();
             }
-            conversation.setHasMessagesLeftOnServer(!done);
+            conversation.setHasMessagesLeftOnServer(!done
+                    || mXmppConnectionService.hasPendingMucCatchup(conversation));
             final var displayState = conversation.getDisplayState();
             if (displayState != null) {
                 mXmppConnectionService.markReadUpToStanzaId(conversation, displayState);
@@ -451,7 +476,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                 done = query.getTotalCount() == 0;
             }
             done = done || (query.getActualMessageCount() == 0 && !query.isCatchup());
-            finishTerminalQuery(query, done);
+            finishTerminalQuery(query, done, complete);
 
             Log.d(
                     Config.LOGTAG,
@@ -471,6 +496,8 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             } else {
                 nextQuery = query.prev(first == null ? null : first.getContent());
             }
+            nextQuery.mucCatchupCompleted = query.mucCatchupCompleted;
+            query.mucCatchupCompleted = null;
             this.execute(nextQuery);
             this.finalizeQuery(query, false);
             synchronized (this.queries) {
@@ -565,7 +592,29 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                 : Config.PAGE_SIZE;
     }
 
+    /** One terminal result per query chain, including all split ranges and cursor retries. */
+    private static final class CatchupCompletion implements java.util.function.Consumer<Boolean> {
+        private int remaining;
+        private boolean successful = true;
+        private final java.util.function.Consumer<Boolean> completed;
+        CatchupCompletion(int parts, java.util.function.Consumer<Boolean> completed) {
+            remaining = parts;
+            this.completed = completed;
+        }
+        @Override public void accept(Boolean complete) {
+            final boolean result;
+            synchronized (this) {
+                if (remaining == 0) return;
+                successful &= Boolean.TRUE.equals(complete);
+                if (--remaining != 0) return;
+                result = successful;
+            }
+            completed.accept(result);
+        }
+    }
+
     public class Query {
+        private java.util.function.Consumer<Boolean> mucCatchupCompleted;
         private HashSet<ReceiptRequest> pendingReceiptRequests = new HashSet<>();
         private HashSet<ReceiptRequest> receiptRequests = new HashSet<>();
         private int totalCount = 0;

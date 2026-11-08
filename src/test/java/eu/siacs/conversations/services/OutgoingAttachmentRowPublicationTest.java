@@ -42,7 +42,12 @@ public class OutgoingAttachmentRowPublicationTest {
                 assertEquals(1, f.inserts.get());
                 assertEquals("mode=" + mode + " encryption=" + f.message.getEncryption()
                         + " online=" + f.conversation.getAccount().isOnlineAndConnected()
-                        + " status=" + f.message.getStatus(), accepted ? 1 : 0, f.uploadStarts.get());
+                        + " status=" + f.message.getStatus(),
+                        accepted && mode == Conversation.MODE_SINGLE ? 1 : 0, f.uploadStarts.get());
+                if (mode == Conversation.MODE_MULTI && accepted) {
+                    assertEquals("MUC upload must wait for confirmed membership",
+                            Message.STATUS_WAITING, f.message.getStatus());
+                }
             }
         }
     }

@@ -3867,6 +3867,10 @@ public class ConversationFragment extends XmppFragment
             } else {
                 menuUnmute.setVisible(false);
             }
+            menu.findItem(R.id.action_retry_muc_history).setVisible(
+                    activity != null && activity.xmppConnectionService != null
+                    && activity.xmppConnectionService.getMucHistoryRecoveryState(conversation)
+                        == XmppConnectionService.MucHistoryRecoveryState.INCOMPLETE);
             ConversationMenuConfigurator.configureAttachmentMenu(conversation, menu);
             ConversationMenuConfigurator.configureEncryptionMenu(conversation, menu);
 
@@ -5671,6 +5675,11 @@ public class ConversationFragment extends XmppFragment
             case R.id.action_message_action_preview:
                 MessageActionPreview.show(requireActivity());
                 break;
+            case R.id.action_retry_muc_history:
+                if (activity != null && activity.xmppConnectionService != null && conversation != null) {
+                    activity.xmppConnectionService.retryMucHistoryRecovery(conversation);
+                }
+                break;
             case R.id.action_refresh_feature_discovery:
                 refreshFeatureDiscovery();
             default:
@@ -6935,7 +6944,9 @@ public class ConversationFragment extends XmppFragment
         final String[] errorMessageParts =
                 errorMessage == null ? new String[0] : errorMessage.split("\\u001f");
         final String displayError;
-        if (errorMessageParts.length == 2) {
+        if (Message.ERROR_MESSAGE_MUC_RECIPIENT_UNVERIFIED.equals(errorMessage)) {
+            displayError = getString(R.string.muc_private_recipient_changed);
+        } else if (errorMessageParts.length == 2) {
             displayError = errorMessageParts[1];
         } else {
             displayError = errorMessage;

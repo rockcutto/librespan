@@ -1752,6 +1752,10 @@ public class MessageParser extends AbstractParser
             mXmppConnectionService.restoreReplyForMessage(conversation, message);
             if (query != null && query.getPagingOrder() == MessageArchiveService.PagingOrder.REVERSE) {
                 conversation.prepend(query.getActualInThisQuery(), message);
+            } else if (query != null && query.isCatchup() && isTypeGroupChat
+                    && conversation.getMode() == Conversation.MODE_MULTI) {
+                // Archived MUC rows can arrive after newer live rows during MAM catch-up.
+                conversation.addMucCatchupMessage(message);
             } else {
                 conversation.add(message);
             }

@@ -1440,7 +1440,14 @@ public class ConversationsActivity extends XmppActivity
 
             if (conversation.getMode() == Conversation.MODE_MULTI && conversation.getNextCounterpart() == null) {
                 int usersCount = conversation.getMucOptions().getUserCount();
-                if (usersCount > 0) {
+                final var historyState = xmppConnectionService == null
+                        ? XmppConnectionService.MucHistoryRecoveryState.NONE
+                        : xmppConnectionService.getMucHistoryRecoveryState(conversation);
+                if (historyState == XmppConnectionService.MucHistoryRecoveryState.SYNCING) {
+                    actionBar.setSubtitle(R.string.muc_history_syncing);
+                } else if (historyState == XmppConnectionService.MucHistoryRecoveryState.INCOMPLETE) {
+                    actionBar.setSubtitle(R.string.muc_history_incomplete);
+                } else if (usersCount > 0) {
                     actionBar.setSubtitle(getResources().getQuantityString(R.plurals.x_participants, conversation.getMucOptions().getUserCount(), conversation.getMucOptions().getUserCount()));
                 } else {
                     actionBar.setSubtitle("");

@@ -56,6 +56,25 @@ public class MucMamJoinGateTest {
         return packet;
     }
 
+    @Test public void transportRecoveryStartsExistingMamOnceAfterNewSelfPresence() throws Exception {
+        Fixture f = fixture(); join(f);
+        f.account.setStatus(Account.State.CONNECTING);
+        var cancel = XmppConnectionService.class.getDeclaredMethod("cancelPendingMucJoins", Account.class);
+        cancel.setAccessible(true); cancel.invoke(f.service, f.account);
+        f.account.setStatus(Account.State.ONLINE);
+        var recover = XmppConnectionService.class.getDeclaredMethod("recoverInterruptedMucJoins", Account.class);
+        recover.setAccessible(true); recover.invoke(f.service, f.account);
+        disco(f, 1, true);
+        f.service.runCatchups(); assertTrue(f.service.mamRequests.isEmpty());
+        f.selfPresence(); f.service.runCatchups();
+        assertEquals(1, f.service.mamRequests.size());
+        f.selfPresence(); f.service.runCatchups();
+        assertEquals(1, f.service.mamRequests.size());
+        f.service.mamCallbacks.get(0).accept(Iq.TIMEOUT);
+        assertTrue(f.room.hasMessagesLeftOnServer());
+        assertFalse(f.service.getMessageArchiveService().queryInProgress(f.room));
+    }
+
     @Test public void joinPresenceSuppressesLegacyHistoryButDoesNotRequestMam() throws Exception {
         Fixture f = fixture(); join(f);
         var history = f.lastPresence().findChild("x", Namespace.MUC).findChild("history");
@@ -241,7 +260,7 @@ public class MucMamJoinGateTest {
             assertEquals(1, f.service.mamRequests.size());
             f.service.mamCallbacks.get(0).accept(Iq.TIMEOUT);
             f.service.onMucJoinConfirmed(f.options()); f.service.runCatchups();
-            assertEquals(1, f.service.mamRequests.size());
+            assertEquals(2, f.service.mamRequests.size()); // new join catchup survives the older query timeout
         }
     }
 
@@ -265,11 +284,87 @@ public class MucMamJoinGateTest {
         assertTrue(f.service.mamRequests.isEmpty());
     }
 
-    @Test public void unsolicitedSelfPresenceBeforeJoinWasSentDoesNotAuthorizeHistory() throws Exception {
+    @Test public void unsolicitedSelfPresenceBeforeJoinWasSentCannotFinishPendingJoin() throws Exception {
         Fixture f = fixture();
-        f.service.joinMuc(f.room); // disco still outstanding; no join presence sent
+        f.service.joinMuc(f.room); // Disco is outstanding; no join presence has been sent.
+        var options = f.options();
         f.selfPresence(); f.service.runCatchups();
+        assertSame(options, f.options());
+        assertFalse(options.online());
+        assertTrue(options.getJoinAttempt().isPending());
+        assertFalse(options.getJoinAttempt().hasConfirmedMembership());
+        assertTrue(f.service.sent.isEmpty());
         assertTrue(f.service.mamRequests.isEmpty());
+        var gate = XmppConnectionService.class.getDeclaredMethod("isJoinInProgress", Conversation.class);
+        gate.setAccessible(true);
+        assertEquals(true, gate.invoke(f.service, f.room));
+
+        disco(f, 0, true);
+        assertEquals(1, f.service.sent.size());
+        assertTrue(options.getJoinAttempt().isPending());
+        assertFalse(options.online());
+        f.selfPresence(); // ID-less self-presence remains compatible AFTER sending the join.
+        f.service.runCatchups();
+        assertTrue(options.online());
+        assertTrue(options.getJoinAttempt().hasConfirmedMembership());
+        assertFalse(options.getJoinAttempt().isPending());
+        assertEquals(false, gate.invoke(f.service, f.room));
+        assertEquals(1, f.service.mamRequests.size());
+        f.selfPresence(); f.service.runCatchups();
+        assertEquals(1, f.service.sent.size());
+        assertEquals(1, f.service.mamRequests.size());
+    }
+
+    @Test public void staleTechnicalUnavailableCannotTerminateDiscoButRealRemovalStillDoes() throws Exception {
+        for (String code : List.of("332", "333")) {
+            Fixture f = fixture();
+            f.service.joinMuc(f.room);
+            Presence old = self(f, "110", null);
+            old.setAttribute("type", "unavailable");
+            old.findChild("x", Namespace.MUC_USER).addChild("status").setAttribute("code", code);
+            f.parser.parseConferencePresence(old, f.account);
+            assertTrue(f.options().getJoinAttempt().isPending());
+            assertEquals(MucOptions.Error.NONE, f.options().getError());
+            disco(f, 0, true); f.selfPresence(); f.service.runCatchups();
+            assertTrue(f.options().online()); assertEquals(1, f.service.mamRequests.size());
+            f.parser.parseConferencePresence(old, f.account);
+            assertFalse(f.options().online());
+            assertEquals(code.equals("332") ? MucOptions.Error.SHUTDOWN : MucOptions.Error.TECHNICAL_PROBLEMS,
+                    f.options().getError());
+        }
+    }
+
+    @Test public void correlatedSelfPresenceBeforeSendCannotFinishPendingJoinEither() throws Exception {
+        Fixture f = fixture();
+        f.service.joinMuc(f.room);
+        var options = f.options();
+        f.parser.parseConferencePresence(self(f, "110", options.getJoinAttempt().getPresenceId()), f.account);
+        assertFalse(options.online());
+        assertTrue(options.getJoinAttempt().isPending());
+        disco(f, 0, true);
+        f.parser.parseConferencePresence(self(f, "110", options.getJoinAttempt().getPresenceId()), f.account);
+        f.service.runCatchups();
+        assertTrue(options.online());
+        assertEquals(1, f.service.mamRequests.size());
+    }
+
+    @Test public void supersededIdAndIdlessPresenceDuringRetryDiscoCannotCancelRetry() throws Exception {
+        Fixture f = fixture(); join(f);
+        String oldId = f.options().getJoinAttempt().getPresenceId();
+        f.service.timeoutMucJoin(f.room, f.options());
+        f.service.joinMucExplicitly(f.room);
+        var retry = f.options();
+        f.parser.parseConferencePresence(self(f, "110", oldId), f.account);
+        f.selfPresence();
+        assertFalse(retry.online());
+        assertTrue(retry.getJoinAttempt().isPending());
+        disco(f, 1, true);
+        assertEquals(2, f.service.sent.size());
+        f.parser.parseConferencePresence(self(f, "110", oldId), f.account);
+        assertFalse(retry.online());
+        f.selfPresence(); f.service.runCatchups();
+        assertTrue(retry.online());
+        assertEquals(1, f.service.mamRequests.size());
     }
 
     @Test public void confirmedCatchupKeepsExistingStanzaIdAnchor() throws Exception {

@@ -3614,13 +3614,15 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
 
     @Override
     public void updateConversation(final Conversation conversation) {
-        final SQLiteDatabase db = this.getWritableDatabase();
-        final String[] args = {conversation.getUuid()};
-        db.update(
-                Conversation.TABLENAME,
-                conversation.getContentValues(),
-                Conversation.UUID + "=?",
-                args);
+        synchronized (conversation.getAttributes()) {
+            final SQLiteDatabase db = this.getWritableDatabase();
+            final String[] args = {conversation.getUuid()};
+            db.update(
+                    Conversation.TABLENAME,
+                    conversation.getContentValues(),
+                    Conversation.UUID + "=?",
+                    args);
+        }
     }
 
     @Override

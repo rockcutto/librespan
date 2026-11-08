@@ -1904,4 +1904,8 @@
     <string name="muc_users_visitors">Посетители</string>
     <string name="muc_users_not_in_room">Вне комнаты</string>
     <string name="muc_users_banned">Заблокированные</string>
+    <string name="muc_history_syncing">Загрузка истории…</string>
+    <string name="muc_history_incomplete">История неполная</string>
+    <string name="muc_history_retry">Повторить восстановление истории</string>
+    <string name="muc_private_recipient_changed">Не удалось подтвердить идентичность участника. Проверьте получателя перед повторной отправкой.</string>
 </resources>

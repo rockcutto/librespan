@@ -42,6 +42,9 @@ public class PresenceParser extends AbstractParser
         }
 
         for (Conversation conversation : res) {
+            // MUC PMs share their parent's options; apply each room event only to its owner.
+            if (conversation.getMode() != Conversation.MODE_MULTI
+                    || conversation.getNextCounterpart() != null) continue;
             MucOptions joined = null;
             MucOptions bootstrapOptions = null;
             boolean bootstrapCorrelated = false;
@@ -49,6 +52,26 @@ public class PresenceParser extends AbstractParser
                 final MucOptions mucOptions = conversation.getMucOptions();
                 final MucJoinAttempt attempt = mucOptions.getJoinAttempt();
                 final boolean errorPresence = "error".equals(packet.getAttribute("type"));
+                // A previous session can replay ID-less self presence while Disco is pending.
+                // Only an attempt whose join presence was sent may consume available presence.
+                if (packet.getAttribute("type") == null
+                        && attempt.isPending() && !attempt.isPresenceSent()) {
+                    continue;
+                }
+                if ("unavailable".equals(packet.getAttribute("type"))
+                        && attempt.isPending() && !attempt.isPresenceSent()) {
+                    final var codes = getStatusCodes(packet.findChild("x", Namespace.MUC_USER));
+                    if ((codes.contains(MucOptions.STATUS_CODE_SHUTDOWN)
+                                || codes.contains(MucOptions.STATUS_CODE_TECHNICAL_REASONS))
+                            // XEP-0045: 333 is technical even when accompanied by 307.
+                            && (!codes.contains(MucOptions.STATUS_CODE_KICKED)
+                                || codes.contains(MucOptions.STATUS_CODE_TECHNICAL_REASONS))
+                            && !codes.contains(MucOptions.STATUS_CODE_BANNED)
+                            && !codes.contains(MucOptions.STATUS_CODE_LOST_MEMBERSHIP)
+                            && !codes.contains(MucOptions.STATUS_CODE_AFFILIATION_CHANGE)) {
+                        continue;
+                    }
+                }
                 final boolean liveSelfUpdate = isLiveSelfUpdate(packet, mucOptions);
                 if (packet.getAttribute("type") == null
                         && (packet.hasChild("delay", "urn:xmpp:delay")
@@ -129,6 +152,14 @@ public class PresenceParser extends AbstractParser
             }
             if (joined != null) {
                 mXmppConnectionService.onMucJoinConfirmed(joined);
+            }
+            if (packet.getAttribute("type") == null
+                    && !packet.hasChild("delay", "urn:xmpp:delay")
+                    && !packet.hasChild("x", "jabber:x:delay")
+                    && packet.findChild("x", Namespace.MUC_USER) != null
+                    && packet.findChild("x", Namespace.MUC_USER).hasChild("item")) {
+                mXmppConnectionService.onMucPrivateRecipientAvailable(
+                        conversation.getMucOptions(), packet.getFrom());
             }
         }
     }
@@ -282,10 +313,20 @@ public class PresenceParser extends AbstractParser
                                         + ": muc destroyed. alternate location "
                                         + alternate);
                     }
-                } else if (codes.contains(MucOptions.STATUS_CODE_SHUTDOWN) && fullJidMatches) {
+                } else if (codes.contains(MucOptions.STATUS_CODE_SHUTDOWN) && fullJidMatches
+                        && !codes.contains(MucOptions.STATUS_CODE_KICKED)
+                        && !codes.contains(MucOptions.STATUS_CODE_BANNED)
+                        && !codes.contains(MucOptions.STATUS_CODE_LOST_MEMBERSHIP)
+                        && !codes.contains(MucOptions.STATUS_CODE_AFFILIATION_CHANGE)) {
                     mucOptions.setError(MucOptions.Error.SHUTDOWN);
-                } else if (codes.contains(MucOptions.STATUS_CODE_SELF_PRESENCE)) {
-                    if (codes.contains(MucOptions.STATUS_CODE_TECHNICAL_REASONS)) {
+                } else if (codes.contains(MucOptions.STATUS_CODE_SELF_PRESENCE)
+                        || (fullJidMatches && (codes.contains(MucOptions.STATUS_CODE_BANNED)
+                            || codes.contains(MucOptions.STATUS_CODE_LOST_MEMBERSHIP)
+                            || codes.contains(MucOptions.STATUS_CODE_AFFILIATION_CHANGE)))) {
+                    if (codes.contains(MucOptions.STATUS_CODE_TECHNICAL_REASONS)
+                            && !codes.contains(MucOptions.STATUS_CODE_BANNED)
+                            && !codes.contains(MucOptions.STATUS_CODE_LOST_MEMBERSHIP)
+                            && !codes.contains(MucOptions.STATUS_CODE_AFFILIATION_CHANGE)) {
                         final boolean wasOnline = mucOptions.online();
                         mucOptions.setError(MucOptions.Error.TECHNICAL_PROBLEMS);
                         Log.d(

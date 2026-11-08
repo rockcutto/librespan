@@ -1871,4 +1871,8 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_users_visitors">Visitors</string>
     <string name="muc_users_not_in_room">Not in room</string>
     <string name="muc_users_banned">Banned</string>
+    <string name="muc_history_syncing">Loading history…</string>
+    <string name="muc_history_incomplete">History incomplete</string>
+    <string name="muc_history_retry">Retry history recovery</string>
+    <string name="muc_private_recipient_changed">Could not confirm the participant’s identity. Check the recipient before sending again.</string>
 </resources>

@@ -2148,4 +2148,8 @@
     <string name="muc_users_visitors">Besucher</string>
     <string name="muc_users_not_in_room">Nicht im Raum</string>
     <string name="muc_users_banned">Gesperrte</string>
+    <string name="muc_history_syncing">Lade Verlauf…</string>
+    <string name="muc_history_incomplete">Verlauf unvollständig</string>
+    <string name="muc_history_retry">Verlauf erneut wiederherstellen</string>
+    <string name="muc_private_recipient_changed">Die Identität des Teilnehmers konnte nicht bestätigt werden. Prüfe den Empfänger vor dem erneuten Senden.</string>
 </resources>

@@ -220,6 +220,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -506,6 +507,67 @@ public class XmppConnectionService extends Service {
     private final AtomicLong mLastExpiryRun = new AtomicLong(0);
     private final LruCache<Pair<String, String>, ServiceDiscoveryResult> discoCache =
             new LruCache<>(20);
+    // Only joins interrupted by transport loss; key identity invalidates reset/replaced attempts.
+    private final Map<MucOptions, Account> interruptedMucJoins = new HashMap<>();
+    private final Map<Conversation, PendingMucCatchup> pendingMucCatchups = new HashMap<>();
+    // Same lock as pendingMucCatchups. Conversation.attributes also stores the durable floor.
+    private static final class FrozenMucAnchor {
+        final Account account;
+        final Jid room;
+        final MamReference start;
+        FrozenMucAnchor(Conversation conversation, MamReference start) {
+            this.account = conversation.getAccount();
+            this.room = conversation.getJid().asBareJid();
+            this.start = start;
+        }
+    }
+    private final Map<Conversation, FrozenMucAnchor> unfinishedMucAnchors = new HashMap<>();
+    private final Map<Conversation, PendingMucCatchup> dispatchedMucCatchups = new HashMap<>();
+    private static final class PendingMucCatchup {
+        final MucOptions options;
+        final Account account;
+        final long generation;
+        final Jid room;
+        final MamReference start;
+        PendingMucCatchup(MucOptions options, MamReference start) {
+            this.options = options;
+            this.account = options.getConversation().getAccount();
+            this.generation = options.getJoinAttempt().getMembershipGeneration();
+            this.room = options.getConversation().getJid().asBareJid();
+            this.start = start;
+        }
+    }
+    private final Set<String> pendingMucPrivateReleases = new HashSet<>();
+    private final Map<Conversation, RoomRecovery> mucRoomRecoveries = new HashMap<>();
+    private static final int[] MUC_RECOVERY_DELAYS = {30, 120, 300};
+    private static final class RoomRecovery {
+        final Account account;
+        MucOptions options;
+        int rounds;
+        long epoch;
+        Future<?> task;
+        RoomRecovery(MucOptions options) {
+            this.options = options;
+            this.account = options.getConversation().getAccount();
+        }
+    }
+    private final Map<Conversation, MembershipCheck> mucMembershipChecks = new HashMap<>();
+
+    private static final class MembershipCheck {
+        final Account account;
+        final MucOptions options;
+        final Jid self;
+        final long epoch;
+        int remaining = 1;
+        int sequence;
+        Future<?> retry;
+        MembershipCheck(Account account, MucOptions options) {
+            this.account = account;
+            this.options = options;
+            this.self = options.getSelf().getFullJid();
+            this.epoch = options.getJoinAttempt().getEpoch();
+        }
+    }
     private final OnStatusChanged statusListener =
             new OnStatusChanged() {
 
@@ -515,6 +577,7 @@ public class XmppConnectionService extends Service {
                     if (account.getStatus() != Account.State.ONLINE) {
                         invalidateMucBootstraps(account);
                         invalidateMucMembershipAdmissions(account);
+                        cancelMembershipChecks(account);
                         cancelPendingMucJoins(account);
                     }
                     updateAccountUi();
@@ -540,6 +603,16 @@ public class XmppConnectionService extends Service {
                         mJingleConnectionManager.prefetchCallDependencies(account);
                         if (connection != null) {
                             applyDesiredClientStateIndication(connection);
+                        }
+                        recoverInterruptedMucJoins(account);
+                        for (Conversation room : getConversations()) {
+                            if (room.getAccount() == account && isRootMucConversation(room)
+                                    && room.getMucOptions().getError() == MucOptions.Error.TECHNICAL_PROBLEMS) {
+                                mucSelfPingAndRejoin(room);
+                            }
+                            if (room.getAccount() == account && isRootMucConversation(room)) {
+                                synchronized (room) { scheduleRoomRecovery(room, room.getMucOptions()); }
+                            }
                         }
                         List<Conversation> conversations = getConversations();
                         for (Conversation conversation : conversations) {
@@ -2865,6 +2938,15 @@ public class XmppConnectionService extends Service {
     @Override
     public void onDestroy() {
         destroyed = true;
+        synchronized (interruptedMucJoins) {
+            interruptedMucJoins.clear();
+        }
+        synchronized (pendingMucCatchups) {
+            pendingMucCatchups.clear(); unfinishedMucAnchors.clear(); dispatchedMucCatchups.clear();
+        }
+        for (Conversation room : getConversations()) {
+            synchronized (room) { cancelMembershipCheck(room); cancelRoomRecovery(room); }
+        }
         final android.app.Application application = getApplication();
         if (application instanceof Conversations) {
             ((Conversations) application).removeUiStateListener(mUiStateListener);
@@ -3356,7 +3438,8 @@ public class XmppConnectionService extends Service {
 
         final boolean inProgressJoin = isJoinInProgress(conversation);
 
-        if (!holdForMediaTransport && account.isOnlineAndConnected() && !inProgressJoin) {
+        if (!holdForMediaTransport && account.isOnlineAndConnected() && !inProgressJoin
+                && eligiblePrivateMucMessage(message)) {
             switch (message.getEncryption()) {
                 case Message.ENCRYPTION_NONE:
                     if (message.needsUploading()) {
@@ -3531,11 +3614,17 @@ public class XmppConnectionService extends Service {
 
     private boolean isJoinInProgress(final Conversation conversation) {
         final Account account = conversation.getAccount();
+        final MucOptions roomOptions = conversation.getMode() == Conversational.MODE_MULTI
+                ? conversation.getMucOptions() : null;
+        final boolean roomOffline = roomOptions != null && (!confirmedRootMembership(roomOptions)
+                || (conversation.getNextCounterpart() != null
+                    && !eligiblePrivateMucQueue(conversation, roomOptions)));
         synchronized (account.inProgressConferenceJoins) {
             if (conversation.getMode() == Conversational.MODE_MULTI) {
                 final boolean inProgress = account.inProgressConferenceJoins.contains(conversation);
                 final boolean pending = account.pendingConferenceJoins.contains(conversation);
-                final boolean inProgressJoin = inProgress || pending;
+                final boolean inProgressJoin = inProgress || pending
+                        || roomOffline;
                 if (inProgressJoin) {
                     Log.d(
                             Config.LOGTAG,
@@ -6729,10 +6818,15 @@ public class XmppConnectionService extends Service {
         Log.d(Config.LOGTAG, "app switched into background");
     }
 
+    private static boolean isRootMucConversation(Conversation conversation) {
+        return conversation.getMode() == Conversation.MODE_MULTI
+                && conversation.getNextCounterpart() == null;
+    }
+
     public void connectMultiModeConversations(Account account) {
         List<Conversation> conversations = getConversations();
         for (Conversation conversation : conversations) {
-            if (conversation.getMode() == Conversation.MODE_MULTI
+            if (isRootMucConversation(conversation)
                     && conversation.getAccount() == account
                     && conversation.getStatus() == Conversation.STATUS_AVAILABLE
                     && !conversation.isMucExplicitlyLeft()) {
@@ -6742,66 +6836,143 @@ public class XmppConnectionService extends Service {
     }
 
     public void mucSelfPingAndRejoin(final Conversation conversation) {
-        final Account account = conversation.getAccount();
-        synchronized (account.inProgressConferenceJoins) {
-            if (account.inProgressConferenceJoins.contains(conversation)) {
-                Log.d(
-                        Config.LOGTAG,
-                        account.getJid().asBareJid()
-                                + ": canceling muc self ping because join is already under way");
-                return;
+        if (!isRootMucConversation(conversation)) return;
+        synchronized (conversation) {
+            if (!canCheckMembership(conversation, conversation.getAccount(), conversation.getMucOptions())) return;
+            final MembershipCheck check = new MembershipCheck(conversation.getAccount(), conversation.getMucOptions());
+            synchronized (mucMembershipChecks) {
+                if (mucMembershipChecks.containsKey(conversation)) return;
+                mucMembershipChecks.put(conversation, check);
             }
-        }
-        synchronized (account.inProgressConferencePings) {
-            if (!account.inProgressConferencePings.add(conversation)) {
-                Log.d(
-                        Config.LOGTAG,
-                        account.getJid().asBareJid()
-                                + ": canceling muc self ping because ping is already under way");
-                return;
+            synchronized (check.account.inProgressConferencePings) {
+                check.account.inProgressConferencePings.add(conversation);
             }
+            sendMembershipPing(conversation, check);
         }
-        final Jid self = conversation.getMucOptions().getSelf().getFullJid();
+    }
+
+    private boolean canCheckMembership(Conversation room, Account account, MucOptions options) {
+        return !destroyed && isRootMucConversation(room) && room.getAccount() == account
+                && options.getConversation() == room
+                && account.getStatus() == Account.State.ONLINE
+                && room.getStatus() == Conversation.STATUS_AVAILABLE
+                && getConversations().contains(room) && room.getMucOptions() == options
+                && !room.isMucExplicitlyLeft() && !isMucExplicitlyLeft(account, room.getJid())
+                && !options.getJoinAttempt().isPending() && options.onRenameListener == null
+                && (options.online() || options.getError() == MucOptions.Error.TECHNICAL_PROBLEMS);
+    }
+
+    private void sendMembershipPing(Conversation room, MembershipCheck check) {
+        final int sequence = ++check.sequence;
         final Iq ping = new Iq(Iq.Type.GET);
-        ping.setTo(self);
+        ping.setTo(check.self);
         ping.addChild("ping", Namespace.PING);
-        sendIqPacket(
-                conversation.getAccount(),
-                ping,
-                (response) -> {
-                    if (response.getType() == Iq.Type.ERROR) {
-                        final var error = response.getError();
-                        if (error == null
-                                || error.hasChild("service-unavailable")
-                                || error.hasChild("feature-not-implemented")
-                                || error.hasChild("item-not-found")) {
-                            Log.d(
-                                    Config.LOGTAG,
-                                    account.getJid().asBareJid()
-                                            + ": ping to "
-                                            + self
-                                            + " came back as ignorable error");
-                        } else {
-                            Log.d(
-                                    Config.LOGTAG,
-                                    account.getJid().asBareJid()
-                                            + ": ping to "
-                                            + self
-                                            + " failed. attempting rejoin");
-                            joinMuc(conversation);
+        sendIqPacket(check.account, ping, response -> dispatchMucJoinTimeout(() -> {
+            boolean confirmed = false;
+            synchronized (room) {
+                synchronized (mucMembershipChecks) {
+                    if (mucMembershipChecks.get(room) != check || check.sequence != sequence) return;
+                }
+                ++check.sequence; // a transport callback may complete this probe only once
+                if (!canCheckMembership(room, check.account, check.options)
+                        || !check.self.equals(check.options.getSelf().getFullJid())) {
+                    cancelMembershipCheck(room);
+                    return;
+                }
+                if (check.epoch != check.options.getJoinAttempt().getEpoch()) {
+                    cancelMembershipCheck(room);
+                    if (check.options.getError() == MucOptions.Error.TECHNICAL_PROBLEMS) mucSelfPingAndRejoin(room);
+                    return;
+                }
+                final String error = response.getErrorCondition();
+                final boolean membership = response.getType() == Iq.Type.RESULT
+                        || (response.getType() == Iq.Type.ERROR
+                            && ("service-unavailable".equals(error) || "feature-not-implemented".equals(error)));
+                final boolean uncertain = response.getType() == Iq.Type.TIMEOUT
+                        || error == null || "item-not-found".equals(error)
+                        || "remote-server-not-found".equals(error) || "remote-server-timeout".equals(error);
+                if (membership) {
+                    cancelMembershipCheck(room);
+                    if (!check.options.online()) {
+                        check.options.setError(MucOptions.Error.NONE);
+                        check.options.setOnline();
+                        check.options.getJoinAttempt().confirmMembershipCheck();
+                        confirmed = true;
+                        updateConversationUi();
+                    }
+                } else if (uncertain) {
+                    if (check.remaining-- > 0) {
+                        check.retry = scheduleMucMembershipRetry(() -> {
+                            synchronized (room) {
+                                synchronized (mucMembershipChecks) {
+                                    if (mucMembershipChecks.get(room) != check) return;
+                                }
+                                if (canCheckMembership(room, check.account, check.options)) sendMembershipPing(room, check);
+                                else cancelMembershipCheck(room);
+                            }
+                        });
+                    } else cancelMembershipCheck(room);
+                } else {
+                    cancelMembershipCheck(room);
+                    final RoomRecovery recovery;
+                    synchronized (mucRoomRecoveries) {
+                        recovery = mucRoomRecoveries.get(room);
+                        if (recovery != null && recovery.task != null) {
+                            recovery.task.cancel(false);
+                            recovery.task = null;
                         }
-                    } else if (response.getType() == Iq.Type.RESULT) {
-                        Log.d(
-                                Config.LOGTAG,
-                                account.getJid().asBareJid()
-                                        + ": ping to "
-                                        + self
-                                        + " came back fine");
                     }
-                    synchronized (account.inProgressConferencePings) {
-                        account.inProgressConferencePings.remove(conversation);
-                    }
-                });
+                    joinMuc(room, null, false, recovery);
+                }
+            }
+            if (confirmed) onMucJoinConfirmed(check.options);
+        }), (long) Config.CONNECT_DISCO_TIMEOUT);
+    }
+
+    ScheduledFuture<?> scheduleMucMembershipRetry(Runnable retry) {
+        return internalPingExecutor.schedule(retry, Config.CONNECT_DISCO_TIMEOUT, TimeUnit.SECONDS);
+    }
+
+    private void cancelMembershipCheck(Conversation room) {
+        final MembershipCheck check;
+        synchronized (mucMembershipChecks) { check = mucMembershipChecks.remove(room); }
+        if (check != null) {
+            if (check.retry != null) check.retry.cancel(false);
+            synchronized (check.account.inProgressConferencePings) {
+                check.account.inProgressConferencePings.remove(room);
+            }
+        }
+    }
+
+    private void cancelMembershipChecks(Account account) {
+        for (Conversation room : getConversations()) {
+            synchronized (room) {
+                if (room.getAccount() == account && account.getStatus() != Account.State.ONLINE) {
+                    cancelMembershipCheck(room);
+                    cancelRoomRecovery(room);
+                    synchronized (pendingMucCatchups) { pendingMucCatchups.remove(room); }
+                }
+            }
+        }
+    }
+
+    private boolean interruptMucJoinIfOffline(Conversation room, MucOptions options) {
+        final Account account = room.getAccount();
+        if (!destroyed && room.getMucOptions() == options
+                && options.getJoinAttempt().isPending() && options.autoPushConfiguration()
+                && room.getStatus() == Conversation.STATUS_AVAILABLE
+                && account.getStatus() != Account.State.ONLINE
+                && account.getStatus() != Account.State.DISABLED
+                && account.getStatus() != Account.State.LOGGED_OUT) {
+            options.setOffline();
+            onMucJoinStateChanged(options);
+            synchronized (interruptedMucJoins) { interruptedMucJoins.put(options, account); }
+            dispatchMucJoinTimeout(() -> {
+                if (account.getStatus() == Account.State.ONLINE) recoverInterruptedMucJoins(account);
+            });
+            return true;
+        }
+        return false;
     }
 
     private boolean isCurrentMucJoin(final Conversation conversation, final MucOptions options) {
@@ -6829,8 +7000,10 @@ public class XmppConnectionService extends Service {
             }
             if (destroyed || conversation.getStatus() == Conversation.STATUS_ARCHIVED
                     || conversation.getAccount().getStatus() != Account.State.ONLINE) {
-                options.getJoinAttempt().finish();
-                onMucJoinStateChanged(options);
+                if (!interruptMucJoinIfOffline(conversation, options)) {
+                    options.getJoinAttempt().finish();
+                    onMucJoinStateChanged(options);
+                }
                 return;
             }
             options.setError(MucOptions.Error.REMOTE_SERVER_TIMEOUT);
@@ -6839,28 +7012,274 @@ public class XmppConnectionService extends Service {
         }
     }
 
-    public void onMucJoinConfirmed(final MucOptions options) {
-        // Defer past the parser/join callback: MAM takes its own query locks and must never
-        // run while a presence handler (or a reentrant join callback) owns Conversation.
-        dispatchMucJoinCatchup(() -> {
-            final Conversation conversation = options.getConversation();
-            final MessageArchiveService archive = getMessageArchiveService();
-            // Include initial/reverse history queries, which are not marked as catchup.
-            final boolean historyInProgress = archive.queryInProgress(conversation);
-            synchronized (conversation) {
-                if (!isCurrentMucJoin(conversation, options) || !options.online()
-                        || !options.mamSupport() || !options.getJoinAttempt().claimCatchup()) {
+    private boolean confirmedRootMembership(MucOptions options) {
+        final Conversation root = options.getConversation();
+        return isRootMucConversation(root) && isCurrentMucJoin(root, options)
+                && root.getStatus() == Conversation.STATUS_AVAILABLE
+                && getConversations().contains(root) && options.online()
+                && !root.isMucExplicitlyLeft() && !isMucExplicitlyLeft(root.getAccount(), root.getJid())
+                && (!options.getJoinAttempt().hasStarted()
+                    || options.getJoinAttempt().hasConfirmedMembership());
+    }
+
+    private boolean eligiblePrivateMucQueue(Conversation pm, MucOptions options) {
+        final Conversation root = options.getConversation();
+        final Jid target = pm.getNextCounterpart();
+        final MucOptions.User recipient = target == null ? null : options.findUserByFullJid(target);
+        return pm.getMode() == Conversation.MODE_MULTI && target != null
+                && pm.getAccount() == root.getAccount()
+                && pm.getStatus() == Conversation.STATUS_AVAILABLE
+                && !pm.isMucExplicitlyLeft() && !isMucExplicitlyLeft(pm.getAccount(), pm.getJid())
+                && pm.getParentConversation() == root && pm.getMucOptions() == options && options.allowPm()
+                && target.asBareJid().equals(root.getJid().asBareJid())
+                && recipient != null && recipient.getRole() != MucOptions.Role.NONE;
+    }
+
+    private boolean eligiblePrivateMucMessage(Message message) {
+        final Conversation conversation = (Conversation) message.getConversation();
+        if (conversation.getMode() != Conversation.MODE_MULTI) return true;
+        if (conversation.getNextCounterpart() != null && !message.isPrivateMessage()) return false;
+        if (!message.isPrivateMessage()) return true;
+        final MucOptions options = conversation.getMucOptions();
+        final Jid target = message.getCounterpart();
+        if (target == null || !target.asBareJid().equals(options.getConversation().getJid().asBareJid())) return false;
+        final MucOptions.User recipient = options.findUserByFullJid(target);
+        if (!options.allowPm() || recipient == null || recipient.getRole() == MucOptions.Role.NONE) return false;
+        if (!sameMucPrivateRecipient(message, recipient)) return false;
+        return conversation.getNextCounterpart() == null
+                || (target.equals(conversation.getNextCounterpart()) && eligiblePrivateMucQueue(conversation, options));
+    }
+
+    private boolean sameMucPrivateRecipient(Message message, MucOptions.User recipient) {
+        final Jid real = message.getTrueCounterpart();
+        final String occupant = message.getOccupantId();
+        return (real == null || (recipient.getRealJid() != null
+                    && real.asBareJid().equals(recipient.getRealJid().asBareJid())))
+                && (occupant == null || occupant.equals(recipient.getOccupantId()));
+    }
+
+    private void releaseConfirmedMucQueue(Conversation conversation, MucOptions options, Jid onlyTarget) {
+        if (!confirmedRootMembership(options)) return;
+        if (conversation != options.getConversation() && !eligiblePrivateMucQueue(conversation, options)) return;
+        conversation.findWaitingMessages(message -> {
+            if (conversation.getNextCounterpart() != null && !message.isPrivateMessage()) return;
+            if (onlyTarget != null && (!message.isPrivateMessage()
+                    || !onlyTarget.equals(message.getCounterpart()))) return;
+            if (message.isPrivateMessage()) {
+                final Jid target = message.getCounterpart();
+                if (target == null || (conversation.getNextCounterpart() != null
+                        && !target.equals(conversation.getNextCounterpart()))) return;
+                final MucOptions.User recipient = options.findUserByFullJid(target);
+                if (recipient == null || !options.allowPm() || recipient.getRole() == MucOptions.Role.NONE) return;
+                if (!sameMucPrivateRecipient(message, recipient)) {
+                    markMessage(message, Message.STATUS_SEND_FAILED, Message.ERROR_MESSAGE_MUC_RECIPIENT_UNVERIFIED);
                     return;
                 }
             }
-            if (!historyInProgress) {
-                archive.catchupMUC(conversation);
+            if (!isDeferredMediaCaptionBlocked(conversation, message)) resendMessage(message, true);
+        });
+    }
+
+    /** Available presence resumes only the exact recipient's queue; no join or timer is needed. */
+    public void onMucPrivateRecipientAvailable(final MucOptions options, final Jid target) {
+        final Conversation root = options.getConversation();
+        final long generation;
+        final Account account = root.getAccount();
+        synchronized (root) {
+            if (!confirmedRootMembership(options) || target == null || target.isBareJid()
+                    || !target.asBareJid().equals(root.getJid().asBareJid())) return;
+            if (target.equals(options.getSelf().getFullJid()) || options.findUserByFullJid(target) == null) return;
+            generation = options.getJoinAttempt().getMembershipGeneration();
+        }
+        final String key = root.getUuid() + ":" + generation + ":" + target;
+        synchronized (pendingMucPrivateReleases) {
+            if (!pendingMucPrivateReleases.add(key)) return;
+        }
+        dispatchMucJoinCatchup(() -> {
+            try {
+                synchronized (root) {
+                    if (root.getAccount() != account || !confirmedRootMembership(options)
+                            || options.getJoinAttempt().getMembershipGeneration() != generation) return;
+                }
+                final MucOptions.User recipient = options.findUserByFullJid(target);
+                if (recipient == null || recipient.getRole() == MucOptions.Role.NONE || !options.allowPm()) return;
+                for (Conversation conversation : getConversations()) {
+                    if (conversation != root && !eligiblePrivateMucQueue(conversation, options)) continue;
+                    if (conversation != root && !target.equals(conversation.getNextCounterpart())) continue;
+                    releaseConfirmedMucQueue(conversation, options, target);
+                }
+            } finally {
+                synchronized (pendingMucPrivateReleases) { pendingMucPrivateReleases.remove(key); }
             }
         });
     }
 
+    private void persistMucRecoveryAnchor(Conversation room, MamReference start) {
+        synchronized (room.getAttributes()) {
+            final MamReference previous = room.getMucRecoveryAnchor();
+            room.setMucRecoveryAnchor(start);
+            try {
+                databaseBackend.updateConversation(room);
+            } catch (RuntimeException failed) {
+                room.setMucRecoveryAnchor(previous);
+                throw failed;
+            }
+        }
+    }
+
+    public void onMucJoinConfirmed(final MucOptions options) {
+        final Conversation root = options.getConversation();
+        final long generation;
+        final Account account;
+        final Jid roomJid;
+        synchronized (root) {
+            if (!confirmedRootMembership(options)) return;
+            cancelRoomRecovery(root);
+            account = root.getAccount();
+            roomJid = root.getJid().asBareJid();
+            generation = options.getJoinAttempt().getMembershipGeneration();
+            if (options.mamSupport() && !options.getJoinAttempt().hasClaimedCatchup()) {
+                synchronized (pendingMucCatchups) {
+                    PendingMucCatchup previous = pendingMucCatchups.get(root);
+                    if (previous == null || previous.options != options || previous.generation != generation
+                            || previous.account != account || !previous.room.equals(roomJid)) {
+                        // Snapshot before outbound release or a deferred callback can admit live D.
+                        FrozenMucAnchor anchor = unfinishedMucAnchors.get(root);
+                        if (anchor == null || anchor.account != account || !anchor.room.equals(roomJid)) {
+                            MamReference start = root.getMucRecoveryAnchor();
+                            if (start == null) start = root.getLastMessageTransmitted();
+                            if (start.getTimestamp() < 0 && root.countMessages() == 0) start = new MamReference(0);
+                            // Commit before deferring MAM or releasing outbound/live processing.
+                            persistMucRecoveryAnchor(root, start);
+                            anchor = new FrozenMucAnchor(root, start);
+                            unfinishedMucAnchors.put(root, anchor);
+                        }
+                        pendingMucCatchups.put(root, new PendingMucCatchup(options, anchor.start));
+                    }
+                }
+            }
+        }
+        dispatchMucJoinCatchup(() -> {
+            // Eligibility is checked under the room lock; DB/crypto/transport run outside it.
+            final boolean release;
+            synchronized (root) {
+                if (root.getAccount() != account || !root.getJid().asBareJid().equals(roomJid)
+                        || !confirmedRootMembership(options)
+                        || options.getJoinAttempt().getMembershipGeneration() != generation) return;
+                release = options.getJoinAttempt().claimQueueRelease();
+            }
+            if (release) releaseConfirmedMucQueue(root, options, null);
+            for (Conversation pm : release ? getConversations() : java.util.Collections.<Conversation>emptyList()) {
+                synchronized (root) {
+                    if (root.getAccount() != account || !root.getJid().asBareJid().equals(roomJid)
+                        || !confirmedRootMembership(options)
+                        || options.getJoinAttempt().getMembershipGeneration() != generation) return;
+                }
+                if (eligiblePrivateMucQueue(pm, options)) releaseConfirmedMucQueue(pm, options, null);
+            }
+            drainPendingMucCatchup(root);
+        });
+    }
+
+    private void drainPendingMucCatchup(Conversation room) {
+        final PendingMucCatchup request;
+        synchronized (pendingMucCatchups) { request = pendingMucCatchups.get(room); }
+        if (request == null) return;
+        final MessageArchiveService archive = getMessageArchiveService();
+        // Never acquire MAM query locks while holding Conversation.
+        final boolean running = archive.queryInProgress(room);
+        synchronized (room) {
+            synchronized (pendingMucCatchups) {
+                if (pendingMucCatchups.get(room) != request) return;
+                if (room.getAccount() != request.account || !room.getJid().asBareJid().equals(request.room)
+                        || !confirmedRootMembership(request.options)
+                        || request.options.getJoinAttempt().getMembershipGeneration() != request.generation) {
+                    pendingMucCatchups.remove(room);
+                    return;
+                }
+                if (running) return; // completion resumes this request without consuming its claim
+                pendingMucCatchups.remove(room);
+                if (!request.options.getJoinAttempt().claimCatchup()) return;
+                dispatchedMucCatchups.put(room, request);
+            }
+        }
+        archive.catchupMUC(room, MamReference.max(request.start, room.getLastClearHistory()), complete -> dispatchMucJoinCatchup(() -> {
+            final boolean anotherQuery = archive.queryInProgress(room);
+            synchronized (room) {
+                synchronized (pendingMucCatchups) {
+                    if (dispatchedMucCatchups.get(room) != request) return;
+                    dispatchedMucCatchups.remove(room);
+                    final FrozenMucAnchor anchor = unfinishedMucAnchors.get(room);
+                    if (complete && !anotherQuery && !pendingMucCatchups.containsKey(room)
+                            && room.getAccount() == request.account && confirmedRootMembership(request.options)
+                            && request.options.getJoinAttempt().getMembershipGeneration() == request.generation
+                            && anchor != null && anchor.account == request.account
+                            && anchor.room.equals(request.room) && room.getJid().asBareJid().equals(request.room)
+                            && anchor.start == request.start) {
+                        persistMucRecoveryAnchor(room, null);
+                        unfinishedMucAnchors.remove(room);
+                    }
+                }
+            }
+            updateConversationUi();
+        }));
+    }
+
+    public enum MucHistoryRecoveryState { NONE, SYNCING, INCOMPLETE }
+
+    public MucHistoryRecoveryState getMucHistoryRecoveryState(Conversation room) {
+        if (room == null || !isRootMucConversation(room) || !confirmedRootMembership(room.getMucOptions()))
+            return MucHistoryRecoveryState.NONE;
+        synchronized (pendingMucCatchups) {
+            if (pendingMucCatchups.containsKey(room) || dispatchedMucCatchups.containsKey(room))
+                return MucHistoryRecoveryState.SYNCING;
+            return room.getMucRecoveryAnchor() == null
+                    ? MucHistoryRecoveryState.NONE : MucHistoryRecoveryState.INCOMPLETE;
+        }
+    }
+
+    /** Explicit retry of history only, with the same durable floor and membership. */
+    public boolean retryMucHistoryRecovery(Conversation room) {
+        synchronized (room) {
+            final MucOptions options = room.getMucOptions();
+            if (!confirmedRootMembership(options) || !options.mamSupport()) return false;
+            synchronized (pendingMucCatchups) {
+                if (pendingMucCatchups.containsKey(room) || dispatchedMucCatchups.containsKey(room)) return false;
+                final MamReference start = room.getMucRecoveryAnchor();
+                if (start == null) return false;
+                FrozenMucAnchor anchor = unfinishedMucAnchors.get(room);
+                if (anchor == null || anchor.account != room.getAccount()
+                        || !anchor.room.equals(room.getJid().asBareJid())) {
+                    anchor = new FrozenMucAnchor(room, start);
+                    unfinishedMucAnchors.put(room, anchor);
+                }
+                options.getJoinAttempt().allowExplicitCatchupRetry();
+                pendingMucCatchups.put(room, new PendingMucCatchup(options, anchor.start));
+            }
+        }
+        onMucHistoryQueryFinished(room);
+        updateConversationUi();
+        return true;
+    }
+
+    public boolean hasPendingMucCatchup(Conversation room) {
+        synchronized (pendingMucCatchups) {
+            return pendingMucCatchups.containsKey(room) || room.getMucRecoveryAnchor() != null;
+        }
+    }
+
+    public void onMucHistoryQueryFinished(Conversation room) {
+        // IQ completion can hold the transport callback lock: acquire no room monitor here.
+        dispatchMucJoinCatchup(() -> drainPendingMucCatchup(room));
+    }
+
     void dispatchMucJoinCatchup(final Runnable catchup) {
-        internalPingExecutor.execute(catchup);
+        if (destroyed) return;
+        try {
+            internalPingExecutor.execute(catchup);
+        } catch (RejectedExecutionException closed) {
+            if (!destroyed) throw closed;
+        }
     }
 
     public void onMucJoinStateChanged(final MucOptions options) {
@@ -6878,6 +7297,87 @@ public class XmppConnectionService extends Service {
             }
         }
         mucBootstrapCoordinator.joinTerminated(options);
+        synchronized (conversation) {
+            if (!options.online()) {
+                synchronized (pendingMucCatchups) {
+                    PendingMucCatchup pending = pendingMucCatchups.get(conversation);
+                    if (pending != null && pending.options == options) pendingMucCatchups.remove(conversation);
+                }
+            }
+            scheduleRoomRecovery(conversation, options);
+        }
+    }
+
+    private boolean isTechnicalMucFailure(MucOptions options) {
+        return options.getError() == MucOptions.Error.REMOTE_SERVER_TIMEOUT
+                || options.getError() == MucOptions.Error.SHUTDOWN
+                || options.getError() == MucOptions.Error.TECHNICAL_PROBLEMS;
+    }
+
+    private boolean eligibleRoomRecovery(Conversation room, MucOptions options) {
+        return !destroyed && room.getMucOptions() == options
+                && room.getStatus() == Conversation.STATUS_AVAILABLE
+                && room.getMode() == Conversation.MODE_MULTI && getConversations().contains(room)
+                && room.getAccount().getStatus() == Account.State.ONLINE
+                && !room.isMucExplicitlyLeft() && !isMucExplicitlyLeft(room.getAccount(), room.getJid())
+                && room.getNextCounterpart() == null
+                && options.autoPushConfiguration() && !options.online()
+                && !options.getJoinAttempt().isPending() && isTechnicalMucFailure(options);
+    }
+
+    // Called with Conversation held. Each cycle owns at most three room-only timers.
+    private void scheduleRoomRecovery(Conversation room, MucOptions options) {
+        if (!eligibleRoomRecovery(room, options)) {
+            cancelRoomRecovery(room);
+            return;
+        }
+        synchronized (mucRoomRecoveries) {
+            RoomRecovery cycle = mucRoomRecoveries.get(room);
+            if (cycle == null) {
+                cycle = new RoomRecovery(options);
+                mucRoomRecoveries.put(room, cycle);
+            }
+            if (cycle.account != room.getAccount() || cycle.options != options) {
+                cancelRoomRecovery(room);
+                return;
+            }
+            // A repeated technical event advances the attempt epoch, but must keep the
+            // existing deadline and budget. Only this current options/account may refresh it.
+            cycle.epoch = options.getJoinAttempt().getEpoch();
+            if (cycle.task != null || cycle.rounds == MUC_RECOVERY_DELAYS.length) return;
+            final RoomRecovery current = cycle;
+            final int delay = MUC_RECOVERY_DELAYS[cycle.rounds++];
+            cycle.task = scheduleMucRoomRecovery(() -> {
+                synchronized (room) {
+                    synchronized (mucRoomRecoveries) {
+                        if (mucRoomRecoveries.get(room) != current || current.options != options) return;
+                        current.task = null;
+                    }
+                    if (current.account != room.getAccount() || !eligibleRoomRecovery(room, options)
+                            || options.getJoinAttempt().getEpoch() != current.epoch) {
+                        cancelRoomRecovery(room);
+                        return;
+                    }
+                    if (options.getError() == MucOptions.Error.TECHNICAL_PROBLEMS) {
+                        mucSelfPingAndRejoin(room);
+                        if (eligibleRoomRecovery(room, options)) scheduleRoomRecovery(room, options);
+                    } else {
+                        joinMuc(room, null, false, current);
+                    }
+                }
+            }, delay);
+        }
+    }
+
+    ScheduledFuture<?> scheduleMucRoomRecovery(Runnable work, int seconds) {
+        return internalPingExecutor.schedule(work, seconds, TimeUnit.SECONDS);
+    }
+
+    private void cancelRoomRecovery(Conversation room) {
+        synchronized (mucRoomRecoveries) {
+            final RoomRecovery cycle = mucRoomRecoveries.remove(room);
+            if (cycle != null && cycle.task != null) cycle.task.cancel(false);
+        }
     }
 
     private void cancelPendingMucJoins(final Account account) {
@@ -6887,10 +7387,55 @@ public class XmppConnectionService extends Service {
             }
             synchronized (conversation) {
                 final MucOptions options = conversation.getMucOptions();
-                if (options.getJoinAttempt().isPending()) {
+                if (account.getStatus() != Account.State.ONLINE
+                        && options.getJoinAttempt().isPending()) {
                     options.setOffline();
                     onMucJoinStateChanged(options);
+                    // Creation/bootstrap callbacks are cancelled, never replayed as plain joins.
+                    if (options.autoPushConfiguration()) {
+                        synchronized (interruptedMucJoins) {
+                            interruptedMucJoins.put(options, account);
+                        }
+                    }
                 }
+            }
+        }
+        // ONLINE may have passed the map before the last marker was published.
+        if (account.getStatus() == Account.State.ONLINE) recoverInterruptedMucJoins(account);
+        if (account.getStatus() == Account.State.DISABLED
+                || account.getStatus() == Account.State.LOGGED_OUT) {
+            synchronized (interruptedMucJoins) {
+                interruptedMucJoins.values().removeIf(owner -> owner == account);
+            }
+        }
+    }
+
+    private void recoverInterruptedMucJoins(final Account account) {
+        final List<MucOptions> interrupted = new ArrayList<>();
+        synchronized (interruptedMucJoins) {
+            for (final var entry : interruptedMucJoins.entrySet()) {
+                if (entry.getValue() == account) interrupted.add(entry.getKey());
+            }
+        }
+        final List<Conversation> active = getConversations();
+        for (final MucOptions options : interrupted) {
+            final Conversation conversation = options.getConversation();
+            synchronized (conversation) {
+                if (account.getStatus() != Account.State.ONLINE) return;
+                synchronized (interruptedMucJoins) {
+                    if (interruptedMucJoins.get(options) != account) continue;
+                    interruptedMucJoins.remove(options);
+                }
+                if (destroyed || conversation.getAccount() != account
+                        || !active.contains(conversation)
+                        || conversation.getStatus() != Conversation.STATUS_AVAILABLE
+                        || conversation.getMode() != Conversation.MODE_MULTI
+                        || conversation.getMucOptions() != options
+                        || options.online() || options.getJoinAttempt().isPending()) {
+                    continue;
+                }
+                // Reuse normal leave/password/access guards. A new attempt has a new stanza ID.
+                joinMuc(conversation);
             }
         }
     }
@@ -6911,7 +7456,9 @@ public class XmppConnectionService extends Service {
                 && (conversation.getMucOptions().getError() == MucOptions.Error.PASSWORD_REQUIRED
                         || conversation.getMucOptions().getError() == MucOptions.Error.PASSWORD_INCORRECT
                         || conversation.getMucOptions().getError() == MucOptions.Error.MEMBERS_ONLY
-                        || conversation.getMucOptions().getError() == MucOptions.Error.BANNED)) {
+                        || conversation.getMucOptions().getError() == MucOptions.Error.BANNED
+                        || conversation.getMucOptions().getError() == MucOptions.Error.KICKED
+                        || conversation.getMucOptions().getError() == MucOptions.Error.DESTROYED)) {
             return;
         }
         joinMuc(conversation, null, false);
@@ -6968,6 +7515,14 @@ public class XmppConnectionService extends Service {
             Conversation conversation,
             final OnConferenceJoined onConferenceJoined,
             final boolean followedInvite) {
+        joinMuc(conversation, onConferenceJoined, followedInvite, null);
+    }
+
+    private void joinMuc(
+            Conversation conversation,
+            final OnConferenceJoined onConferenceJoined,
+            final boolean followedInvite,
+            final RoomRecovery recovery) {
         if (conversation != null
                 && conversation.getNextCounterpart() == null
                 && (conversation.isMucExplicitlyLeft()
@@ -6980,6 +7535,13 @@ public class XmppConnectionService extends Service {
             return;
         }
         final Account account = conversation.getAccount();
+        synchronized (conversation) {
+            cancelMembershipCheck(conversation);
+            if (recovery == null) cancelRoomRecovery(conversation);
+            synchronized (interruptedMucJoins) {
+                interruptedMucJoins.remove(conversation.getMucOptions());
+            }
+        }
         synchronized (account.pendingConferenceJoins) {
             account.pendingConferenceJoins.remove(conversation);
         }
@@ -7000,6 +7562,7 @@ public class XmppConnectionService extends Service {
                 conversation.resetMucOptions();
                 hydrateConversationSecrets(conversation);
                 final MucOptions joiningOptions = conversation.getMucOptions();
+                if (recovery != null) recovery.options = joiningOptions;
                 joiningOptions.getJoinAttempt().begin();
                 mucBootstrapCoordinator.joinStarted(conversation, joiningOptions);
                 joiningOptions.getJoinAttempt().setTimeout(scheduleMucJoinTimeout(
@@ -7007,7 +7570,6 @@ public class XmppConnectionService extends Service {
                 if (onConferenceJoined != null) {
                     conversation.getMucOptions().flagNoAutoPushConfiguration();
                 }
-                conversation.setHasMessagesLeftOnServer(false);
                 fetchConferenceConfiguration(
                         conversation,
                         new OnConferenceConfigurationFetched() {
@@ -7110,8 +7672,10 @@ public class XmppConnectionService extends Service {
                                     return;
                                 }
                                 if (!isCurrentMucJoin(conversation, joiningOptions)) {
-                                    joiningOptions.getJoinAttempt().finish();
-                                    onMucJoinStateChanged(joiningOptions);
+                                    if (!interruptMucJoinIfOffline(conversation, joiningOptions)) {
+                                        joiningOptions.getJoinAttempt().finish();
+                                        onMucJoinStateChanged(joiningOptions);
+                                    }
                                     Log.d(
                                             Config.LOGTAG,
                                             account.getJid().asBareJid()
@@ -7130,8 +7694,10 @@ public class XmppConnectionService extends Service {
                                     return;
                                 }
                                 if (!isCurrentMucJoin(conversation, joiningOptions)) {
-                                    joiningOptions.getJoinAttempt().finish();
-                                    onMucJoinStateChanged(joiningOptions);
+                                    if (!interruptMucJoinIfOffline(conversation, joiningOptions)) {
+                                        joiningOptions.getJoinAttempt().finish();
+                                        onMucJoinStateChanged(joiningOptions);
+                                    }
                                     Log.d(
                                             Config.LOGTAG,
                                             account.getJid().asBareJid()
@@ -7168,7 +7734,6 @@ public class XmppConnectionService extends Service {
                 account.pendingConferenceJoins.add(conversation);
             }
             conversation.resetMucOptions();
-            conversation.setHasMessagesLeftOnServer(false);
             updateConversationUi();
         }
     }
@@ -8237,6 +8802,16 @@ public class XmppConnectionService extends Service {
 
     private void leaveMuc(Conversation conversation, boolean now) {
         synchronized (conversation) {
+            synchronized (pendingMucCatchups) {
+                pendingMucCatchups.remove(conversation);
+                unfinishedMucAnchors.remove(conversation);
+                dispatchedMucCatchups.remove(conversation);
+            }
+            cancelMembershipCheck(conversation);
+            cancelRoomRecovery(conversation);
+            synchronized (interruptedMucJoins) {
+                interruptedMucJoins.remove(conversation.getMucOptions());
+            }
             conversation.getMucOptions().getJoinAttempt().finish();
             onMucJoinStateChanged(conversation.getMucOptions());
             final Account account = conversation.getAccount();
@@ -8455,14 +9030,25 @@ public class XmppConnectionService extends Service {
                     if (response.getType() == Iq.Type.TIMEOUT) {
                         Log.d(Config.LOGTAG, "MUC configuration request timed out");
                         if (expected != null && callback != null) {
-                            dispatchMucJoinTimeout(() -> timeoutMucJoin(conversation, expected));
+                            dispatchMucJoinTimeout(() -> {
+                                synchronized (conversation) {
+                                    if (isCurrentMucJoin(conversation, expected)
+                                            && expected.getJoinAttempt().isPending()
+                                            && expected.autoPushConfiguration()
+                                            && expected.getJoinAttempt().claimDiscoRetry()) {
+                                        fetchConferenceConfiguration(conversation, callback, expected);
+                                    } else timeoutMucJoin(conversation, expected);
+                                }
+                            });
                         }
                         return;
                     }
                     synchronized (conversation) {
                         if (expected != null && !isCurrentMucJoin(conversation, expected)) {
-                            expected.getJoinAttempt().finish();
-                            onMucJoinStateChanged(expected);
+                            if (!interruptMucJoinIfOffline(conversation, expected)) {
+                                expected.getJoinAttempt().finish();
+                                onMucJoinStateChanged(expected);
+                            }
                             return;
                         }
                         if (response.getType() == Iq.Type.RESULT) {
