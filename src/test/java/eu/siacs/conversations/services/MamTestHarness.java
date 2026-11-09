@@ -30,6 +30,12 @@ final class MamTestHarness {
     final MessageParser parser;
     final long floorTime;
     MamTestHarness() throws Exception { this(null, null, null); }
+    static MamTestHarness initialBootstrap() throws Exception {
+        var harness = new MamTestHarness();
+        // A fresh room has no recovery marker. A pre-existing zero marker is a real recovery.
+        harness.f.room.setMucRecoveryAnchor(null);
+        return harness;
+    }
     MamTestHarness(ContentValues saved, Account account, Map<String, Message> durable) throws Exception {
         service = new RecordingService();
         Conversation restored = saved == null ? null : restore(saved, account);
@@ -63,6 +69,23 @@ final class MamTestHarness {
             @Override public boolean updateMessage(Message m, boolean includeBody) {
                 service.updates++;
                 return !service.failMessageUpdate;
+            }
+            @Override public ArrayList<Message> getMessages(Conversation c, int limit) {
+                service.historyProbeReads++;
+                if (service.throwHistoryProbe) throw new IllegalStateException("injected history probe failure");
+                if (service.unknownHistoryProbe) return null;
+                ArrayList<Message> found = new ArrayList<>();
+                for (Message m : service.rows.values()) if (c.getUuid().equals(m.getConversationUuid())) found.add(m);
+                found.sort(Comparator.comparingLong(Message::getTimeSent).reversed());
+                // The callback models a transition after the database read took its snapshot.
+                if (service.duringHistoryProbe != null) service.duringHistoryProbe.run();
+                return new ArrayList<>(found.subList(0, Math.min(limit, found.size())));
+            }
+            @Override public ArrayList<Message> getMessages(Conversation c, int limit, long time, boolean forward) {
+                service.historyPageReads++;
+                ArrayList<Message> page = new ArrayList<>(service.localHistoryPage);
+                service.localHistoryPage.clear();
+                return page;
             }
             @Override public boolean createProtectedTextMessage(Message m, String accountUuid) { return !service.dropProtectedMetadata; }
             @Override public Message getMessageWithServerMsgId(Conversation c, String id) { return service.rows.get(id); }
@@ -143,7 +166,10 @@ final class MamTestHarness {
         final Map<String, Message> rows = new LinkedHashMap<>();
         final Set<String> simulatedCommitted = new HashSet<>();
         int calls, writes, failureAt = -1, failures, updates;
-        boolean zeroConversationWrite, failMessageUpdate;
+        boolean zeroConversationWrite, failMessageUpdate, unknownHistoryProbe, throwHistoryProbe;
+        Runnable duringHistoryProbe;
+        int historyProbeReads, historyPageReads;
+        final List<Message> localHistoryPage = new ArrayList<>();
         boolean throwWrite, realScsFailure, failConversationWrite, dropProtectedMetadata;
         ContentValues saved;
         Consumer<Consumer<Iq>> duringMamSend;

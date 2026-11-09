@@ -529,12 +529,14 @@ public class XmppConnectionService extends Service {
         final long generation;
         final Jid room;
         final MamReference start;
-        PendingMucCatchup(MucOptions options, MamReference start) {
+        final MessageArchiveService.MucHistoryPurpose purpose;
+        PendingMucCatchup(MucOptions options, MamReference start, MessageArchiveService.MucHistoryPurpose purpose) {
             this.options = options;
             this.account = options.getConversation().getAccount();
             this.generation = options.getJoinAttempt().getMembershipGeneration();
             this.room = options.getConversation().getJid().asBareJid();
             this.start = start;
+            this.purpose = purpose;
         }
     }
     private final Set<String> pendingMucPrivateReleases = new HashSet<>();
@@ -7194,6 +7196,9 @@ public class XmppConnectionService extends Service {
         final long generation;
         final Account account;
         final Jid roomJid;
+        PendingMucCatchup historyProbe = null;
+        FrozenMucAnchor probeAnchor = null;
+        long probeTimelineRevision = 0;
         synchronized (root) {
             if (!confirmedRootMembership(options)) return;
             cancelRoomRecovery(root);
@@ -7207,16 +7212,62 @@ public class XmppConnectionService extends Service {
                             || previous.account != account || !previous.room.equals(roomJid)) {
                         // Snapshot before outbound release or a deferred callback can admit live D.
                         FrozenMucAnchor anchor = unfinishedMucAnchors.get(root);
+                        boolean probeFreshHistory = false;
                         if (anchor == null || anchor.account != account || !anchor.room.equals(roomJid)) {
-                            MamReference start = root.getMucRecoveryAnchor();
-                            if (start == null) start = root.getLastMessageTransmitted();
+                            final MamReference savedFloor = root.getMucRecoveryAnchor();
+                            MamReference start = savedFloor == null ? root.getLastMessageTransmitted() : savedFloor;
                             if (start.getTimestamp() < 0 && root.countMessages() == 0) start = new MamReference(0);
+                            probeFreshHistory = savedFloor == null && start.getTimestamp() == 0
+                                    && root.countMessages() == 0 && root.getLastClearHistory().getTimestamp() == 0;
+                            // Always persist a conservative floor, without a durable "bootstrap"
+                            // exemption. Restart or retry of any unfinished operation stays strict.
                             // Commit before deferring MAM or releasing outbound/live processing.
                             persistMucRecoveryAnchor(root, start);
                             anchor = new FrozenMucAnchor(root, start);
                             unfinishedMucAnchors.put(root, anchor);
                         }
-                        pendingMucCatchups.put(root, new PendingMucCatchup(options, anchor.start));
+                        final PendingMucCatchup request = new PendingMucCatchup(options, anchor.start,
+                                MessageArchiveService.MucHistoryPurpose.MISSING_RANGE_RECOVERY);
+                        pendingMucCatchups.put(root, request);
+                        if (probeFreshHistory) {
+                            historyProbe = request;
+                            probeAnchor = anchor;
+                            probeTimelineRevision = root.getTimelineRevision();
+                        }
+                    }
+                }
+            }
+        }
+        if (historyProbe != null) {
+            // The conservative floor and request already exist before any live message can
+            // race this unlocked read. A concurrent dispatcher may only claim strict recovery.
+            boolean knownEmptyHistory = false;
+            try {
+                final List<Message> previousRows = databaseBackend.getMessages(root, 1);
+                knownEmptyHistory = previousRows != null && previousRows.isEmpty();
+            } catch (RuntimeException failed) {
+                Log.w(Config.LOGTAG, "MAM initial history probe failed; keeping strict recovery");
+            }
+            synchronized (root) {
+                if (root.getAccount() != account || !root.getJid().asBareJid().equals(roomJid)
+                        || !confirmedRootMembership(options)
+                        || options.getJoinAttempt().getMembershipGeneration() != generation) return;
+                synchronized (pendingMucCatchups) {
+                    final MamReference currentFloor = root.getMucRecoveryAnchor();
+                    // Only the unchanged, unclaimed request that froze an empty room may be
+                    // promoted. Live/resident changes, a new floor or a new owner stay strict.
+                    if (knownEmptyHistory && pendingMucCatchups.get(root) == historyProbe
+                            && unfinishedMucAnchors.get(root) == probeAnchor
+                            && !dispatchedMucCatchups.containsKey(root)
+                            && !options.getJoinAttempt().hasClaimedCatchup()
+                            && currentFloor != null
+                            && currentFloor.getTimestamp() == historyProbe.start.getTimestamp()
+                            && java.util.Objects.equals(currentFloor.getReference(), historyProbe.start.getReference())
+                            && root.countMessages() == 0 && root.getLastMessageTransmitted().getTimestamp() == 0
+                            && root.getLastClearHistory().getTimestamp() == 0
+                            && root.getTimelineRevision() == probeTimelineRevision) {
+                        pendingMucCatchups.put(root, new PendingMucCatchup(options, historyProbe.start,
+                                MessageArchiveService.MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP));
                     }
                 }
             }
@@ -7265,14 +7316,20 @@ public class XmppConnectionService extends Service {
                 dispatchedMucCatchups.put(room, request);
             }
         }
-        archive.catchupMUC(room, MamReference.max(request.start, room.getLastClearHistory()), complete -> dispatchMucJoinCatchup(() -> {
+        archive.catchupMUC(room, MamReference.max(request.start, room.getLastClearHistory()), request.purpose,
+                (complete, historyExhausted) -> dispatchMucJoinCatchup(() -> {
             final boolean anotherQuery = archive.queryInProgress(room);
             synchronized (room) {
                 synchronized (pendingMucCatchups) {
                     if (dispatchedMucCatchups.get(room) != request) return;
                     dispatchedMucCatchups.remove(room);
                     final FrozenMucAnchor anchor = unfinishedMucAnchors.get(room);
-                    if (complete && !anotherQuery && !pendingMucCatchups.containsKey(room)
+                    // Optional older-history pagination may overlap a completed initial page;
+                    // it does not turn that page into a missing-range recovery. All identity and
+                    // pending-recovery guards below still apply, and strict recovery is unchanged.
+                    if (complete && (!anotherQuery
+                                || request.purpose == MessageArchiveService.MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP)
+                            && !pendingMucCatchups.containsKey(room)
                             && room.getAccount() == request.account && confirmedRootMembership(request.options)
                             && request.options.getJoinAttempt().getMembershipGeneration() == request.generation
                             && anchor != null && anchor.account == request.account
@@ -7280,6 +7337,10 @@ public class XmppConnectionService extends Service {
                             && anchor.start == request.start) {
                         persistMucRecoveryAnchor(room, null);
                         unfinishedMucAnchors.remove(room);
+                        if (request.purpose == MessageArchiveService.MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP
+                                && historyExhausted) {
+                            room.setHasMessagesLeftOnServer(false);
+                        }
                     }
                 }
             }
@@ -7317,7 +7378,8 @@ public class XmppConnectionService extends Service {
                     unfinishedMucAnchors.put(room, anchor);
                 }
                 options.getJoinAttempt().allowExplicitCatchupRetry();
-                pendingMucCatchups.put(room, new PendingMucCatchup(options, anchor.start));
+                pendingMucCatchups.put(room, new PendingMucCatchup(options, anchor.start,
+                        MessageArchiveService.MucHistoryPurpose.MISSING_RANGE_RECOVERY));
             }
         }
         onMucHistoryQueryFinished(room);

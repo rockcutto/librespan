@@ -42,8 +42,10 @@ public class MamRequiredSafetyTest {
         assertNull(h.f.room.getMucRecoveryAnchor());
     }
     @Test public void initialRecentPageMustNotLeaveMandatoryWholeArchiveRecovery() throws Exception {
-        var h = new MamTestHarness(); h.f.room.setMucRecoveryAnchor(new eu.siacs.conversations.xmpp.mam.MamReference(0));
-        h.join(); for (int i = 0; i < 10; i++) h.query(0).incrementMessageCount();
+        // A serialized/preset zero anchor denotes unfinished recovery, not a fresh room.
+        // Exercise the actual initial join and parser writes without changing either assertion.
+        var h = MamTestHarness.initialBootstrap();
+        h.join(); for (int i = 1; i <= 10; i++) h.result(0, i);
         h.finish(0, false, "f", "l");
         assertEquals(XmppConnectionService.MucHistoryRecoveryState.NONE, h.service.getMucHistoryRecoveryState(h.f.room));
         assertTrue(h.f.room.hasMessagesLeftOnServer());

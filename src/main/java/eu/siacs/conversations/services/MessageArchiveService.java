@@ -149,6 +149,13 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         query(conversation, start, 0, true, completed);
     }
 
+    // Only the join owner may opt into a bounded initial page; a zero cursor alone never does.
+    void catchupMUC(final Conversation conversation, final MamReference start,
+            final MucHistoryPurpose purpose,
+            final java.util.function.BiConsumer<Boolean, Boolean> completed) {
+        query(conversation, start, 0, true, purpose, completed);
+    }
+
     public Query query(final Conversation conversation) {
         if (conversation.getLastMessageTransmitted().getTimestamp() < 0 && conversation.countMessages() == 0) {
             return query(conversation,
@@ -189,6 +196,13 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
 
     private Query query(Conversation conversation, MamReference start, long end, boolean allowCatchup,
             java.util.function.Consumer<Boolean> completed) {
+        return query(conversation, start, end, allowCatchup, MucHistoryPurpose.MISSING_RANGE_RECOVERY,
+                completed == null ? null : (success, exhausted) -> completed.accept(success));
+    }
+
+    private Query query(Conversation conversation, MamReference start, long end, boolean allowCatchup,
+            final MucHistoryPurpose purpose,
+            final java.util.function.BiConsumer<Boolean, Boolean> completed) {
         if (conversation.getNextCounterpart() != null) {
             return null;
         }
@@ -198,7 +212,12 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             Query reverseCatchup = null;
             if (end != 0 && start.greaterThan(end)) return null;
             final MamReference startActual = MamReference.max(start, mXmppConnectionService.getAutomaticMessageDeletionDate());
-            if (start.getTimestamp() == 0) {
+            if (purpose == MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP) {
+                // Always request the latest single page, never an old in-memory scroll cursor.
+                // A failed initial attempt must not hand that stale cursor to its strict retry.
+                conversation.setFirstMamReference(null);
+                query = new Query(conversation, startActual, end, false);
+            } else if (start.getTimestamp() == 0) {
                 query = new Query(conversation, startActual, end, false);
                 query.reference = conversation.getFirstMamReference();
                 if (query.reference != null) {
@@ -215,6 +234,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                     query = new Query(conversation, startActual, end, false);
                 }
             }
+            query.mucHistoryPurpose = purpose;
             final CatchupCompletion completion = completed == null ? null
                     : new CatchupCompletion(reverseCatchup == null ? 1 : 2, completed);
             query.mucCatchupCompleted = completion;
@@ -336,9 +356,10 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                     .getNotificationService()
                     .finishBacklog(true, query.getAccount());
         }
-        final java.util.function.Consumer<Boolean> completed = query.mucCatchupCompleted;
+        final CatchupCompletion completed = query.mucCatchupCompleted;
         query.mucCatchupCompleted = null;
-        if (completed != null) completed.accept(complete && locallyDurable);
+        if (completed != null) completed.accept(complete && locallyDurable,
+                complete && done && query.getPagingOrder() == PagingOrder.REVERSE);
         final Conversation conversation = query.getConversation();
         if (conversation != null && conversation.getMode() == Conversation.MODE_MULTI) {
             mXmppConnectionService.onMucHistoryQueryFinished(conversation);
@@ -481,10 +502,24 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         String count = set == null ? null : set.findChildContent("count");
         Element first = set == null ? null : set.findChild("first");
         Element relevant = query.getPagingOrder() == PagingOrder.NORMAL ? last : first;
-        if (!complete && relevant != null
-                && (relevant.getContent() == null || relevant.getContent().isEmpty()
-                    || relevant.getContent().equals(query.getReference()))) {
+        if ((first != null && isEmptyBoundary(first)) || (last != null && isEmptyBoundary(last))
+                || (!complete && relevant != null && relevant.getContent().equals(query.getReference()))) {
             finishTerminalQuery(query, false);
+            return;
+        }
+        if (query.mucHistoryPurpose == MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP && !complete) {
+            // The server may cap a page below our RSM max (XEP-0313 section 4.3.1).
+            // A valid nonempty page completes this bounded operation, not the whole archive.
+            // Never walk older pages automatically; the P0 barrier remains mandatory.
+            final boolean boundedPageComplete = query.getTotalCount() > 0
+                    && query.getTotalCount() <= query.getRequestedPageSize()
+                    && first != null && !isEmptyBoundary(first)
+                    && last != null && !isEmptyBoundary(last);
+            if (boundedPageComplete && query.getConversation() != null) {
+                query.getConversation().setFirstMamReference(first.getContent());
+            }
+            query.diagnosticReason = boundedPageComplete ? MamDiagnostics.Reason.CAP : MamDiagnostics.Reason.BOUNDARY;
+            finishTerminalQuery(query, false, boundedPageComplete);
             return;
         }
         boolean abort =
@@ -551,6 +586,10 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                 this.execute(nextQuery);
             }
         }
+    }
+
+    private static boolean isEmptyBoundary(final Element boundary) {
+        return boundary.getContent() == null || boundary.getContent().isEmpty();
     }
 
     void kill(final Conversation conversation) {
@@ -624,6 +663,11 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         REVERSE
     }
 
+    public enum MucHistoryPurpose {
+        INITIAL_RECENT_BOOTSTRAP,
+        MISSING_RANGE_RECOVERY
+    }
+
     static int requestedPageSize(
             final boolean muc,
             final boolean secureMessagePayloadRollout,
@@ -644,20 +688,25 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
     private static final class CatchupCompletion implements java.util.function.Consumer<Boolean> {
         private int remaining;
         private boolean successful = true;
-        private final java.util.function.Consumer<Boolean> completed;
-        CatchupCompletion(int parts, java.util.function.Consumer<Boolean> completed) {
+        private boolean historyExhausted = true;
+        private final java.util.function.BiConsumer<Boolean, Boolean> completed;
+        CatchupCompletion(int parts, java.util.function.BiConsumer<Boolean, Boolean> completed) {
             remaining = parts;
             this.completed = completed;
         }
-        @Override public void accept(Boolean complete) {
+        @Override public void accept(Boolean complete) { accept(Boolean.TRUE.equals(complete), false); }
+        void accept(final boolean complete, final boolean exhausted) {
             final boolean result;
+            final boolean allHistoryExhausted;
             synchronized (this) {
                 if (remaining == 0) return;
-                successful &= Boolean.TRUE.equals(complete);
+                successful &= complete;
+                historyExhausted &= exhausted;
                 if (--remaining != 0) return;
                 result = successful;
+                allHistoryExhausted = historyExhausted;
             }
-            completed.accept(result);
+            completed.accept(result, allHistoryExhausted);
         }
     }
 
@@ -665,7 +714,9 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         public MamPersistenceBarrier persistence = new MamPersistenceBarrier();
         public MamDiagnostics.Page diagnostics = MamDiagnostics.page();
         private MamDiagnostics.Reason diagnosticReason = MamDiagnostics.Reason.ERROR;
-        private java.util.function.Consumer<Boolean> mucCatchupCompleted;
+        private CatchupCompletion mucCatchupCompleted;
+        private MucHistoryPurpose mucHistoryPurpose = MucHistoryPurpose.MISSING_RANGE_RECOVERY;
+        public MucHistoryPurpose getMucHistoryPurpose() { return mucHistoryPurpose; }
         private HashSet<ReceiptRequest> pendingReceiptRequests = new HashSet<>();
         private HashSet<ReceiptRequest> receiptRequests = new HashSet<>();
         private int totalCount = 0;
@@ -719,6 +770,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                             new MamReference(this.fallbackStart, reference),
                             this.end);
             query.conversation = conversation;
+            query.mucHistoryPurpose = mucHistoryPurpose;
             query.persistence = persistence.nextPage();
             query.totalCount = totalCount;
             query.actualCount = actualCount;
@@ -743,6 +795,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                             new MamReference(this.fallbackStart),
                             retryEnd);
             query.conversation = conversation;
+            query.mucHistoryPurpose = mucHistoryPurpose;
             query.persistence = persistence.nextPage();
             query.pagingOrder = pagingOrder;
             query.actualCount = actualCount;
