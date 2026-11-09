@@ -979,6 +979,60 @@ public class XmppConnectionService extends Service {
         }
     }
 
+    /** Checked MAM writes do not change the legacy void insert contract for other producers. */
+    public boolean persistIncomingMamMessage(final Message message) {
+        return isProtectedTextCandidate(message)
+                ? persistIncomingMessage(message)
+                : databaseBackend.createMessageForMam(message);
+    }
+
+    /**
+     * Re-read the exact conversation-owned row. Neither a resident body nor an ID match proves
+     * protected publication. Existing SCS hydration verifies the current relation/terminal read;
+     * PENDING/UNAVAILABLE never become successful duplicates or plaintext fallbacks here.
+     */
+    public boolean isMamMessagePersisted(final Message candidate) {
+        if (candidate == null || !(candidate.getConversation() instanceof Conversation)) return false;
+        final Conversation conversation = (Conversation) candidate.getConversation();
+        if (conversation.getAccount() == null) return false;
+        final List<Message> rows = databaseBackend.getMessagesByLocalUuids(
+                conversation, java.util.Collections.singletonList(candidate.getUuid()));
+        if (rows == null || rows.size() != 1) return false;
+        final Message persisted = rows.get(0);
+        if (!candidate.getUuid().equals(persisted.getUuid())
+                || !conversation.getUuid().equals(persisted.getConversationUuid())) return false;
+        // These flags come from the durable row, not the resident candidate. Retirement remains
+        // owned by the existing moderation/retraction recovery machinery, without resurrecting text.
+        if (persisted.isModerated() || persisted.isRetracted()) return true;
+        final String accountUuid = conversation.getAccount().getUuid();
+        final var mode = databaseBackend.getSecureMessagePayloadMode(accountUuid, persisted.getUuid());
+        if (mode == null) return !isProtectedTextCandidate(persisted);
+        if (mode != eu.siacs.conversations.storage.secure.SecureMessagePayloadMode.PROTECTED) return false;
+        if (!isSecureContentAccountAvailableForMutation(persisted)) return false;
+        final SecureMessageTextRepository repository = getSecureMessageTextRepository();
+        if (repository == null) return false;
+        persisted.setSecureMessagePayloadMode(mode);
+        try {
+            return repository.hydrate(persisted);
+        } catch (IOException | RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    public boolean updateMamMessage(final Message message, final boolean includeBody) {
+        final boolean updated = databaseBackend.updateMessage(message, includeBody);
+        if (updated) markTimelineChanged(message);
+        updateConversationUi();
+        return updated;
+    }
+
+    public boolean updateMamMessage(final Message message, final String previousUuid) {
+        final boolean updated = databaseBackend.updateMessage(message, previousUuid);
+        if (updated) markTimelineChanged(message);
+        updateConversationUi();
+        return updated;
+    }
+
     /** Replaces an incoming protected body while preserving its logical message ownership. */
     public boolean replaceIncomingProtectedMessage(
             final Message message, final String expectedMessageUuid) {
@@ -7114,12 +7168,19 @@ public class XmppConnectionService extends Service {
         });
     }
 
+    // Overridden only by controlled test services that model conversation persistence.
+    boolean writeMucRecoveryAnchorRow(final Conversation room) {
+        return databaseBackend.updateConversationForMam(room);
+    }
+
     private void persistMucRecoveryAnchor(Conversation room, MamReference start) {
         synchronized (room.getAttributes()) {
             final MamReference previous = room.getMucRecoveryAnchor();
             room.setMucRecoveryAnchor(start);
             try {
-                databaseBackend.updateConversation(room);
+                if (!writeMucRecoveryAnchorRow(room)) {
+                    throw new IllegalStateException("MAM recovery anchor row was not updated");
+                }
             } catch (RuntimeException failed) {
                 room.setMucRecoveryAnchor(previous);
                 throw failed;
@@ -7128,6 +7189,7 @@ public class XmppConnectionService extends Service {
     }
 
     public void onMucJoinConfirmed(final MucOptions options) {
+        MamDiagnostics.event(MamDiagnostics.Event.JOIN_CONFIRMED);
         final Conversation root = options.getConversation();
         final long generation;
         final Account account;
@@ -7240,6 +7302,7 @@ public class XmppConnectionService extends Service {
 
     /** Explicit retry of history only, with the same durable floor and membership. */
     public boolean retryMucHistoryRecovery(Conversation room) {
+        MamDiagnostics.event(MamDiagnostics.Event.RECOVERY_RETRY);
         synchronized (room) {
             final MucOptions options = room.getMucOptions();
             if (!confirmedRootMembership(options) || !options.mamSupport()) return false;

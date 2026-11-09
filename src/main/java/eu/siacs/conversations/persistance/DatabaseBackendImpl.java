@@ -1645,6 +1645,30 @@ class DatabaseBackendImpl extends SQLiteOpenHelper implements DatabaseBackend {
         db.insert(Message.TABLENAME, null, message.getContentValues());
     }
 
+    @Override
+    public boolean createMessageForMam(final Message message) {
+        return insertMamMessageRow(message) != -1L;
+    }
+
+    // Narrow driver seams: tests can inject SQLite return values without pretending to run SQLCipher.
+    long insertMamMessageRow(final Message message) {
+        applyModerationMarker(message);
+        return getWritableDatabase().insert(Message.TABLENAME, null, message.getContentValues());
+    }
+
+    @Override
+    public boolean updateConversationForMam(final Conversation conversation) {
+        synchronized (conversation.getAttributes()) {
+            return updateMamConversationRow(conversation) == 1;
+        }
+    }
+
+    int updateMamConversationRow(final Conversation conversation) {
+        return getWritableDatabase().update(
+                Conversation.TABLENAME, conversation.getContentValues(),
+                Conversation.UUID + "=?", new String[] {conversation.getUuid()});
+    }
+
     private static boolean isOutgoingAttachment(final Message message) {
         return message != null && message.isFileOrImage()
                 && message.getStatus() > Message.STATUS_RECEIVED

@@ -50,6 +50,12 @@ public interface DatabaseBackend extends SecureContentMetadataStore {
     void createConversation(Conversation conversation);
     void createMessage(Message message);
 
+    /** MAM-only checked insert. Unsupported backends fail closed; never infer success from void. */
+    default boolean createMessageForMam(Message message) { return false; }
+
+    /** MAM recovery marker write must affect exactly one conversation row. */
+    default boolean updateConversationForMam(Conversation conversation) { return false; }
+
     /** Creates or confirms an owned pending attachment row before transport dispatch. */
     boolean prepareOutgoingAttachmentMessage(Message message, boolean insert);
 

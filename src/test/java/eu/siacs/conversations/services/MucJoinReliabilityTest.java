@@ -393,6 +393,12 @@ public class MucJoinReliabilityTest {
 
     static class TestService extends XmppConnectionService {
         TestService() { attachBaseContext(RuntimeEnvironment.getApplication()); }
+        // This fixture has no SQLite. Model success explicitly; failure tests override the
+        // checked seam or use the real service with a rejecting backend.
+        @Override boolean writeMucRecoveryAnchorRow(Conversation conversation) {
+            databaseBackend.updateConversation(conversation);
+            return true;
+        }
         Conversation room;
         final List<Conversation> extraRooms = new ArrayList<>();
         String password;

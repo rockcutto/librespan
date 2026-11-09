@@ -540,8 +540,36 @@ public class MucRecoverySystemTest {
         }
     }
 
+    @Test public void simulatedPersistenceAcknowledgesOnlyCommittedConversationOwnedRows() throws Exception {
+        Fixture f = fixture(); SystemService s = (SystemService) f.service;
+        Message live = new Message(f.room, "live r4", Message.ENCRYPTION_NONE);
+        live.setServerMsgId("r4");
+        assertFalse(s.isMamMessagePersisted(live));
+        assertFalse(s.persistIncomingMessage(null));
+        assertTrue(s.committedMessageConversations.isEmpty());
+        assertTrue(s.persisted.isEmpty());
+        assertTrue(s.persistIncomingMessage(live));
+        assertTrue(s.isMamMessagePersisted(live));
+        Message replay = new Message(f.room, "replay r4", Message.ENCRYPTION_NONE);
+        replay.setServerMsgId("r4");
+        assertFalse("an archive ID match is not a committed UUID", s.isMamMessagePersisted(replay));
+        replay.setUuid(live.getUuid());
+        assertTrue(s.isMamMessagePersisted(replay));
+        Conversation other = new Conversation("other", f.account, Jid.of("other@conference.example"), Conversation.MODE_MULTI, null);
+        Message foreign = new Message(other, "same UUID in another conversation", Message.ENCRYPTION_NONE);
+        foreign.setUuid(live.getUuid());
+        assertFalse(s.isMamMessagePersisted(foreign));
+        assertFalse("a simulated failed cross-conversation write must not change the commit", s.persistIncomingMessage(foreign));
+        assertTrue(s.isMamMessagePersisted(live));
+        assertEquals(1, s.persisted.size());
+        assertFalse(s.isMamMessagePersisted(null));
+    }
+
     static final class SystemService extends TestService {
         final List<Message> persisted=new ArrayList<>();
+        // Explicit simulated commits, independent of resident objects and notification recording.
+        // Snapshot the conversation UUID so a later mutation cannot move a committed row.
+        final Map<String, String> committedMessageConversations=new HashMap<>();
         final List<im.conversations.android.xmpp.model.stanza.Message> outgoing=new ArrayList<>();
         int liveNotifications,backlogNotifications;
         SecureMessageTextRepository repository;
@@ -555,7 +583,18 @@ public class MucRecoverySystemTest {
             }
             return repository;
         }
-        @Override public boolean persistIncomingMessage(Message m) { persisted.add(m); return true; }
+        @Override public boolean persistIncomingMessage(Message m) {
+            if (m == null || m.getUuid() == null || m.getConversationUuid() == null) return false;
+            final String committedConversation = committedMessageConversations.get(m.getUuid());
+            if (committedConversation != null && !committedConversation.equals(m.getConversationUuid())) return false;
+            persisted.add(m);
+            committedMessageConversations.put(m.getUuid(), m.getConversationUuid());
+            return true;
+        }
+        @Override public boolean isMamMessagePersisted(Message m) {
+            return m != null && m.getUuid() != null && m.getConversationUuid() != null
+                    && m.getConversationUuid().equals(committedMessageConversations.get(m.getUuid()));
+        }
         @Override public Conversation find(Account account,Jid jid,Jid counterpart) { return room; }
         @Override public boolean checkIsArchived(Account account,Jid jid,Jid counterpart) { return false; }
         @Override public Conversation findOrCreateConversation(Account a,Jid j,MessageArchiveService.Query q,boolean muc,boolean join,boolean async,Jid counterpart) { return room; }

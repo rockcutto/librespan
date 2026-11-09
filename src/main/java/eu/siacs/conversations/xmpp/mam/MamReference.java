@@ -49,7 +49,7 @@ public class MamReference {
         if (attr == null) {
             return new MamReference(0);
         } else {
-            String[] attrs = attr.split(":");
+            String[] attrs = attr.split(":", 2);
             try {
                 long timestamp = Long.parseLong(attrs[0]);
                 if (attrs.length >= 2) {

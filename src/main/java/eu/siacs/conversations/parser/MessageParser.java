@@ -735,6 +735,8 @@ public class MessageParser extends AbstractParser
                         ? null
                         : mXmppConnectionService.getMessageArchiveService().findQuery(queryId);
         if (result != null && query == null) {
+            eu.siacs.conversations.services.MamDiagnostics.event(
+                    eu.siacs.conversations.services.MamDiagnostics.Event.UNSOLICITED);
             Log.w(
                     Config.LOGTAG,
                     account.getJid().asBareJid()
@@ -742,6 +744,13 @@ public class MessageParser extends AbstractParser
                             + (queryId == null ? " without queryid" : " for queryid=" + queryId));
             return;
         }
+        // A forged cross-account/sender result must not acquire work in another Query.
+        if (query != null && (query.getAccount() != account || !query.validFrom(original.getFrom()))) return;
+        final var mamResult = query == null ? null : query.persistence.beginResult();
+        if (query != null && mamResult == null) return; // Already sealed/cancelled page.
+        long mamParseStarted = 0;
+        try {
+        mamParseStarted = query == null ? 0 : query.diagnostics.resultStarted();
         final boolean offlineMessagesRetrieved =
                 account.getXmppConnection().isOfflineMessagesRetrieved();
         if (query != null && query.validFrom(original.getFrom())) {
@@ -756,6 +765,7 @@ public class MessageParser extends AbstractParser
 
             query.incrementMessageCount();
             if (handleErrorMessage(account, packet)) {
+                mamOutcome(mamResult, true); // Error/control stanza has no timeline payload.
                 return;
             }
         } else if (query != null) {
@@ -792,6 +802,11 @@ public class MessageParser extends AbstractParser
         }
         if (query != null) {
             query.recordResultTimestamp(timestamp);
+            final Conversation owner = query.getConversation();
+            if (owner != null && timestamp < owner.getLastClearHistory().getTimestamp()) {
+                mamOutcome(mamResult, true); // Explicit local history-clear policy, not a write.
+                return;
+            }
         }
 
         LocalizedContent body = packet.getBody();
@@ -836,6 +851,7 @@ public class MessageParser extends AbstractParser
 
         if (from == null || !Jid.Invalid.isValid(from) || !Jid.Invalid.isValid(to)) {
             Log.e(Config.LOGTAG, "encountered invalid message from='" + from + "' to='" + to + "'");
+            mamOutcome(mamResult, true); // Invalid-address policy rejection.
             return;
         }
         final MucModerationProtocol.ModerationTombstone archivedModerationTombstone =
@@ -847,6 +863,7 @@ public class MessageParser extends AbstractParser
         // Always consume their fallback body, including forged or unresolved events.
         final Element moderatedRetraction = MucModerationProtocol.moderatedRetraction(packet);
         if (moderatedRetraction != null) {
+            mamOutcome(mamResult, true); // Rejected/forged control events are intentionally consumed.
             if (isTypeGroupChat && from.isBareJid() && (query == null || query.muc())) {
                 final Conversation room = mXmppConnectionService.find(account, from, null);
                 final MucModerationProtocol.ModerationEvent event =
@@ -857,6 +874,10 @@ public class MessageParser extends AbstractParser
                 if (event != null) {
                     mXmppConnectionService.applyMessageModeration(
                             room, event.targetId, event.by, event.reason, timestamp);
+                    if (mamResult != null) {
+                        mamOutcome(mamResult, mXmppConnectionService.databaseBackend
+                                .getMessageModeration(room, event.targetId) != null);
+                    }
                 }
             } else {
                 Log.d(Config.LOGTAG, "ignoring non-service MUC moderation event");
@@ -868,6 +889,7 @@ public class MessageParser extends AbstractParser
         // Its id refers to the retraction request, NOT the target.
         // Never retire content based on a tombstone alone.
         if (MessageRetractionProtocol.isPlainRetractionTombstone(packet)) {
+            mamOutcome(mamResult, true); // Tombstone contains no recoverable user payload.
             if (query != null) {
                 query.incrementActualMessageCount();
             }
@@ -875,6 +897,7 @@ public class MessageParser extends AbstractParser
         }
 
         if (MessageRetractionProtocol.isPlainRetractionMessage(packet)) {
+            mamOutcome(mamResult, true); // Invalid control is an explicit skip; valid work checked below.
             // Always consume fallback, including malformed or rejected events.
             // The MAM wrapper has already been validated above.
             final boolean trustedMucTransport =
@@ -917,6 +940,7 @@ public class MessageParser extends AbstractParser
                                             occupantId,
                                             System.currentTimeMillis());
 
+                    mamOutcome(mamResult, recorded); // Persisted request owns existing deferred retirement.
                     if (recorded) {
                         // Only a verified author retraction may retire content.
                         final boolean verified =
@@ -940,6 +964,7 @@ public class MessageParser extends AbstractParser
                             + ": received groupchat ("
                             + from
                             + ") message on regular MAM request. skipping");
+            mamOutcome(mamResult, true); // Wrong archive/type policy rejection.
             return;
         }
         final Jid mucTrueCounterPart;
@@ -1019,6 +1044,7 @@ public class MessageParser extends AbstractParser
                         account.getJid().asBareJid()
                                 + ": ignoring historical/forwarded MUC invite to "
                                 + invite.jid);
+                mamOutcome(mamResult, true); // Historical invites do not execute or create messages.
                 return;
             }
             if (invite.jid.asBareJid().equals(account.getJid().asBareJid())) {
@@ -1084,6 +1110,7 @@ public class MessageParser extends AbstractParser
         } */
 
         if (nextCounterpart == null && conversationIsProbablyMuc && mXmppConnectionService.checkIsArchived(account, counterpart.asBareJid(), nextCounterpart)) {
+            mamOutcome(mamResult, true); // Explicitly archived local conversation.
             return;
         }
 
@@ -1108,6 +1135,7 @@ public class MessageParser extends AbstractParser
                 Log.d(
                         Config.LOGTAG,
                         "suppressing trusted MUC MAM replay by durable moderation result id");
+                mamOutcome(mamResult, true); // Durable moderation marker, not metadata-only text.
                 return;
             }
 
@@ -1123,6 +1151,7 @@ public class MessageParser extends AbstractParser
                 query.incrementActualMessageCount();
                 Log.d(Config.LOGTAG,
                         "suppressing XEP-0424 MAM replay");
+                mamOutcome(mamResult, true); // Existing verified durable retraction disposition.
                 return;
             }
 
@@ -1139,11 +1168,16 @@ public class MessageParser extends AbstractParser
                         remoteMsgId,
                         Message.STATUS_SEND_RECEIVED,
                         reflectedServerMsgId)) {
+                    acknowledgeMamReflection(mamResult, conversation.findSentMessageWithUuid(remoteMsgId));
                     return;
                 }
                 status = Message.STATUS_RECEIVED;
                 if (remoteMsgId != null
                         && conversation.findMessageWithRemoteId(remoteMsgId, counterpart) != null) {
+                    if (mamResult != null) {
+                        mamOutcome(mamResult, mXmppConnectionService.isMamMessagePersisted(
+                                conversation.findMessageWithRemoteId(remoteMsgId, counterpart)));
+                    }
                     return;
                 }
             }
@@ -1178,8 +1212,10 @@ public class MessageParser extends AbstractParser
                             Strings.isNullOrEmpty(replacementId) ? serverMsgId : null;
                     if (mXmppConnectionService.markMessage(
                             conversation, remoteMsgId, status, reflectedServerMsgId, body)) {
+                        acknowledgeMamReflection(mamResult, conversation.findSentMessageWithUuid(remoteMsgId));
                         return;
                     } else if (verifiedRenameEcho) {
+                        // No exact row can be proved after it disappeared; unresolved token fails.
                         // The exact local UUID existed when we identified this transition echo.
                         // Never create a second, incoming bubble if it disappeared meanwhile.
                         return;
@@ -1195,6 +1231,7 @@ public class MessageParser extends AbstractParser
                                     message.setOccupantId(occupant.getId());
                                 }
                                 mXmppConnectionService.markMessage(message, status);
+                                acknowledgeMamReflection(mamResult, message);
                                 return;
                             }
                         }
@@ -1214,6 +1251,7 @@ public class MessageParser extends AbstractParser
                     }
                 } else {
                     Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": ignoring OTR message from " + from + " isForwarded=" + Boolean.toString(isForwarded) + ", isProperlyAddressed=" + Boolean.valueOf(isProperlyAddressed));
+                    mamOutcome(mamResult, true);
                     return;
                 }
             } else if (pgpEncrypted != null) {
@@ -1298,14 +1336,19 @@ public class MessageParser extends AbstractParser
                                 && previouslySent.getServerMsgId() == null
                                 && serverMsgId != null) {
                             previouslySent.setServerMsgId(serverMsgId);
-                            mXmppConnectionService.databaseBackend.updateMessage(
-                                    previouslySent, false);
+                            mamOutcome(mamResult, mXmppConnectionService.updateMamMessage(previouslySent, false)
+                                    && mXmppConnectionService.isMamMessagePersisted(previouslySent));
                             Log.d(
                                     Config.LOGTAG,
                                     account.getJid().asBareJid()
                                             + ": encountered previously sent OMEMO message without"
                                             + " serverId. updating...");
                         }
+                    }
+                    if (mamResult != null && serverMsgId != null) {
+                        mamOutcome(mamResult, mXmppConnectionService.isMamMessagePersisted(
+                                mXmppConnectionService.databaseBackend.getMessageWithServerMsgId(
+                                        conversation, serverMsgId)));
                     }
                     return;
                 }
@@ -1342,6 +1385,7 @@ public class MessageParser extends AbstractParser
                     }
                     Log.d(Config.LOGTAG,
                             "suppressing durably retracted MUC original");
+                    mamOutcome(mamResult, true);
                     return;
                 }
 
@@ -1380,6 +1424,7 @@ public class MessageParser extends AbstractParser
                         Log.d(
                                 Config.LOGTAG,
                                 "suppressing replay of durably moderated MUC message");
+                        mamOutcome(mamResult, true);
                         return;
                     case ACCEPT:
                         message.setRoomStanzaId(candidateRoomStanzaId);
@@ -1547,6 +1592,11 @@ public class MessageParser extends AbstractParser
                                     || mucUserMatches)
                             && !duplicate) {
                         synchronized (replacedMessage) {
+                            if (mamResult != null) {
+                                // A resident object may predate background protected-text promotion.
+                                mXmppConnectionService.databaseBackend.loadSecureMessagePayloadModes(
+                                        account.getUuid(), List.of(replacedMessage));
+                            }
                             final String uuid = replacedMessage.getUuid();
                             final boolean protectedReplacement =
                                     replacedMessage.hasProtectedTextPayload();
@@ -1574,11 +1624,17 @@ public class MessageParser extends AbstractParser
                             }
                             extractChatState(mXmppConnectionService.find(account, counterpart.asBareJid(), nextCounterpart), isTypeGroupChat, packet);
                             if (protectedReplacement) {
-                                if (!mXmppConnectionService.replaceIncomingProtectedMessage(
-                                        replacedMessage, uuid)) {
+                                final boolean saved = mXmppConnectionService.replaceIncomingProtectedMessage(
+                                        replacedMessage, uuid);
+                                mamOutcome(mamResult, saved);
+                                if (!saved) {
                                     replacedMessage.clearVerifiedProtectedBody();
                                     notify = false;
                                 }
+                            } else if (mamResult != null) {
+                                final boolean saved = mXmppConnectionService.updateMamMessage(replacedMessage, uuid);
+                                if (!saved) replacedMessage.setUuid(uuid);
+                                mamOutcome(mamResult, saved);
                             } else {
                                 mXmppConnectionService.updateMessage(replacedMessage, uuid);
                             }
@@ -1598,6 +1654,13 @@ public class MessageParser extends AbstractParser
                         mXmppConnectionService.getNotificationService().updateNotification();
                         return;
                     } else {
+                        if (mamResult != null) {
+                            final boolean rejectedByIdentity = !fingerprintsMatch
+                                    || !(trueCountersMatch || occupantIdMatch || !conversationMultiMode || mucUserMatches);
+                            mamOutcome(mamResult, rejectedByIdentity
+                                    || (duplicate && mXmppConnectionService.isMamMessagePersisted(
+                                            conversation.findDuplicateMessage(message))));
+                        }
                         Log.d(
                                 Config.LOGTAG,
                                 account.getJid().asBareJid()
@@ -1612,6 +1675,8 @@ public class MessageParser extends AbstractParser
                         Config.LOGTAG,
                         account.getJid().asBareJid()
                                 + ": ignoring unresolved or invalid message correction");
+                // A proven identity rejection was acknowledged above. An unresolved edit or
+                // an unverified duplicate remains unknown and must not confirm recovery.
                 return;
             }
 
@@ -1623,6 +1688,7 @@ public class MessageParser extends AbstractParser
                                 + ": skipping message from "
                                 + message.getCounterpart().toString()
                                 + " because it was sent prior to our deletion date");
+                mamOutcome(mamResult, true); // Retention policy deliberately excludes this result.
                 return;
             }
 
@@ -1645,6 +1711,8 @@ public class MessageParser extends AbstractParser
                 }
             }
             if (checkForDuplicates) {
+                final long mamDuplicateStarted = query == null ? 0 : query.diagnostics.begin();
+                try {
                 Message duplicate = conversation.findDuplicateMessage(message);
                 final boolean historicalMucReplay =
                         isTypeGroupChat
@@ -1671,16 +1739,26 @@ public class MessageParser extends AbstractParser
                     }
                 }
                 if (duplicate != null) {
+                    if (query != null) query.diagnostics.duplicate();
                     if (message.isModerated() && !duplicate.isModerated()) {
                         mXmppConnectionService.applyArchivedMessageModeration(conversation,
                                 duplicate, message.getRoomStanzaId(),
                                 message.getModeratedBy(), message.getModerationReason(),
                                 message.getModeratedAt());
+                        if (mamResult != null) {
+                            mamOutcome(mamResult, duplicate.isModerated()
+                                    && mXmppConnectionService.updateMamMessage(duplicate, true));
+                        }
                     }
                     if (duplicate.getRoomStanzaId() == null
                             && message.getRoomStanzaId() != null) {
                         duplicate.setRoomStanzaId(message.getRoomStanzaId());
-                        mXmppConnectionService.databaseBackend.updateMessage(duplicate, false);
+                        final boolean roomIdSaved = mXmppConnectionService.databaseBackend.updateMessage(duplicate, false);
+                        if (mamResult != null && !roomIdSaved) {
+                            duplicate.setRoomStanzaId(null); // Retry must not trust an unsaved resident mutation.
+                            mamOutcome(mamResult, false);
+                            return;
+                        }
                     }
                     final boolean serverMsgIdUpdated;
                     if (duplicate.getStatus() != Message.STATUS_RECEIVED
@@ -1693,6 +1771,8 @@ public class MessageParser extends AbstractParser
                             serverMsgIdUpdated = true;
                         } else {
                             serverMsgIdUpdated = false;
+                            if (mamResult != null) duplicate.setServerMsgId(null);
+                            mamOutcome(mamResult, false);
                             Log.e(Config.LOGTAG, "failed to update message");
                         }
                     } else {
@@ -1704,7 +1784,13 @@ public class MessageParser extends AbstractParser
                                     + message.getCounterpart()
                                     + ". serverMsgIdUpdated="
                                     + serverMsgIdUpdated);
+                    if (mamResult != null) {
+                        mamOutcome(mamResult, mXmppConnectionService.isMamMessagePersisted(duplicate));
+                    }
                     return;
+                }
+                } finally {
+                    if (query != null) query.diagnostics.duplicateLookup(mamDuplicateStarted);
                 }
             }
 
@@ -1713,7 +1799,17 @@ public class MessageParser extends AbstractParser
             // verification hydrates verifiedProtectedBody. Publishing the row to the live
             // conversation first creates a race where the UI can bind an empty protected body
             // and only show the text on a later refresh.
-            if (!mXmppConnectionService.persistIncomingMessage(message)) {
+            final long mamPersistStarted = query == null ? 0 : query.diagnostics.begin();
+            boolean mamPersisted = false;
+            try {
+                mamPersisted = query == null
+                        ? mXmppConnectionService.persistIncomingMessage(message)
+                        : mXmppConnectionService.persistIncomingMamMessage(message);
+            } finally {
+                if (query != null) query.diagnostics.persisted(mamPersistStarted, mamPersisted);
+            }
+            mamOutcome(mamResult, mamPersisted);
+            if (!mamPersisted) {
                 // Fail closed: transient parser plaintext must never surface when protected
                 // publication failed or remains ambiguous.
                 return;
@@ -1831,7 +1927,9 @@ public class MessageParser extends AbstractParser
                 }
             }
         } else if (!packet.hasChild("body")) { // no body
-
+            // Pure receipt, chat-state, subject, key transport and roster stanzas do not own a
+            // timeline payload. JMI writes below can still latch failure, including exceptions.
+            mamOutcome(mamResult, true);
             final Conversation conversation = mXmppConnectionService.find(account, from.asBareJid(), nextCounterpart);
             if (axolotlEncrypted != null) {
                 Jid origin;
@@ -1998,7 +2096,11 @@ public class MessageParser extends AbstractParser
                                     final Message preExistingMessage = c.findRtpSession(sessionId, status);
                                     if (preExistingMessage != null) {
                                         preExistingMessage.setServerMsgId(serverMsgId);
-                                        mXmppConnectionService.updateMessage(preExistingMessage);
+                                        if (mamResult != null) {
+                                            mamOutcome(mamResult, mXmppConnectionService.updateMamMessage(preExistingMessage, true));
+                                        } else {
+                                            mXmppConnectionService.updateMessage(preExistingMessage);
+                                        }
                                         break;
                                     }
                                     final Message message =
@@ -2008,8 +2110,12 @@ public class MessageParser extends AbstractParser
                                     message.setTime(timestamp);
                                     message.setBody(new RtpSessionStatus(false, 0).toString());
                                     mXmppConnectionService.restoreReplyForMessage(conversation, message);
+                                    if (mamResult != null && !mXmppConnectionService.persistIncomingMamMessage(message)) {
+                                        mamOutcome(mamResult, false);
+                                        break;
+                                    }
                                     c.add(message);
-                                    mXmppConnectionService.databaseBackend.createMessage(message);
+                                    if (mamResult == null) mXmppConnectionService.databaseBackend.createMessage(message);
                                 }
                             } else if ("proceed".equals(action)) {
                                 //status needs to be flipped to find the original propose
@@ -2022,7 +2128,11 @@ public class MessageParser extends AbstractParser
                                         message.setServerMsgId(serverMsgId);
                                     }
                                     message.setTime(timestamp);
-                                    mXmppConnectionService.updateMessage(message, true);
+                                    if (mamResult != null) {
+                                        mamOutcome(mamResult, mXmppConnectionService.updateMamMessage(message, true));
+                                    } else {
+                                        mXmppConnectionService.updateMessage(message, true);
+                                    }
                                 } else {
                                     Log.d(
                                             Config.LOGTAG,
@@ -2047,7 +2157,11 @@ public class MessageParser extends AbstractParser
                                     final Message preExistingMessage = c.findRtpSession(sessionId, status);
                                     if (preExistingMessage != null) {
                                         preExistingMessage.setServerMsgId(serverMsgId);
-                                        mXmppConnectionService.updateMessage(preExistingMessage);
+                                        if (mamResult != null) {
+                                            mamOutcome(mamResult, mXmppConnectionService.updateMamMessage(preExistingMessage, true));
+                                        } else {
+                                            mXmppConnectionService.updateMessage(preExistingMessage);
+                                        }
                                         break;
                                     }
                                     final Message message =
@@ -2057,13 +2171,17 @@ public class MessageParser extends AbstractParser
                                     message.setTime(timestamp);
                                     message.setBody(new RtpSessionStatus(true, 0).toString());
                                     mXmppConnectionService.restoreReplyForMessage(conversation, message);
+                                    if (mamResult != null && !mXmppConnectionService.persistIncomingMamMessage(message)) {
+                                        mamOutcome(mamResult, false);
+                                        break;
+                                    }
                                     if (query.getPagingOrder() == MessageArchiveService.PagingOrder.REVERSE) {
                                         c.prepend(query.getActualInThisQuery(), message);
                                     } else {
                                         c.add(message);
                                     }
                                     query.incrementActualMessageCount();
-                                    mXmppConnectionService.databaseBackend.createMessage(message);
+                                    if (mamResult == null) mXmppConnectionService.databaseBackend.createMessage(message);
                                 }
                             }
                         }
@@ -2107,6 +2225,7 @@ public class MessageParser extends AbstractParser
             // end no body
         }
 
+        if (isMucStatusMessage) mamOutcome(mamResult, true); // Explicit non-timeline MUC status.
         final Element event =
                 original.findChild("event", "http://jabber.org/protocol/pubsub#event");
         if (event != null && Jid.Invalid.hasValidFrom(original) && original.getFrom().isBareJid()) {
@@ -2130,6 +2249,31 @@ public class MessageParser extends AbstractParser
                 mXmppConnectionService.getAvatarService().clear(contact);
             }
         }
+        } catch (RuntimeException | Error failure) {
+            mamOutcome(mamResult, false); // Latch before transport can process a subsequent fin.
+            throw failure;
+        } finally {
+            // Accounting precedes optional diagnostics, including when its clock/log fails.
+            if (mamResult != null) mamResult.close();
+            if (query != null) query.diagnostics.parsed(mamParseStarted);
+        }
+    }
+
+    private static void mamOutcome(
+            final eu.siacs.conversations.services.MamPersistenceBarrier.Result result,
+            final boolean durableOrPolicySkip) {
+        if (result != null) result.complete(durableOrPolicySkip);
+    }
+
+    private void acknowledgeMamReflection(
+            final eu.siacs.conversations.services.MamPersistenceBarrier.Result result,
+            final Message message) {
+        if (result == null) return;
+        // Legacy markMessage is void internally. A checked retry of the update plus a durable
+        // row/payload check prevents an unsaved echo being accepted as a complete duplicate.
+        mamOutcome(result, message != null
+                && mXmppConnectionService.updateMamMessage(message, true)
+                && mXmppConnectionService.isMamMessagePersisted(message));
     }
 
     private void processReceived(

@@ -979,7 +979,9 @@ public class ConversationFragment extends XmppFragment
                                     ? 0
                                     : preservedScrollAnchor.topOffsetPx)
                             + " fullRebuild=true");
+            final long mamAdapterStarted = eu.siacs.conversations.services.MamDiagnostics.now();
             messageListAdapter.notifyDataSetChanged();
+            eu.siacs.conversations.services.MamDiagnostics.adapter(mamAdapterStarted);
             renderedTimelineRevision = loadedConversation.getTimelineRevision();
             renderedDynamicTimelineSignature = dynamicTimelineSignature(loadedConversation);
             renderedConversationPresentationRevision =
