@@ -3406,6 +3406,24 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
     }
 
     private void loadMoreMessages(Conversation conversation) {
+        if (conversation.getMode() == Conversation.MODE_MULTI) {
+            long oldest = eu.siacs.conversations.entities.HistoryPageBoundary.timestamp(conversation, false);
+            activity.xmppConnectionService.loadMoreMessages(
+                    conversation, oldest, false,
+                    new eu.siacs.conversations.services.XmppConnectionService.OnMoreMessagesLoaded() {
+                        @Override public void onMoreMessagesLoaded(int count, Conversation room) {
+                            activity.xmppConnectionService.updateConversationUi();
+                        }
+                        @Override public void onHistoryActionResult(
+                                eu.siacs.conversations.services.XmppConnectionService.HistoryActionResult result,
+                                Conversation room) {
+                            activity.runOnUiThread(() -> android.widget.Toast.makeText(activity,
+                                    eu.siacs.conversations.ui.ConversationFragment.historyActionText(result),
+                                    android.widget.Toast.LENGTH_LONG).show());
+                        }
+                    });
+            return;
+        }
         conversation.setLastClearHistory(0, null);
         activity.xmppConnectionService.updateConversation(conversation);
         conversation.setHasMessagesLeftOnServer(true);

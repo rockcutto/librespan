@@ -238,30 +238,21 @@ public class MucMamJoinGateTest {
         }
     }
 
-    @Test public void manualHistoryStillWorksOfflineFromRoomAfterRejection() throws Exception {
+    @Test public void manualHistoryCannotBypassRejectedMembership() throws Exception {
         Fixture f = fixture(); join(f); f.reject(f.lastPresence(), "not-authorized");
-        var query = f.service.getMessageArchiveService().query(f.room, new MamReference(0), System.currentTimeMillis(), false);
-        assertNotNull(query);
-        assertFalse(query.isCatchup());
-        assertEquals(1, f.service.mamRequests.size());
-        f.service.runCatchups(); assertEquals(1, f.service.mamRequests.size());
+        f.service.getMessageArchiveService().query(f.room, new MamReference(0), System.currentTimeMillis(), false);
+        assertFalse(f.service.getMessageArchiveService().queryInProgress(f.room));
+        assertEquals(0, f.service.mamRequests.size());
+        f.service.runCatchups(); assertEquals(0, f.service.mamRequests.size());
     }
 
-    @Test public void activeInitialOrPendingHistoryIsNotDuplicatedByJoin() throws Exception {
-        for (boolean pending : new boolean[] {false, true}) {
-            Fixture f = fixture(); join(f);
-            if (pending) f.account.setStatus(Account.State.OFFLINE);
-            var query = f.service.getMessageArchiveService().query(f.room, new MamReference(0), System.currentTimeMillis(), false);
-            assertNotNull(query); assertFalse(query.isCatchup());
-            f.account.setStatus(Account.State.ONLINE);
-            f.selfPresence(); f.service.runCatchups();
-            assertEquals(pending ? 0 : 1, f.service.mamRequests.size());
-            if (pending) f.service.getMessageArchiveService().executePendingQueries(f.account);
-            assertEquals(1, f.service.mamRequests.size());
-            f.service.mamCallbacks.get(0).accept(Iq.TIMEOUT);
-            f.service.onMucJoinConfirmed(f.options()); f.service.runCatchups();
-            assertEquals(2, f.service.mamRequests.size()); // new join catchup survives the older query timeout
-        }
+    @Test public void confirmedManualPageIsNotDuplicatedByQueuedJoinCatchup() throws Exception {
+        Fixture f = fixture(); join(f); f.selfPresence();
+        var query = f.service.getMessageArchiveService().query(f.room, new MamReference(0), System.currentTimeMillis(), false);
+        assertNotNull(query); assertFalse(query.isCatchup());
+        f.service.runCatchups(); assertEquals(1, f.service.mamRequests.size());
+        f.service.mamCallbacks.get(0).accept(Iq.TIMEOUT); f.service.runCatchups();
+        assertEquals(2, f.service.mamRequests.size());
     }
 
     @Test public void reentrantSelfPresenceDuringSendDefersMamUntilJoinCallbackReturns() throws Exception {

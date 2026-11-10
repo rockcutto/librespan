@@ -1908,4 +1908,18 @@
     <string name="muc_history_incomplete">История неполная</string>
     <string name="muc_history_retry">Повторить восстановление истории</string>
     <string name="muc_private_recipient_changed">Не удалось подтвердить идентичность участника. Проверьте получателя перед повторной отправкой.</string>
+
+    <string name="mam_action_started">Восстановление истории начато</string>
+    <string name="mam_action_busy">История уже загружается. Дождитесь завершения.</string>
+    <string name="mam_action_no_anchor">Точка восстановления отсутствует. Используйте «Загрузить больше сообщений» для загрузки страницы.</string>
+    <string name="mam_action_not_joined">Войдите в конференцию перед загрузкой её архива.</string>
+    <string name="mam_action_unsupported">Конференция не сообщает о поддержке архива.</string>
+    <string name="mam_action_no_boundary">Нет границы для загрузки вперёд. Сначала загрузите последние сообщения.</string>
+    <string name="mam_action_storage">Не удалось прочитать или сохранить историю. Освободите место и повторите попытку.</string>
+    <string name="mam_action_exhausted">В этом диапазоне архива больше сообщений нет.</string>
+    <string name="mam_action_offline">Подключитесь к серверу и повторите попытку.</string>
+    <string name="mam_action_local_only">В пределах текущей границы истории больше локальных сообщений нет.</string>
+    <string name="mam_action_server_error">Запрос архива завершился ошибкой или таймаутом. Проверьте доступ к архиву и повторите попытку.</string>
+    <string name="mam_recovery_completed">Восстановление истории завершено.</string>
+    <string name="mam_recovery_incomplete">История восстановлена не полностью. Последние сообщения могли загрузиться; повторите восстановление пропуска.</string>
 </resources>

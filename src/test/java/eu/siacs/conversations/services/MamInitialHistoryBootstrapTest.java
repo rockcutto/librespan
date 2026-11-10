@@ -329,11 +329,11 @@ public class MamInitialHistoryBootstrapTest {
     @Test public void splitRangeFailureStillPreventsOverallRecoveryCompletion() throws Exception {
         var h = new MamTestHarness(); long oldStart = System.currentTimeMillis() - 8 * 86_400_000L;
         h.f.room.setMucRecoveryAnchor(new MamReference(oldStart, "old")); h.join(); h.service.failureAt = 1;
+        assertEquals(1, h.service.mamRequests.size());
+        h.parser.accept(h.envelope(h.id(0), 1, oldStart + 1000));
+        h.finish(0, true, "f", "l");
         assertEquals(2, h.service.mamRequests.size());
-        assertEquals(MISSING_RANGE_RECOVERY, h.query(0).getMucHistoryPurpose());
-        assertEquals(MISSING_RANGE_RECOVERY, h.query(1).getMucHistoryPurpose());
-        h.parser.accept(h.envelope(h.id(0), 1, oldStart + 1000)); h.result(1, 2);
-        h.finish(1, true, "f", "l"); h.finish(0, true, "f", "l"); assertIncomplete(h);
+        h.result(1, 2); h.finish(1, true, "f", "l"); assertIncomplete(h);
     }
     @Test public void lazyScrollReadsLocalPageBeforeOneBoundedServerPage() throws Exception {
         var h = fresh(); h.join(); recentPage(h); finishRecent(h); inlineReader(h);
@@ -344,7 +344,7 @@ public class MamInitialHistoryBootstrapTest {
         assertEquals(1, loaded.get()); assertEquals(1, h.service.mamRequests.size());
         h.service.loadMoreMessages(h.f.room, olderLocal.getTimeSent(), false, (count, room) -> loaded.addAndGet(count));
         assertEquals(2, h.service.historyPageReads); assertEquals(2, h.service.mamRequests.size());
-        assertEquals(MISSING_RANGE_RECOVERY, h.query(1).getMucHistoryPurpose());
+        assertEquals(MANUAL_PAGE, h.query(1).getMucHistoryPurpose());
         assertEquals(MessageArchiveService.PagingOrder.REVERSE, h.query(1).getPagingOrder());
         assertEquals(10, h.query(1).getRequestedPageSize()); assertEquals("archive-1", h.cursor(1, "before"));
         for (int n = -10; n < 0; n++) h.result(1, n);
@@ -371,7 +371,7 @@ public class MamInitialHistoryBootstrapTest {
     @Test public void failedAnchorCleanupDoesNotTurnBootstrapIntoSuccess() throws Exception {
         var h = fresh(); h.join(); recentPage(h); h.service.zeroConversationWrite = true;
         h.service.mamCallbacks.get(0).accept(fin(false, "archive-1", "archive-10"));
-        assertThrows(IllegalStateException.class, h::drain);
+        h.drain();
         assertIncomplete(h); assertNotNull(restore(h.service.saved, h.f.account).getMucRecoveryAnchor());
     }
 }

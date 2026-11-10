@@ -21,6 +21,10 @@ public final class MamDiagnostics {
         return BuildConfig.DEBUG ? SystemClock.elapsedRealtimeNanos() : 0L;
     }
 
+    public static void action(XmppConnectionService.HistoryActionResult result) {
+        if (BuildConfig.DEBUG) Log.d(TAG, "action=" + result + " t_us=" + now() / 1000);
+    }
+
     public static void event(Event event) {
         if (BuildConfig.DEBUG) Log.d(TAG, "event=" + event + " t_us=" + now() / 1000);
     }

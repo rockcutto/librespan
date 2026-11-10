@@ -2152,4 +2152,18 @@
     <string name="muc_history_incomplete">Verlauf unvollständig</string>
     <string name="muc_history_retry">Verlauf erneut wiederherstellen</string>
     <string name="muc_private_recipient_changed">Die Identität des Teilnehmers konnte nicht bestätigt werden. Prüfe den Empfänger vor dem erneuten Senden.</string>
+
+    <string name="mam_action_started">Wiederherstellung des Verlaufs gestartet</string>
+    <string name="mam_action_busy">Der Verlauf wird bereits geladen. Bitte warten.</string>
+    <string name="mam_action_no_anchor">Kein Wiederherstellungspunkt vorhanden. Mit „Weitere Nachrichten laden“ eine Seite anfordern.</string>
+    <string name="mam_action_not_joined">Tritt der Gruppe bei, bevor du ihr Archiv lädst.</string>
+    <string name="mam_action_unsupported">Diese Gruppe meldet keine Archivunterstützung.</string>
+    <string name="mam_action_no_boundary">Keine lokale Grenze zum Vorwärtsladen vorhanden. Lade zuerst die neuesten Nachrichten.</string>
+    <string name="mam_action_storage">Der Verlauf konnte nicht gelesen oder gespeichert werden. Speicherplatz freigeben und erneut versuchen.</string>
+    <string name="mam_action_exhausted">Keine weiteren Nachrichten in diesem Archivbereich gefunden.</string>
+    <string name="mam_action_offline">Mit dem Server verbinden und erneut versuchen.</string>
+    <string name="mam_action_local_only">Innerhalb der aktuellen Verlaufsgrenze gibt es keine weiteren lokalen Nachrichten.</string>
+    <string name="mam_action_server_error">Die Archivanfrage ist fehlgeschlagen oder abgelaufen. Archivzugriff prüfen und erneut versuchen.</string>
+    <string name="mam_recovery_completed">Verlauf erfolgreich wiederhergestellt.</string>
+    <string name="mam_recovery_incomplete">Der Verlauf ist noch unvollständig. Neueste Nachrichten können angekommen sein; versuche die Wiederherstellung erneut.</string>
 </resources>

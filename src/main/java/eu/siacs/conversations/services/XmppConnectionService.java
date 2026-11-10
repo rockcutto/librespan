@@ -530,6 +530,17 @@ public class XmppConnectionService extends Service {
         final Jid room;
         final MamReference start;
         final MessageArchiveService.MucHistoryPurpose purpose;
+        private java.util.function.Consumer<HistoryActionResult> manualCompletion;
+        synchronized void setManualCompletion(java.util.function.Consumer<HistoryActionResult> completion) {
+            this.manualCompletion = completion;
+        }
+        void completeManual(HistoryActionResult result) {
+            final java.util.function.Consumer<HistoryActionResult> completion;
+            synchronized (this) { completion = manualCompletion; manualCompletion = null; }
+            if (completion != null) {
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> completion.accept(result));
+            }
+        }
         PendingMucCatchup(MucOptions options, MamReference start, MessageArchiveService.MucHistoryPurpose purpose) {
             this.options = options;
             this.account = options.getConversation().getAccount();
@@ -2998,6 +3009,8 @@ public class XmppConnectionService extends Service {
             interruptedMucJoins.clear();
         }
         synchronized (pendingMucCatchups) {
+            for (PendingMucCatchup request : pendingMucCatchups.values()) request.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
+            for (PendingMucCatchup request : dispatchedMucCatchups.values()) request.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
             pendingMucCatchups.clear(); unfinishedMucAnchors.clear(); dispatchedMucCatchups.clear();
         }
         for (Conversation room : getConversations()) {
@@ -5449,81 +5462,93 @@ public class XmppConnectionService extends Service {
         }
     }
 
+    public enum HistoryActionResult {
+        STARTED, RECOVERY_COMPLETED, RECOVERY_INCOMPLETE, QUERY_IN_PROGRESS, NO_ANCHOR, MUC_NOT_JOINED, MAM_UNSUPPORTED,
+        NO_LOCAL_BOUNDARY, SERVER_ERROR, PERSISTENCE_FAILURE, HISTORY_EXHAUSTED,
+        OFFLINE, LOCAL_HISTORY_ONLY
+    }
+
+    HistoryActionResult mucHistoryAvailability(final Conversation room) {
+        if (room.getAccount().getStatus() != Account.State.ONLINE) return HistoryActionResult.OFFLINE;
+        if (!confirmedRootMembership(room.getMucOptions())) return HistoryActionResult.MUC_NOT_JOINED;
+        if (!room.getMucOptions().mamSupport()) return HistoryActionResult.MAM_UNSUPPORTED;
+        return HistoryActionResult.STARTED;
+    }
+
+    private void finishHistoryAction(final Conversation conversation,
+            final OnMoreMessagesLoaded callback, final HistoryActionResult result) {
+        MamDiagnostics.action(result);
+        callback.onHistoryActionResult(result, conversation);
+        callback.onMoreMessagesLoaded(0, conversation);
+    }
+
     public void loadMoreMessages(
             final Conversation conversation,
             final long timestamp,
             boolean isForward,
             final OnMoreMessagesLoaded callback) {
-        if (XmppConnectionService.this
-                .getMessageArchiveService()
-                .queryInProgress(conversation, callback)) {
-            return;
-        } else if (timestamp == 0) {
+        if (timestamp <= 0 && isForward) {
+            finishHistoryAction(conversation, callback, HistoryActionResult.NO_LOCAL_BOUNDARY);
             return;
         }
-
-        if (isForward) {
-            Log.d(
-                    Config.LOGTAG,
-                    "load more messages for "
-                            + conversation.getName()
-                            + " after "
-                            + MessageGenerator.getTimestamp(timestamp));
-        } else {
-            Log.d(
-                    Config.LOGTAG,
-                    "load more messages for "
-                            + conversation.getName()
-                            + " prior to "
-                            + MessageGenerator.getTimestamp(timestamp));
+        final Runnable runnable = () -> {
+            final List<Message> messages;
+            try {
+                // An empty timeline has no paging boundary. Read the latest local page first.
+                messages = timestamp <= 0
+                        ? databaseBackend.getMessages(conversation, Config.PAGE_SIZE)
+                        : databaseBackend.getMessages(conversation, Config.PAGE_SIZE, timestamp, isForward);
+                if (messages == null) throw new IllegalStateException("Missing history result");
+                hydrateProtectedTextMessages(messages);
+                if (!messages.isEmpty()) {
+                    restoreRepliesForMessages(conversation, messages);
+                    conversation.addAll(isForward ? -1 : 0, messages, true);
+                    scheduleLegacyPlaintextMigrationForLoadedPage(messages);
+                }
+            } catch (RuntimeException failed) {
+                finishHistoryAction(conversation, callback, HistoryActionResult.PERSISTENCE_FAILURE);
+                return;
+            }
+            if (!messages.isEmpty()) {
+                callback.onMoreMessagesLoaded(messages.size(), conversation);
+                return;
+            }
+            // Local pagination is independent; only the network request needs admission.
+            if (getMessageArchiveService().queryInProgress(conversation)) {
+                finishHistoryAction(conversation, callback, HistoryActionResult.QUERY_IN_PROGRESS);
+                return;
+            }
+            final Account account = conversation.getAccount();
+            HistoryActionResult blocked = null;
+            if (isForward || conversation.getLastClearHistory().getTimestamp() != 0) {
+                blocked = HistoryActionResult.LOCAL_HISTORY_ONLY;
+            } else if (!conversation.hasMessagesLeftOnServer()) {
+                blocked = HistoryActionResult.HISTORY_EXHAUSTED;
+            } else if (conversation.getMode() == Conversation.MODE_MULTI) {
+                blocked = mucHistoryAvailability(conversation);
+                if (blocked == HistoryActionResult.STARTED) blocked = null;
+                if (blocked == null && getMucHistoryRecoveryState(conversation) == MucHistoryRecoveryState.SYNCING)
+                    blocked = HistoryActionResult.QUERY_IN_PROGRESS;
+            } else if (!account.isOnlineAndConnected()) {
+                blocked = HistoryActionResult.OFFLINE;
+            } else if (!account.getXmppConnection().getFeatures().mam() || conversation.getContact().isBlocked()) {
+                blocked = HistoryActionResult.MAM_UNSUPPORTED;
+            }
+            if (blocked != null) {
+                finishHistoryAction(conversation, callback, blocked);
+                return;
+            }
+            final MessageArchiveService.Query query = getMessageArchiveService().queryHistoryPage(
+                    conversation, timestamp > 0 ? timestamp : System.currentTimeMillis(), timestamp > 0, callback);
+            if (query == null) {
+                finishHistoryAction(conversation, callback, HistoryActionResult.QUERY_IN_PROGRESS);
+            }
+        };
+        try {
+            mDatabaseReaderExecutor.execute(runnable);
+        } catch (RejectedExecutionException closed) {
+            finishHistoryAction(conversation, callback, HistoryActionResult.OFFLINE);
         }
-
-        final Runnable runnable =
-                () -> {
-                    final Account account = conversation.getAccount();
-                    List<Message> messages =
-                            databaseBackend.getMessages(
-                                    conversation, Config.PAGE_SIZE, timestamp, isForward);
-                    hydrateProtectedTextMessages(messages);
-
-                    if (messages.size() > 0) {
-                        restoreRepliesForMessages(conversation, messages);
-
-                        if (isForward) {
-                            conversation.addAll(-1, messages, true);
-                        } else {
-                            conversation.addAll(0, messages, true);
-                        }
-                        scheduleLegacyPlaintextMigrationForLoadedPage(messages);
-
-                        callback.onMoreMessagesLoaded(messages.size(), conversation);
-                    } else if (!isForward
-                            && conversation.hasMessagesLeftOnServer()
-                            && account.isOnlineAndConnected()
-                            && conversation.getLastClearHistory().getTimestamp() == 0) {
-                        final boolean mamAvailable;
-                        if (conversation.getMode() == Conversation.MODE_SINGLE) {
-                            mamAvailable =
-                                    account.getXmppConnection().getFeatures().mam()
-                                            && !conversation.getContact().isBlocked();
-                        } else {
-                            mamAvailable = conversation.getMucOptions().mamSupport();
-                        }
-                        if (mamAvailable) {
-                            MessageArchiveService.Query query =
-                                    getMessageArchiveService()
-                                            .query(
-                                                    conversation,
-                                                    new MamReference(0),
-                                                    timestamp,
-                                                    false);
-                            if (query != null) {
-                                query.setCallback(callback);
-                            }
-                        }
-                    }
-                };
-        mDatabaseReaderExecutor.execute(runnable);
     }
 
     public List<Account> getAccounts() {
@@ -7006,7 +7031,10 @@ public class XmppConnectionService extends Service {
                 if (room.getAccount() == account && account.getStatus() != Account.State.ONLINE) {
                     cancelMembershipCheck(room);
                     cancelRoomRecovery(room);
-                    synchronized (pendingMucCatchups) { pendingMucCatchups.remove(room); }
+                    synchronized (pendingMucCatchups) {
+                        PendingMucCatchup removed = pendingMucCatchups.remove(room);
+                        if (removed != null) removed.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
+                    }
                 }
             }
         }
@@ -7228,6 +7256,7 @@ public class XmppConnectionService extends Service {
                         }
                         final PendingMucCatchup request = new PendingMucCatchup(options, anchor.start,
                                 MessageArchiveService.MucHistoryPurpose.MISSING_RANGE_RECOVERY);
+                        if (previous != null) previous.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
                         pendingMucCatchups.put(root, request);
                         if (probeFreshHistory) {
                             historyProbe = request;
@@ -7308,26 +7337,40 @@ public class XmppConnectionService extends Service {
                         || !confirmedRootMembership(request.options)
                         || request.options.getJoinAttempt().getMembershipGeneration() != request.generation) {
                     pendingMucCatchups.remove(room);
+                    request.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
                     return;
                 }
                 if (running) return; // completion resumes this request without consuming its claim
                 pendingMucCatchups.remove(room);
-                if (!request.options.getJoinAttempt().claimCatchup()) return;
+                if (!request.options.getJoinAttempt().claimCatchup()) {
+                    request.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
+                    return;
+                }
                 dispatchedMucCatchups.put(room, request);
             }
         }
+        try {
         archive.catchupMUC(room, MamReference.max(request.start, room.getLastClearHistory()), request.purpose,
                 (complete, historyExhausted) -> dispatchMucJoinCatchup(() -> {
             final boolean anotherQuery = archive.queryInProgress(room);
+            boolean recoveryCleared = false;
+            boolean recoveryWriteFailed = false;
             synchronized (room) {
                 synchronized (pendingMucCatchups) {
-                    if (dispatchedMucCatchups.get(room) != request) return;
+                    if (dispatchedMucCatchups.get(room) != request) {
+                        request.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
+                        return;
+                    }
                     dispatchedMucCatchups.remove(room);
                     final FrozenMucAnchor anchor = unfinishedMucAnchors.get(room);
                     // Optional older-history pagination may overlap a completed initial page;
                     // it does not turn that page into a missing-range recovery. All identity and
                     // pending-recovery guards below still apply, and strict recovery is unchanged.
-                    if (complete && (!anotherQuery
+                    final MamReference durableFloor = room.getMucRecoveryAnchor();
+                    if (complete && durableFloor != null
+                            && durableFloor.getTimestamp() == request.start.getTimestamp()
+                            && java.util.Objects.equals(durableFloor.getReference(), request.start.getReference())
+                            && (!anotherQuery
                                 || request.purpose == MessageArchiveService.MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP)
                             && !pendingMucCatchups.containsKey(room)
                             && room.getAccount() == request.account && confirmedRootMembership(request.options)
@@ -7335,9 +7378,14 @@ public class XmppConnectionService extends Service {
                             && anchor != null && anchor.account == request.account
                             && anchor.room.equals(request.room) && room.getJid().asBareJid().equals(request.room)
                             && anchor.start == request.start) {
-                        persistMucRecoveryAnchor(room, null);
-                        unfinishedMucAnchors.remove(room);
-                        if (request.purpose == MessageArchiveService.MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP
+                        try {
+                            persistMucRecoveryAnchor(room, null);
+                            recoveryCleared = true;
+                            unfinishedMucAnchors.remove(room);
+                        } catch (RuntimeException failed) {
+                            recoveryWriteFailed = true;
+                        }
+                        if (recoveryCleared && request.purpose == MessageArchiveService.MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP
                                 && historyExhausted) {
                             room.setHasMessagesLeftOnServer(false);
                         }
@@ -7345,7 +7393,17 @@ public class XmppConnectionService extends Service {
                 }
             }
             updateConversationUi();
+            request.completeManual(recoveryWriteFailed ? HistoryActionResult.PERSISTENCE_FAILURE
+                    : recoveryCleared ? HistoryActionResult.RECOVERY_COMPLETED : HistoryActionResult.RECOVERY_INCOMPLETE);
         }));
+        } catch (RuntimeException failure) {
+            archive.kill(room);
+            synchronized (pendingMucCatchups) {
+                if (dispatchedMucCatchups.get(room) == request) dispatchedMucCatchups.remove(room);
+            }
+            request.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
+            updateConversationUi();
+        }
     }
 
     public enum MucHistoryRecoveryState { NONE, SYNCING, INCOMPLETE }
@@ -7363,28 +7421,60 @@ public class XmppConnectionService extends Service {
 
     /** Explicit retry of history only, with the same durable floor and membership. */
     public boolean retryMucHistoryRecovery(Conversation room) {
+        return retryMucHistoryRecoveryResult(room) == HistoryActionResult.STARTED;
+    }
+
+    public HistoryActionResult retryMucHistoryRecoveryResult(Conversation room) {
+        return retryMucHistoryRecoveryResult(room, null);
+    }
+
+    public HistoryActionResult retryMucHistoryRecoveryResult(Conversation room,
+            java.util.function.Consumer<HistoryActionResult> completion) {
+        final HistoryActionResult result = retryMucHistoryRecoveryInternal(room, completion);
+        MamDiagnostics.action(result);
+        return result;
+    }
+
+    private HistoryActionResult retryMucHistoryRecoveryInternal(Conversation room,
+            java.util.function.Consumer<HistoryActionResult> completion) {
+        if (room == null || !isRootMucConversation(room)) return HistoryActionResult.MUC_NOT_JOINED;
+        if (destroyed) return HistoryActionResult.OFFLINE;
+        if (getMessageArchiveService().queryInProgress(room)) return HistoryActionResult.QUERY_IN_PROGRESS;
         MamDiagnostics.event(MamDiagnostics.Event.RECOVERY_RETRY);
         synchronized (room) {
             final MucOptions options = room.getMucOptions();
-            if (!confirmedRootMembership(options) || !options.mamSupport()) return false;
+            final HistoryActionResult availability = mucHistoryAvailability(room);
+            if (availability != HistoryActionResult.STARTED) return availability;
             synchronized (pendingMucCatchups) {
-                if (pendingMucCatchups.containsKey(room) || dispatchedMucCatchups.containsKey(room)) return false;
+                if (destroyed) return HistoryActionResult.OFFLINE;
+                if (pendingMucCatchups.containsKey(room) || dispatchedMucCatchups.containsKey(room)) return HistoryActionResult.QUERY_IN_PROGRESS;
                 final MamReference start = room.getMucRecoveryAnchor();
-                if (start == null) return false;
+                if (start == null) return HistoryActionResult.NO_ANCHOR;
                 FrozenMucAnchor anchor = unfinishedMucAnchors.get(room);
                 if (anchor == null || anchor.account != room.getAccount()
-                        || !anchor.room.equals(room.getJid().asBareJid())) {
+                        || !anchor.room.equals(room.getJid().asBareJid())
+                        || anchor.start.getTimestamp() != start.getTimestamp()
+                        || !java.util.Objects.equals(anchor.start.getReference(), start.getReference())) {
                     anchor = new FrozenMucAnchor(room, start);
                     unfinishedMucAnchors.put(room, anchor);
                 }
                 options.getJoinAttempt().allowExplicitCatchupRetry();
-                pendingMucCatchups.put(room, new PendingMucCatchup(options, anchor.start,
-                        MessageArchiveService.MucHistoryPurpose.MISSING_RANGE_RECOVERY));
+                final PendingMucCatchup request = new PendingMucCatchup(options, anchor.start,
+                        MessageArchiveService.MucHistoryPurpose.MISSING_RANGE_RECOVERY);
+                request.setManualCompletion(completion);
+                pendingMucCatchups.put(room, request);
             }
         }
-        onMucHistoryQueryFinished(room);
+        try {
+            onMucHistoryQueryFinished(room);
+        } catch (RejectedExecutionException closed) {
+            synchronized (pendingMucCatchups) {
+                PendingMucCatchup request = pendingMucCatchups.remove(room);
+                if (request != null) request.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
+            }
+        }
         updateConversationUi();
-        return true;
+        return HistoryActionResult.STARTED;
     }
 
     public boolean hasPendingMucCatchup(Conversation room) {
@@ -7396,6 +7486,10 @@ public class XmppConnectionService extends Service {
     public void onMucHistoryQueryFinished(Conversation room) {
         // IQ completion can hold the transport callback lock: acquire no room monitor here.
         dispatchMucJoinCatchup(() -> drainPendingMucCatchup(room));
+    }
+
+    ScheduledFuture<?> scheduleMamFinTimeout(final Runnable timeout) {
+        return internalPingExecutor.schedule(timeout, Config.CONNECT_DISCO_TIMEOUT, TimeUnit.SECONDS);
     }
 
     void dispatchMucJoinCatchup(final Runnable catchup) {
@@ -7426,7 +7520,10 @@ public class XmppConnectionService extends Service {
             if (!options.online()) {
                 synchronized (pendingMucCatchups) {
                     PendingMucCatchup pending = pendingMucCatchups.get(conversation);
-                    if (pending != null && pending.options == options) pendingMucCatchups.remove(conversation);
+                    if (pending != null && pending.options == options) {
+                        pendingMucCatchups.remove(conversation);
+                        pending.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
+                    }
                 }
             }
             scheduleRoomRecovery(conversation, options);
@@ -8928,9 +9025,11 @@ public class XmppConnectionService extends Service {
     private void leaveMuc(Conversation conversation, boolean now) {
         synchronized (conversation) {
             synchronized (pendingMucCatchups) {
-                pendingMucCatchups.remove(conversation);
+                PendingMucCatchup pending = pendingMucCatchups.remove(conversation);
+                PendingMucCatchup dispatched = dispatchedMucCatchups.remove(conversation);
+                if (pending != null) pending.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
+                if (dispatched != null) dispatched.completeManual(HistoryActionResult.RECOVERY_INCOMPLETE);
                 unfinishedMucAnchors.remove(conversation);
-                dispatchedMucCatchups.remove(conversation);
             }
             cancelMembershipCheck(conversation);
             cancelRoomRecovery(conversation);
@@ -11789,6 +11888,7 @@ public class XmppConnectionService extends Service {
 
     public interface OnMoreMessagesLoaded {
         void onMoreMessagesLoaded(int count, Conversation conversation);
+        default void onHistoryActionResult(HistoryActionResult result, Conversation conversation) {}
     }
 
     public interface OnAccountPasswordChanged {

@@ -1875,4 +1875,18 @@ Your server administrator may then be able to read message contents in transit o
     <string name="muc_history_incomplete">History incomplete</string>
     <string name="muc_history_retry">Retry history recovery</string>
     <string name="muc_private_recipient_changed">Could not confirm the participant’s identity. Check the recipient before sending again.</string>
+
+    <string name="mam_action_started">History recovery started</string>
+    <string name="mam_action_busy">History is already loading. Wait for it to finish.</string>
+    <string name="mam_action_no_anchor">No recovery point is available. Use Load more messages to request a page.</string>
+    <string name="mam_action_not_joined">Join this group before loading its archive.</string>
+    <string name="mam_action_unsupported">This group does not advertise archive support.</string>
+    <string name="mam_action_no_boundary">No local boundary is available for forward loading. Load recent messages first.</string>
+    <string name="mam_action_storage">History could not be read or saved. Free up storage and retry.</string>
+    <string name="mam_action_exhausted">No more messages were found in this archive range.</string>
+    <string name="mam_action_offline">Connect to the server and retry.</string>
+    <string name="mam_action_local_only">No more local history is available within the current history boundary.</string>
+    <string name="mam_action_server_error">The archive request failed or timed out. Check archive access and retry.</string>
+    <string name="mam_recovery_completed">History recovery completed.</string>
+    <string name="mam_recovery_incomplete">History recovery is incomplete. Latest messages may have arrived; retry the missing range.</string>
 </resources>

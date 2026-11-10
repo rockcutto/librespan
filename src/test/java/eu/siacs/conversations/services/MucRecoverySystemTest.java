@@ -223,7 +223,7 @@ public class MucRecoverySystemTest {
     }
     @Test public void oldInFlightMamTimeoutResumesNewCatchupFromFrozenAnchor() throws Exception {
         Fixture f=fixture(); SystemService s=(SystemService)f.service; seedA(f);
-        f.service.joinMuc(f.room); mamDisco(f,0);
+        f.service.joinMuc(f.room); mamDisco(f,0); f.selfPresence();
         var old=f.service.getMessageArchiveService().query(f.room,new eu.siacs.conversations.xmpp.mam.MamReference(0),System.currentTimeMillis(),false);
         assertNotNull(old); f.selfPresence();
         new MessageParser(s,f.account).accept(live(f,4)); f.service.runCatchups();
@@ -234,7 +234,7 @@ public class MucRecoverySystemTest {
     }
     @Test public void oldCompletedQueryCannotMarkHistoryCompleteWhileNewCatchupIsPending() throws Exception {
         Fixture f=fixture(); SystemService s=(SystemService)f.service; seedA(f);
-        f.service.joinMuc(f.room); mamDisco(f,0);
+        f.service.joinMuc(f.room); mamDisco(f,0); f.selfPresence();
         f.service.getMessageArchiveService().query(f.room,new eu.siacs.conversations.xmpp.mam.MamReference(0),System.currentTimeMillis(),false);
         f.selfPresence(); f.service.runCatchups();
         Iq fin=new Iq(Iq.Type.RESULT); fin.addChild("fin","urn:xmpp:mam:2").setAttribute("complete","true");
@@ -281,7 +281,7 @@ public class MucRecoverySystemTest {
 
     @Test public void leavingWhileOldMamIsInFlightDiscardsPendingFollowup() throws Exception {
         Fixture f=fixture(); SystemService s=(SystemService)f.service; seedA(f);
-        f.service.joinMuc(f.room); mamDisco(f,0);
+        f.service.joinMuc(f.room); mamDisco(f,0); f.selfPresence();
         f.service.getMessageArchiveService().query(f.room,new eu.siacs.conversations.xmpp.mam.MamReference(0),System.currentTimeMillis(),false);
         f.selfPresence(); f.service.runCatchups(); f.service.leaveMuc(f.room);
         s.mamCallbacks.get(0).accept(Iq.TIMEOUT); f.service.runCatchups();
@@ -401,8 +401,8 @@ public class MucRecoverySystemTest {
             assertNull(second.room.getMucRecoveryAnchor());
         }
     }
-    @Test public void splitCatchupKeepsFloorUnlessBothRangesCompleteInEitherOrder() throws Exception {
-        for (boolean reverseFirst : new boolean[]{false, true}) {
+    @Test public void splitCatchupKeepsFloorUnlessBothSerialRangesComplete() throws Exception {
+        for (boolean reverseFirst : new boolean[]{true}) {
             for (int reverseOutcome = 0; reverseOutcome < 3; reverseOutcome++) {
                 final boolean reverseSuccess = reverseOutcome == 0;
                 Iq reverseError = new Iq(Iq.Type.ERROR);
@@ -413,10 +413,11 @@ public class MucRecoverySystemTest {
                 a.setTime(System.currentTimeMillis() - 8 * 86_400_000L);
                 a.setServerMsgId("A"); f.room.add(a);
                 f.service.joinMuc(f.room); mamDisco(f, 0); f.selfPresence(); f.service.runCatchups();
-                assertEquals(2, s.mamRequests.size());
+                assertEquals(1, s.mamRequests.size());
                 int first = reverseFirst ? 0 : 1, last = reverseFirst ? 1 : 0;
                 s.mamCallbacks.get(first).accept(first == 0 ? reverseResult : completeMam());
                 s.runCatchups();
+                assertEquals(2, s.mamRequests.size());
                 assertNotNull(f.room.getMucRecoveryAnchor());
                 assertEquals(XmppConnectionService.MucHistoryRecoveryState.SYNCING, s.getMucHistoryRecoveryState(f.room));
                 s.mamCallbacks.get(last).accept(last == 0 ? reverseResult : completeMam());
@@ -430,7 +431,7 @@ public class MucRecoverySystemTest {
                     assertEquals(XmppConnectionService.MucHistoryRecoveryState.INCOMPLETE, s.getMucHistoryRecoveryState(f.room));
                     new MessageParser(s, f.account).accept(live(f, 4));
                     removal(f, "332"); s.roomRecoveries.get(0).run(); mamDisco(f, 1); f.selfPresence(); s.runCatchups();
-                    assertEquals(4, s.mamRequests.size());
+                    assertEquals(3, s.mamRequests.size());
                     var form = s.mamRequests.get(2).findChild("query", "urn:xmpp:mam:2").findChild("x", "jabber:x:data");
                     // Read the actual form start; reverse uses timestamp, not RSM after=A.
                     String actualStart = null;

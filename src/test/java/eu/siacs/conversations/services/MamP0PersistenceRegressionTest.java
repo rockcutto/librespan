@@ -43,15 +43,34 @@ public class MamP0PersistenceRegressionTest {
         assertNotNull(h.f.room.getMucRecoveryAnchor());
         h.result(1, 1); h.finish(1, true, "f", "l"); assertNull(h.f.room.getMucRecoveryAnchor());
     }
+    @SuppressWarnings("unchecked")
     @Test public void concurrentIndependentQueryInSameServiceDoesNotInheritFailure() throws Exception {
         var h = new MamTestHarness(); h.join(); h.service.failureAt = 1; h.result(0, 1);
-        var independent = h.service.getMessageArchiveService().query(
-                h.f.room, new MamReference(0), h.floorTime, false);
+        // V3 deliberately serializes MUC ranges for the same room. Use an independent 1:1
+        // conversation to verify that a failed MUC persistence chain cannot poison another
+        // query owned by the same MessageArchiveService.
+        var discovery = new im.conversations.android.xmpp.model.stanza.Iq(
+                im.conversations.android.xmpp.model.stanza.Iq.Type.RESULT);
+        var info = discovery.addChild("query", eu.siacs.conversations.xml.Namespace.DISCO_INFO);
+        info.addChild("feature").setAttribute("var", MAM);
+        var discoField = eu.siacs.conversations.xmpp.XmppConnection.class.getDeclaredField("disco");
+        discoField.setAccessible(true);
+        var accountDisco = (java.util.Map<eu.siacs.conversations.xmpp.Jid,
+                eu.siacs.conversations.entities.ServiceDiscoveryResult>)
+                discoField.get(h.f.account.getXmppConnection());
+        accountDisco.put(h.f.account.getJid().asBareJid(),
+                new eu.siacs.conversations.entities.ServiceDiscoveryResult(discovery));
+        var single = new eu.siacs.conversations.entities.Conversation(
+                "peer", h.f.account, eu.siacs.conversations.xmpp.Jid.of("peer@example.test"),
+                eu.siacs.conversations.entities.Conversation.MODE_SINGLE, null);
+        var archive = h.service.getMessageArchiveService();
+        var independent = archive.query(single, new MamReference(0), h.floorTime, false);
         assertNotNull(independent);
+        assertEquals(2, h.service.mamRequests.size());
         h.finish(0, true, "f", "l"); assertNotNull(h.f.room.getMucRecoveryAnchor());
         h.finish(1, true, "f", "l");
         assertTrue(independent.persistence.finishPage());
-        assertFalse(h.service.getMessageArchiveService().queryInProgress(h.f.room));
+        assertFalse(archive.queryInProgress(single));
         assertNotNull(h.f.room.getMucRecoveryAnchor());
     }
     @Test public void pendingAndUnavailableDuplicatesNeverClearFloor() throws Exception {
@@ -73,9 +92,14 @@ public class MamP0PersistenceRegressionTest {
     @Test public void zeroRowAnchorWriteRestoresMemoryAndKeepsSavedFloor() throws Exception {
         var h = new MamTestHarness(); h.join(); h.service.zeroConversationWrite = true;
         h.service.mamCallbacks.get(0).accept(fin(true, "f", "l"));
-        assertThrows(IllegalStateException.class, h::drain);
-        assertNotNull(h.f.room.getMucRecoveryAnchor());
-        assertNotNull(restore(h.service.saved, h.f.account).getMucRecoveryAnchor());
+        // The service contains the failed checkpoint-clear write and reports it through the
+        // recovery result; it must not crash the catchup dispatcher.
+        h.drain();
+        assertEquals("floor:opaque:z", h.f.room.getMucRecoveryAnchor().getReference());
+        assertEquals("floor:opaque:z",
+                restore(h.service.saved, h.f.account).getMucRecoveryAnchor().getReference());
+        assertEquals(XmppConnectionService.MucHistoryRecoveryState.INCOMPLETE,
+                h.service.getMucHistoryRecoveryState(h.f.room));
     }
     @Test public void finDuringUnresolvedRequiredWriteMustKeepAnchor() throws Exception {
         var h = new MamTestHarness(); h.join(); var write = h.query(0).persistence.beginResult();
@@ -85,8 +109,14 @@ public class MamP0PersistenceRegressionTest {
     @Test public void failedOldSplitRangeCannotBeHiddenByRecentComplete() throws Exception {
         var h = new MamTestHarness();
         h.f.room.setMucRecoveryAnchor(new MamReference(System.currentTimeMillis() - 8 * 86_400_000L, "old"));
-        h.join(); h.service.failureAt = 1; h.result(0, 1);
-        h.finish(1, true, "f", "l"); h.finish(0, true, "f", "l");
+        h.join();
+        assertEquals("Only the older split range is sent first", 1, h.service.mamRequests.size());
+        h.service.failureAt = 1; h.result(0, 1);
+        // V3 serializes the two ranges: fail the old range, then let the recent range complete.
+        h.finish(0, true, "old-first", "old-last");
+        assertEquals("The recent range starts only after the old range terminates",
+                2, h.service.mamRequests.size());
+        h.finish(1, true, "recent-first", "recent-last");
         assertNotNull(h.f.room.getMucRecoveryAnchor());
     }
 }

@@ -856,28 +856,13 @@ public class ConversationFragment extends XmppFragment
         }
 
         if (conversation != null
-                && messageList.size() > 0
+                && (paginateBackward || !messageList.isEmpty())
                 && ((paginateBackward && conversation.messagesLoaded.compareAndSet(true, false))
                         || (paginationForward
                                 && conversation.historyPartLoadedForward.compareAndSet(
                                         true, false)))) {
-            long timestamp;
-
-            if (paginateBackward) {
-                if (messageList.get(0).getType() == Message.TYPE_STATUS
-                        && messageList.size() >= 2) {
-                    timestamp = messageList.get(1).getTimeSent();
-                } else {
-                    timestamp = messageList.get(0).getTimeSent();
-                }
-            } else {
-                if (messageList.get(messageList.size() - 1).getType() == Message.TYPE_STATUS
-                        && messageList.size() >= 2) {
-                    timestamp = messageList.get(messageList.size() - 2).getTimeSent();
-                } else {
-                    timestamp = messageList.get(messageList.size() - 1).getTimeSent();
-                }
-            }
+            final long timestamp = eu.siacs.conversations.entities.HistoryPageBoundary.timestamp(
+                    conversation, !paginateBackward);
 
             boolean finalPaginateBackward = paginateBackward;
             final String selectionTargetUuid = pendingSelectionUuid;
@@ -887,10 +872,18 @@ public class ConversationFragment extends XmppFragment
                     !paginateBackward,
                     new XmppConnectionService.OnMoreMessagesLoaded() {
                         @Override
+                        public void onHistoryActionResult(
+                                XmppConnectionService.HistoryActionResult result, Conversation room) {
+                            runOnUiThread(() -> {
+                                if (ConversationFragment.this.conversation == room) showHistoryActionResult(result);
+                            });
+                        }
+                        @Override
                         public void onMoreMessagesLoaded(
                                 final int c, final Conversation conversation) {
                             if (ConversationFragment.this.conversation != conversation) {
-                                conversation.messagesLoaded.set(true);
+                                if (finalPaginateBackward) conversation.messagesLoaded.set(true);
+                                else conversation.historyPartLoadedForward.set(true);
                                 return;
                             }
                             runOnUiThread(
@@ -917,6 +910,29 @@ public class ConversationFragment extends XmppFragment
                                     });
                         }
                     });
+        }
+    }
+
+    private void showHistoryActionResult(final XmppConnectionService.HistoryActionResult result) {
+        if (activity == null || !isAdded()) return;
+        Toast.makeText(activity, historyActionText(result), Toast.LENGTH_LONG).show();
+    }
+
+    public static int historyActionText(final XmppConnectionService.HistoryActionResult result) {
+        switch (result) {
+            case STARTED: return R.string.mam_action_started;
+            case RECOVERY_COMPLETED: return R.string.mam_recovery_completed;
+            case RECOVERY_INCOMPLETE: return R.string.mam_recovery_incomplete;
+            case QUERY_IN_PROGRESS: return R.string.mam_action_busy;
+            case NO_ANCHOR: return R.string.mam_action_no_anchor;
+            case MUC_NOT_JOINED: return R.string.mam_action_not_joined;
+            case MAM_UNSUPPORTED: return R.string.mam_action_unsupported;
+            case NO_LOCAL_BOUNDARY: return R.string.mam_action_no_boundary;
+            case PERSISTENCE_FAILURE: return R.string.mam_action_storage;
+            case HISTORY_EXHAUSTED: return R.string.mam_action_exhausted;
+            case OFFLINE: return R.string.mam_action_offline;
+            case LOCAL_HISTORY_ONLY: return R.string.mam_action_local_only;
+            default: return R.string.mam_action_server_error;
         }
     }
 
@@ -5679,7 +5695,12 @@ public class ConversationFragment extends XmppFragment
                 break;
             case R.id.action_retry_muc_history:
                 if (activity != null && activity.xmppConnectionService != null && conversation != null) {
-                    activity.xmppConnectionService.retryMucHistoryRecovery(conversation);
+                    final Conversation requestedRoom = conversation;
+                    showHistoryActionResult(activity.xmppConnectionService.retryMucHistoryRecoveryResult(
+                            requestedRoom, result -> runOnUiThread(() -> {
+                                if (ConversationFragment.this.conversation == requestedRoom)
+                                    showHistoryActionResult(result);
+                            })));
                 }
                 break;
             case R.id.action_refresh_feature_discovery:

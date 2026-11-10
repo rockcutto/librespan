@@ -173,6 +173,11 @@ final class MamTestHarness {
         boolean throwWrite, realScsFailure, failConversationWrite, dropProtectedMetadata;
         ContentValues saved;
         Consumer<Consumer<Iq>> duringMamSend;
+        final List<Runnable> mamFinTimeouts = new ArrayList<>();
+        @Override java.util.concurrent.ScheduledFuture<?> scheduleMamFinTimeout(Runnable timeout) {
+            mamFinTimeouts.add(timeout);
+            return null; // Controlled clock: tests invoke the captured deadline explicitly.
+        }
         SecureMessageTextRepository failingRepository;
         @Override boolean writeMucRecoveryAnchorRow(Conversation c) {
             return databaseBackend.updateConversationForMam(c);

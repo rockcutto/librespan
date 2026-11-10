@@ -95,16 +95,16 @@ public class MamLifecycleRegressionTest {
         assertEquals(123_000L, next.getEnd()); assertEquals("expired:next", next.getReference());
         h.service.getMessageArchiveService().kill(h.f.room);
     }
-    @Test public void splitRangesRequireBothOutcomesInEitherCompletionOrder() throws Exception {
-        for (boolean reverseFirst : new boolean[]{false, true}) for (boolean success : new boolean[]{false, true}) {
+    @Test public void splitRangesRequireBothSerialOutcomes() throws Exception {
+        for (boolean success : new boolean[]{false, true}) {
             var h = new MamTestHarness();
             h.f.room.setMucRecoveryAnchor(new MamReference(System.currentTimeMillis() - 8 * 86_400_000L, "old")); h.join();
+            assertEquals(1, h.service.mamRequests.size());
+            h.service.mamCallbacks.get(0).accept(success ? fin(true, "f", "l") : Iq.TIMEOUT); h.drain();
             assertEquals(2, h.service.mamRequests.size());
-            int first = reverseFirst ? 0 : 1, second = reverseFirst ? 1 : 0;
-            h.service.mamCallbacks.get(first).accept(first == 0 && !success ? Iq.TIMEOUT : fin(true, "f", "l")); h.drain();
             assertNotNull(h.f.room.getMucRecoveryAnchor());
             assertEquals(XmppConnectionService.MucHistoryRecoveryState.SYNCING, h.service.getMucHistoryRecoveryState(h.f.room));
-            h.service.mamCallbacks.get(second).accept(second == 0 && !success ? Iq.TIMEOUT : fin(true, "f", "l")); h.drain();
+            h.finish(1, true, "f", "l");
             if (success) assertNull(h.f.room.getMucRecoveryAnchor()); else assertNotNull(h.f.room.getMucRecoveryAnchor());
         }
     }
@@ -136,7 +136,7 @@ public class MamLifecycleRegressionTest {
         h.finish(0, false, "older:first", "newer:last");
         assertNotNull(h.f.room.getMucRecoveryAnchor()); assertEquals(1, h.service.mamRequests.size());
         assertTrue(h.service.retryMucHistoryRecovery(h.f.room)); h.drain();
-        assertEquals("older:first", h.cursor(1, "before")); // documents history-walking UX, not approval
+        assertNull(h.cursor(1, "before")); // strict recovery never borrows optional pagination state
     }
     @Test public void wrongQueryIdAndWrongRoomDoNotReachThePersistenceBoundary() throws Exception {
         var h = new MamTestHarness(); h.join();
@@ -178,8 +178,8 @@ public class MamLifecycleRegressionTest {
     @Test public void dbFailureWhileClearingFloorRestoresInMemoryFloor() throws Exception {
         var h = new MamTestHarness(); h.join(); h.service.failConversationWrite = true;
         h.service.mamCallbacks.get(0).accept(fin(true, "f", "l"));
-        assertThrows(IllegalStateException.class, h::drain);
-        assertNotNull(h.f.room.getMucRecoveryAnchor());
-        assertNotNull(restore(h.service.saved, h.f.account).getMucRecoveryAnchor());
+        h.drain();
+        assertEquals("floor:opaque:z", h.f.room.getMucRecoveryAnchor().getReference());
+        assertEquals("floor:opaque:z", restore(h.service.saved, h.f.account).getMucRecoveryAnchor().getReference());
     }
 }

@@ -97,16 +97,22 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         this.mXmppConnectionService = service;
     }
 
-    private void catchup(final Account account) {
+    void cancelQueriesForReconnect(final Account account) {
+        final List<Query> interrupted = new ArrayList<>();
         synchronized (this.queries) {
-            for (Iterator<Query> iterator = this.queries.iterator(); iterator.hasNext(); ) {
-                Query query = iterator.next();
-                if (query.getAccount() == account) {
-                    query.diagnostics.end(MamDiagnostics.Reason.RECONNECT);
-                    iterator.remove();
-                }
-            }
+            for (Query query : this.queries) if (query.getAccount() == account) interrupted.add(query);
         }
+        synchronized (this.pendingQueries) {
+            this.pendingQueries.removeIf(query -> query.getAccount() == account);
+        }
+        for (Query query : interrupted) {
+            query.diagnosticReason = MamDiagnostics.Reason.RECONNECT;
+            finishTerminalQuery(query, false);
+        }
+    }
+
+    private void catchup(final Account account) {
+        cancelQueriesForReconnect(account);
         MamReference mamReference = MamReference.max(
                 mXmppConnectionService.databaseBackend.getLastMessageReceived(account),
                 mXmppConnectionService.databaseBackend.getLastClearDate(account)
@@ -153,7 +159,9 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
     void catchupMUC(final Conversation conversation, final MamReference start,
             final MucHistoryPurpose purpose,
             final java.util.function.BiConsumer<Boolean, Boolean> completed) {
-        query(conversation, start, 0, true, purpose, completed);
+        if (query(conversation, start, 0, true, purpose, completed) == null && completed != null) {
+            completed.accept(false, false);
+        }
     }
 
     public Query query(final Conversation conversation) {
@@ -203,51 +211,72 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
     private Query query(Conversation conversation, MamReference start, long end, boolean allowCatchup,
             final MucHistoryPurpose purpose,
             final java.util.function.BiConsumer<Boolean, Boolean> completed) {
-        if (conversation.getNextCounterpart() != null) {
-            return null;
-        }
+        return query(conversation, start, end, allowCatchup, purpose, completed, null, true);
+    }
 
-        synchronized (this.queries) {
-            final Query query;
-            Query reverseCatchup = null;
-            if (end != 0 && start.greaterThan(end)) return null;
-            final MamReference startActual = MamReference.max(start, mXmppConnectionService.getAutomaticMessageDeletionDate());
-            if (purpose == MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP) {
-                // Always request the latest single page, never an old in-memory scroll cursor.
-                // A failed initial attempt must not hand that stale cursor to its strict retry.
-                conversation.setFirstMamReference(null);
-                query = new Query(conversation, startActual, end, false);
-            } else if (start.getTimestamp() == 0) {
-                query = new Query(conversation, startActual, end, false);
-                query.reference = conversation.getFirstMamReference();
-                if (query.reference != null) {
-                    query.cursorFallbackEnd = oldestLoadedMessageTimestamp(conversation);
-                }
-            } else {
-                if (allowCatchup) {
-                    MamReference maxCatchup = MamReference.max(startActual, System.currentTimeMillis() - Config.MAM_MAX_CATCHUP);
-                    if (maxCatchup.greaterThan(startActual)) {
-                        reverseCatchup = new Query(conversation, startActual, maxCatchup.getTimestamp(), false);
-                    }
-                    query = new Query(conversation, maxCatchup, end, true);
-                } else {
-                    query = new Query(conversation, startActual, end, false);
-                }
+    Query queryHistoryPage(final Conversation conversation, final long end, final boolean hasBoundary,
+            final XmppConnectionService.OnMoreMessagesLoaded callback) {
+        return query(conversation, new MamReference(0), end, false,
+                MucHistoryPurpose.MANUAL_PAGE, null, callback, hasBoundary);
+    }
+
+    private Query query(Conversation conversation, MamReference start, long end, boolean allowCatchup,
+            final MucHistoryPurpose purpose,
+            final java.util.function.BiConsumer<Boolean, Boolean> completed,
+            final XmppConnectionService.OnMoreMessagesLoaded callback, final boolean hasBoundary) {
+        if (conversation.getNextCounterpart() != null) return null;
+        final Query query;
+        Query reverseCatchup = null;
+        if (end != 0 && start.greaterThan(end)) return null;
+        final MamReference startActual = MamReference.max(start, mXmppConnectionService.getAutomaticMessageDeletionDate());
+        if (purpose == MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP) {
+            // Always request the latest single page, never an old in-memory scroll cursor.
+            // A failed initial attempt must not hand that stale cursor to its strict retry.
+            query = new Query(conversation, startActual, end, false);
+        } else if (start.getTimestamp() == 0) {
+            query = new Query(conversation, startActual, end, false);
+            query.reference = completed == null && hasBoundary && conversation.countMessages() > 0
+                    ? conversation.getFirstMamReference() : null;
+            if (query.reference != null) {
+                query.cursorFallbackEnd = purpose == MucHistoryPurpose.MANUAL_PAGE && end > 0
+                        ? end : oldestLoadedMessageTimestamp(conversation);
             }
+        } else {
+            if (allowCatchup) {
+                MamReference maxCatchup = MamReference.max(startActual, System.currentTimeMillis() - Config.MAM_MAX_CATCHUP);
+                if (maxCatchup.greaterThan(startActual)) {
+                    reverseCatchup = new Query(conversation, startActual, maxCatchup.getTimestamp(), false);
+                }
+                query = new Query(conversation, maxCatchup, end, true);
+            } else {
+                query = new Query(conversation, startActual, end, false);
+            }
+        }
+        synchronized (this.queries) {
+            // Build outside the registry lock: constructors may acquire Conversation.
+            if (conversation.getMode() == Conversation.MODE_MULTI) {
+                for (Query active : queries) if (active.conversation == conversation) return null;
+            }
+            if (purpose == MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP)
+                conversation.setFirstMamReference(null);
             query.mucHistoryPurpose = purpose;
             final CatchupCompletion completion = completed == null ? null
                     : new CatchupCompletion(reverseCatchup == null ? 1 : 2, completed);
             query.mucCatchupCompleted = completion;
+            query.callback = callback; // Install before transport can complete synchronously.
             this.queries.add(query);
             if (reverseCatchup != null) {
                 reverseCatchup.diagnostics = query.diagnostics.split();
                 reverseCatchup.mucCatchupCompleted = completion;
                 this.queries.add(reverseCatchup);
-                this.execute(reverseCatchup);
+                // Reserve both ranges, but send only one MUC range at a time.
+                if (query.muc()) reverseCatchup.followingRange = query;
             }
-            this.execute(query);
-            return query;
         }
+        // Transport and callbacks must never run under the query registry monitor.
+        if (reverseCatchup != null) this.execute(reverseCatchup);
+        if (reverseCatchup == null || !query.muc()) this.execute(query);
+        return query;
     }
 
     private static long oldestLoadedMessageTimestamp(final Conversation conversation) {
@@ -282,6 +311,21 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
     }
 
     private void execute(final Query query) {
+        synchronized (this.queries) {
+            if (!this.queries.contains(query)) return;
+        }
+        if (query.muc()) {
+            final XmppConnectionService.HistoryActionResult availability =
+                    mXmppConnectionService.mucHistoryAvailability(query.conversation);
+            if (availability != XmppConnectionService.HistoryActionResult.STARTED
+                    || query.account != query.conversation.getAccount()
+                    || query.membershipGeneration != query.conversation.getMucOptions().getJoinAttempt().getMembershipGeneration()) {
+                query.actionResult = availability == XmppConnectionService.HistoryActionResult.STARTED
+                        ? XmppConnectionService.HistoryActionResult.MUC_NOT_JOINED : availability;
+                finishTerminalQuery(query, false);
+                return;
+            }
+        }
         final Account account = query.getAccount();
         if (account.getStatus() == Account.State.ONLINE) {
             final Conversation conversation = query.getConversation();
@@ -315,7 +359,14 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                                         + ": ignoring MAM iq result because query had been killed");
                     }
                 } else if (p.getType() == Iq.Type.RESULT && query.isLegacy()) {
-                    // Legacy MAM delivers <fin/> in a message stanza.
+                    // An IQ result cancels the transport timeout, but legacy fin is still owed.
+                    query.finTimeout = mXmppConnectionService.scheduleMamFinTimeout(() -> {
+                        query.diagnosticReason = MamDiagnostics.Reason.TIMEOUT;
+                        finishTerminalQuery(query, false);
+                    });
+                    synchronized (this.queries) {
+                        if (!queries.contains(query) && query.finTimeout != null) query.finTimeout.cancel(false);
+                    }
                 } else if (p.getType() == Iq.Type.ERROR
                         && "item-not-found".equals(p.getErrorCondition())
                         && query.canRetryWithoutReference()) {
@@ -344,27 +395,47 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
 
     private void finishTerminalQuery(final Query query, final boolean done, final boolean complete) {
         final boolean locallyDurable = query.persistence.finishPage();
+        if (!locallyDurable) query.actionResult = XmppConnectionService.HistoryActionResult.PERSISTENCE_FAILURE;
+        else if (query.actionResult == null && !complete
+                && query.diagnosticReason != MamDiagnostics.Reason.CAP)
+            query.actionResult = XmppConnectionService.HistoryActionResult.SERVER_ERROR;
+        else if (query.actionResult == null && done)
+            query.actionResult = XmppConnectionService.HistoryActionResult.HISTORY_EXHAUSTED;
+        synchronized (this.queries) {
+            if (!this.queries.remove(query)) return; // stale timeout/error owns no completion
+        }
+        if (query.finTimeout != null) query.finTimeout.cancel(false);
+        synchronized (this.pendingQueries) { this.pendingQueries.remove(query); }
         try {
-            finalizeQuery(query, done);
-        } catch (final IllegalStateException e) {
-            // Query may have been killed while an IQ timeout/error was already in flight.
-            return;
+            publishQuery(query, done && locallyDurable);
+        } finally {
+            query.diagnostics.end(query.diagnosticReason);
+            if (query.isCatchup() && query.getActualMessageCount() > 0) {
+                mXmppConnectionService
+                        .getNotificationService()
+                        .finishBacklog(true, query.getAccount());
+            }
+            final CatchupCompletion completed = query.mucCatchupCompleted;
+            query.mucCatchupCompleted = null;
+            if (completed != null) completed.accept(complete && locallyDurable,
+                    complete && done && query.getPagingOrder() == PagingOrder.REVERSE);
+            final Conversation conversation = query.getConversation();
+            if (conversation != null && conversation.getMode() == Conversation.MODE_MULTI) {
+                mXmppConnectionService.onMucHistoryQueryFinished(conversation);
+            }
+            final Query following = query.followingRange;
+            query.followingRange = null;
+            if (following != null) {
+                if (query.diagnosticReason == MamDiagnostics.Reason.CANCEL
+                        || query.diagnosticReason == MamDiagnostics.Reason.RECONNECT) {
+                    following.diagnosticReason = query.diagnosticReason;
+                    finishTerminalQuery(following, false);
+                } else {
+                    execute(following);
+                }
+            }
+            processPostponed(query);
         }
-        query.diagnostics.end(query.diagnosticReason);
-        if (query.isCatchup() && query.getActualMessageCount() > 0) {
-            mXmppConnectionService
-                    .getNotificationService()
-                    .finishBacklog(true, query.getAccount());
-        }
-        final CatchupCompletion completed = query.mucCatchupCompleted;
-        query.mucCatchupCompleted = null;
-        if (completed != null) completed.accept(complete && locallyDurable,
-                complete && done && query.getPagingOrder() == PagingOrder.REVERSE);
-        final Conversation conversation = query.getConversation();
-        if (conversation != null && conversation.getMode() == Conversation.MODE_MULTI) {
-            mXmppConnectionService.onMucHistoryQueryFinished(conversation);
-        }
-        processPostponed(query);
     }
 
     private void retryQueryWithoutReference(final Query query) {
@@ -374,12 +445,14 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         }
         final Query retry = query.retryWithoutReference();
         retry.diagnostics = query.diagnostics.retry();
-        retry.mucCatchupCompleted = query.mucCatchupCompleted;
-        query.mucCatchupCompleted = null;
         synchronized (this.queries) {
             if (!this.queries.remove(query)) {
                 return;
             }
+            retry.mucCatchupCompleted = query.mucCatchupCompleted;
+            query.mucCatchupCompleted = null;
+            retry.followingRange = query.followingRange;
+            query.followingRange = null;
             this.queries.add(retry);
         }
         query.diagnostics.end(MamDiagnostics.Reason.FALLBACK);
@@ -390,15 +463,6 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                         + ": MAM RSM cursor was not found; retrying from timestamp "
                         + AbstractGenerator.getTimestamp(retry.getFallbackStart()));
         this.execute(retry);
-    }
-
-    private void finalizeQuery(final Query query, boolean done) {
-        synchronized (this.queries) {
-            if (!this.queries.remove(query)) {
-                throw new IllegalStateException("Unable to remove query from queries");
-            }
-        }
-        publishQuery(query, done);
     }
 
     private void publishQuery(final Query query, final boolean done) {
@@ -497,6 +561,11 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             return;
         }
         boolean complete = fin.getAttributeAsBoolean("complete");
+        if (!complete && query.pageResultCount == 0) {
+            query.diagnosticReason = MamDiagnostics.Reason.BOUNDARY;
+            finishTerminalQuery(query, false);
+            return;
+        }
         Element set = fin.findChild("set", "http://jabber.org/protocol/rsm");
         Element last = set == null ? null : set.findChild("last");
         String count = set == null ? null : set.findChildContent("count");
@@ -507,7 +576,8 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             finishTerminalQuery(query, false);
             return;
         }
-        if (query.mucHistoryPurpose == MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP && !complete) {
+        if ((query.mucHistoryPurpose == MucHistoryPurpose.INITIAL_RECENT_BOOTSTRAP
+                || (query.muc() && query.mucHistoryPurpose == MucHistoryPurpose.MANUAL_PAGE)) && !complete) {
             // The server may cap a page below our RSM max (XEP-0313 section 4.3.1).
             // A valid nonempty page completes this bounded operation, not the whole archive.
             // Never walk older pages automatically; the P0 barrier remains mandatory.
@@ -526,7 +596,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                 (!query.isCatchup()
                                 && query.getTotalCount() >= query.getRequestedPageSize())
                         || query.getTotalCount() >= Config.MAM_MAX_MESSAGES;
-        if (query.getConversation() != null) {
+        if (query.getConversation() != null && query.getPagingOrder() == PagingOrder.REVERSE) {
             query.getConversation().setFirstMamReference(first == null ? null : first.getContent());
         }
         if (complete || relevant == null || abort) {
@@ -538,16 +608,9 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                 // XEP-0313: complete='true' is authoritative. RSM <count/> is optional and must
                 // not be required to decide that paging has reached the end of this query.
                 done = true;
-            } else if (count != null) {
-                try {
-                    done = Integer.parseInt(count) <= query.getTotalCount();
-                } catch (NumberFormatException e) {
-                    done = false;
-                }
             } else {
-                done = query.getTotalCount() == 0;
+                done = false; // Only authoritative complete proves exhaustion of this range.
             }
-            done = done || (query.getActualMessageCount() == 0 && !query.isCatchup());
             query.diagnosticReason = complete ? MamDiagnostics.Reason.COMPLETE
                     : abort ? MamDiagnostics.Reason.CAP : MamDiagnostics.Reason.BOUNDARY;
             finishTerminalQuery(query, done, complete);
@@ -575,8 +638,11 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                 if (!this.queries.remove(query)) return;
                 nextQuery.mucCatchupCompleted = query.mucCatchupCompleted;
                 query.mucCatchupCompleted = null;
+                nextQuery.followingRange = query.followingRange;
+                query.followingRange = null;
                 this.queries.add(nextQuery);
             }
+            if (query.finTimeout != null) query.finTimeout.cancel(false);
             // Ownership transfers before callbacks/transport; no external call holds the registry
             // lock, and a reentrant response can never find an unregistered next page.
             try {
@@ -621,7 +687,6 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                 query.getAccount().getJid().asBareJid()
                         + ": killing mam query prematurely");
         query.diagnosticReason = MamDiagnostics.Reason.CANCEL;
-        query.callback = null;
         finishTerminalQuery(query, false);
     }
 
@@ -665,6 +730,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
 
     public enum MucHistoryPurpose {
         INITIAL_RECENT_BOOTSTRAP,
+        MANUAL_PAGE,
         MISSING_RANGE_RECOVERY
     }
 
@@ -715,11 +781,16 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         public MamDiagnostics.Page diagnostics = MamDiagnostics.page();
         private MamDiagnostics.Reason diagnosticReason = MamDiagnostics.Reason.ERROR;
         private CatchupCompletion mucCatchupCompleted;
+        private Query followingRange;
+        private volatile java.util.concurrent.ScheduledFuture<?> finTimeout;
+        private long membershipGeneration;
+        private XmppConnectionService.HistoryActionResult actionResult;
         private MucHistoryPurpose mucHistoryPurpose = MucHistoryPurpose.MISSING_RANGE_RECOVERY;
         public MucHistoryPurpose getMucHistoryPurpose() { return mucHistoryPurpose; }
         private HashSet<ReceiptRequest> pendingReceiptRequests = new HashSet<>();
         private HashSet<ReceiptRequest> receiptRequests = new HashSet<>();
         private int totalCount = 0;
+        private int pageResultCount = 0;
         private int actualCount = 0;
         private int actualInThisQuery = 0;
         private long start;
@@ -741,6 +812,8 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         Query(Conversation conversation, MamReference start, long end, boolean catchup) {
             this(conversation.getAccount(), Version.get(conversation.getAccount(), conversation), catchup ? start : start.timeOnly(), end);
             this.conversation = conversation;
+            this.membershipGeneration = conversation.getMode() == Conversation.MODE_MULTI
+                    ? conversation.getMucOptions().getJoinAttempt().getMembershipGeneration() : 0;
             this.pagingOrder = catchup ? PagingOrder.NORMAL : PagingOrder.REVERSE;
             this.catchup = catchup;
         }
@@ -770,6 +843,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                             new MamReference(this.fallbackStart, reference),
                             this.end);
             query.conversation = conversation;
+            query.membershipGeneration = membershipGeneration;
             query.mucHistoryPurpose = mucHistoryPurpose;
             query.persistence = persistence.nextPage();
             query.totalCount = totalCount;
@@ -795,6 +869,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
                             new MamReference(this.fallbackStart),
                             retryEnd);
             query.conversation = conversation;
+            query.membershipGeneration = membershipGeneration;
             query.mucHistoryPurpose = mucHistoryPurpose;
             query.persistence = persistence.nextPage();
             query.pagingOrder = pagingOrder;
@@ -901,6 +976,10 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
 
         public void callback(boolean done) {
             if (this.callback != null) {
+                if (actionResult != null) {
+                    MamDiagnostics.action(actionResult);
+                    this.callback.onHistoryActionResult(actionResult, conversation);
+                }
                 this.callback.onMoreMessagesLoaded(actualCount, conversation);
             }
         }
@@ -919,6 +998,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
 
         public void incrementMessageCount() {
             this.totalCount++;
+            this.pageResultCount++;
             this.diagnostics.received();
         }
 
