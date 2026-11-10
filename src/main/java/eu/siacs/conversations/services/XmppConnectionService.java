@@ -1639,6 +1639,10 @@ public class XmppConnectionService extends Service {
             }
             if (caption != null) {
                 if (deferCaption) {
+                    // Without a wire attach-to relation (MUC, reply), preserve the media
+                    // dependency locally so the held text is released after upload.
+                    LocalDeferredMediaCaption.rememberWithoutXepRelation(
+                            caption, mediaMessages.get(0));
                     // Publish/persist through the normal text pipeline, including protected-text
                     // SCS handling, but keep the stanza local until every related media transport
                     // has actually been released.
@@ -3722,8 +3726,17 @@ public class XmppConnectionService extends Service {
     private boolean isDeferredMediaCaptionBlocked(
             final Conversation conversation, final Message candidate) {
         final List<Message> snapshot = conversation.snapshotMessages();
-        final Message anchor = MediaCaptionResolver.resolveAnchor(candidate, snapshot);
-        return anchor != null && !isMediaTransactionTransportReady(anchor, snapshot);
+        final Message anchor = resolveDeferredMediaCaptionAnchor(conversation, candidate, snapshot);
+        return (anchor == null && LocalDeferredMediaCaption.isManaged(candidate))
+                || (anchor != null && !isMediaTransactionTransportReady(anchor, snapshot));
+    }
+
+    @Nullable
+    private static Message resolveDeferredMediaCaptionAnchor(
+            final Conversation conversation, final Message candidate, final List<Message> snapshot) {
+        final Message related = MediaCaptionResolver.resolveAnchor(candidate, snapshot);
+        return related != null ? related
+                : LocalDeferredMediaCaption.findAnchor(conversation, candidate, snapshot);
     }
 
     public void releaseDeferredMediaCaptions(final Message completedMedia) {
@@ -3735,7 +3748,7 @@ public class XmppConnectionService extends Service {
             if (candidate.getStatus() != Message.STATUS_WAITING) {
                 continue;
             }
-            final Message anchor = MediaCaptionResolver.resolveAnchor(candidate, snapshot);
+            final Message anchor = resolveDeferredMediaCaptionAnchor(conversation, candidate, snapshot);
             if (anchor == null
                     || !sameLocalMediaTransaction(anchor, completedMedia)
                     || !isMediaTransactionTransportReady(anchor, snapshot)) {
@@ -3763,7 +3776,7 @@ public class XmppConnectionService extends Service {
                 && anchorGroupId.equals(completedGroupId);
     }
 
-    private static boolean isMediaTransactionTransportReady(
+    static boolean isMediaTransactionTransportReady(
             final Message anchor, final List<Message> snapshot) {
         final String mediaGroupId = anchor.getMediaGroupId();
         for (final Message member : snapshot) {
