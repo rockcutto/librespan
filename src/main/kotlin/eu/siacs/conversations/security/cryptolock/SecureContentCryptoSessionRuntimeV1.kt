@@ -141,6 +141,41 @@ internal object SecureContentCryptoSessionPolicyV1 {
  */
 object SecureContentCryptoSessionRuntimeV1 {
     private val monitor = Any()
+    private val presentationInvalidationListeners =
+        java.util.concurrent.CopyOnWriteArraySet<Runnable>()
+
+    /**
+     * Memory-only presentation consumers must retire stale work synchronously at this boundary.
+     * Called under monitor: listeners must NOT query crypto/privacy state, wait for the UI thread,
+     * or perform network/disk work. Registration itself never takes the crypto monitor.
+     */
+    @JvmStatic
+    fun addPresentationInvalidationListener(listener: Runnable) {
+        presentationInvalidationListeners.add(listener)
+    }
+
+    @JvmStatic
+    fun removePresentationInvalidationListener(listener: Runnable) {
+        presentationInvalidationListeners.remove(listener)
+    }
+
+    /** Service privacy evaluation may defer key retirement until XMPP has disconnected. */
+    @JvmStatic
+    fun invalidatePresentationForPrivacy() {
+        synchronized(monitor) {
+            invalidatePresentationLocked()
+        }
+    }
+
+    private fun invalidatePresentationLocked() {
+        for (listener in presentationInvalidationListeners) {
+            try {
+                listener.run()
+            } catch (_: RuntimeException) {
+                // A presentation consumer must not prevent key retirement. No sensitive logging.
+            }
+        }
+    }
 
     @Volatile
     private var initialized = false
@@ -541,6 +576,8 @@ object SecureContentCryptoSessionRuntimeV1 {
 
     private fun retireMasterKeyLocked() {
         val hadKey = activeMasterKey != null
+        // INACTIVE SCS and repeated suspension can have presentation data without an AMK.
+        if (!hadKey) invalidatePresentationLocked()
         activeMasterKey?.close()
         activeMasterKey = null
         if (hadKey) {
@@ -549,6 +586,7 @@ object SecureContentCryptoSessionRuntimeV1 {
     }
 
     private fun bumpEpochLocked() {
+        invalidatePresentationLocked()
         epoch =
             if (epoch == Long.MAX_VALUE) {
                 1L

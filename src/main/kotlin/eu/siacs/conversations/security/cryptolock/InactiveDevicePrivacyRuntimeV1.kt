@@ -131,6 +131,8 @@ object InactiveDevicePrivacyRuntimeV1 {
                     store.write(suspended)
                     if (suspendCrypto) {
                         SecureContentCryptoSessionRuntimeV1.suspendForPrivacy(context)
+                    } else {
+                        SecureContentCryptoSessionRuntimeV1.invalidatePresentationForPrivacy()
                     }
                     return true
                 }
@@ -155,6 +157,8 @@ object InactiveDevicePrivacyRuntimeV1 {
             }
             if (suspendCrypto) {
                 SecureContentCryptoSessionRuntimeV1.suspendForPrivacy(context)
+            } else {
+                SecureContentCryptoSessionRuntimeV1.invalidatePresentationForPrivacy()
             }
             return true
         }

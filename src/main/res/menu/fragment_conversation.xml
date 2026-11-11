@@ -80,6 +80,13 @@
         android:title="@string/conversation_menu_background"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_external_jpeg"
+        android:icon="@drawable/ic_visibility_24dp"
+        android:orderInCategory="60"
+        android:title="@string/external_jpeg"
+        app:showAsAction="never" />
+
     <!-- A separate group gives the lifecycle/data actions a visual divider. -->
     <group android:id="@+id/conversation_menu_lifecycle">
         <item

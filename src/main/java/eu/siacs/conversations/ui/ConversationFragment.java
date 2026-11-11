@@ -5687,6 +5687,9 @@ public class ConversationFragment extends XmppFragment
             case R.id.action_ongoing_call:
                 returnToOngoingCall();
                 break;
+            case R.id.action_external_jpeg:
+                showExternalJpegSettings();
+                break;
             case R.id.action_toggle_pinned:
                 togglePinned();
                 break;
@@ -5729,6 +5732,11 @@ public class ConversationFragment extends XmppFragment
         tintConversationMenuItem(
                 menu,
                 R.id.action_set_custom_bg,
+                com.google.android.material.R.attr.colorTertiary,
+                false);
+        tintConversationMenuItem(
+                menu,
+                R.id.action_external_jpeg,
                 com.google.android.material.R.attr.colorTertiary,
                 false);
         tintConversationMenuItem(
@@ -5852,6 +5860,37 @@ public class ConversationFragment extends XmppFragment
             startActivity(
                     RtpSessionActivity.createOngoingCallIntent(activity, ongoingRtpSession.get()));
         }
+    }
+
+    private void showExternalJpegSettings() {
+        if (activity == null || conversation == null) return;
+        final Conversation room = conversation;
+        final XmppActivity dialogActivity = activity;
+        // Reuse the standard Material 3 settings row and its right-aligned switch.
+        final View settingRow = dialogActivity.getLayoutInflater().inflate(
+                R.layout.item_binary_setting, null, false);
+        final TextView title = settingRow.findViewById(R.id.binary_setting_title);
+        final com.google.android.material.materialswitch.MaterialSwitch toggle =
+                settingRow.findViewById(R.id.binary_setting_switch);
+        title.setText(R.string.external_jpeg_enable);
+        toggle.setChecked(eu.siacs.conversations.ui.preview.JpegPreferences.enabled(
+                dialogActivity, room.getUuid()));
+
+        final androidx.appcompat.app.AlertDialog dialog =
+                new MaterialAlertDialogBuilder(dialogActivity)
+                        .setTitle(R.string.external_jpeg)
+                        .setView(settingRow)
+                        .create();
+        toggle.setOnCheckedChangeListener((button, enabled) -> {
+            eu.siacs.conversations.ui.preview.JpegPreferences.set(
+                    dialogActivity, room.getUuid(), enabled);
+            dialog.dismiss();
+            if (activity == dialogActivity && conversation == room && messageListAdapter != null) {
+                messageListAdapter.notifyDataSetChanged();
+            }
+        });
+        settingRow.setOnClickListener(v -> toggle.toggle());
+        dialog.show();
     }
 
     private void togglePinned() {

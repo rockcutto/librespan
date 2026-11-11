@@ -1889,4 +1889,7 @@ Your server administrator may then be able to read message contents in transit o
     <string name="mam_action_server_error">The archive request failed or timed out. Check archive access and retry.</string>
     <string name="mam_recovery_completed">History recovery completed.</string>
     <string name="mam_recovery_incomplete">History recovery is incomplete. Latest messages may have arrived; retry the missing range.</string>
+    <string name="external_jpeg">Images from links</string>
+    <string name="external_jpeg_enable">Show images in this chat</string>
+    <string name="external_jpeg_privacy">Images are downloaded from external servers, which can see your IP address and the request. Only HTTPS is used. If a secure connection is unavailable, the image remains a normal link.</string>
 </resources>

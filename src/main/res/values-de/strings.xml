@@ -2166,4 +2166,7 @@
     <string name="mam_action_server_error">Die Archivanfrage ist fehlgeschlagen oder abgelaufen. Archivzugriff prüfen und erneut versuchen.</string>
     <string name="mam_recovery_completed">Verlauf erfolgreich wiederhergestellt.</string>
     <string name="mam_recovery_incomplete">Der Verlauf ist noch unvollständig. Neueste Nachrichten können angekommen sein; versuche die Wiederherstellung erneut.</string>
+    <string name="external_jpeg">Bilder aus Links</string>
+    <string name="external_jpeg_enable">Bilder in diesem Chat anzeigen</string>
+    <string name="external_jpeg_privacy">Bilder werden von externen Servern geladen, die deine IP-Adresse und die Anfrage sehen können. Es wird nur HTTPS verwendet. Wenn keine sichere Verbindung verfügbar ist, bleibt das Bild ein normaler Link.</string>
 </resources>

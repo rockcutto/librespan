@@ -3645,6 +3645,25 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
             return view;
         }
 
+        if (viewHolder.externalJpeg == null) {
+            viewHolder.externalJpeg = new eu.siacs.conversations.ui.preview.JpegPreviewView(activity);
+            LinearLayout column = view.findViewById(R.id.message_content_column);
+            column.addView(viewHolder.externalJpeg, new LinearLayout.LayoutParams(dpToPx(200), dpToPx(140)));
+        }
+        okhttp3.HttpUrl boundPreview = null;
+        final Conversation previewConversation = (Conversation) message.getConversation();
+        final boolean externalEnabled = eu.siacs.conversations.ui.preview.JpegPreferences.enabled(
+                activity, previewConversation.getUuid());
+        final boolean previewEligible = externalEnabled && !message.isFileOrImage() && !message.isOOb()
+                && !message.isDeleted() && !message.isModerated() && message.getTransferable() == null
+                && activity.xmppConnectionService != null
+                && !activity.xmppConnectionService.useTorToConnect()
+                && !previewConversation.getAccount().isOnion();
+        final eu.siacs.conversations.ui.preview.JpegLoader.Permit previewAccess = previewEligible
+                ? eu.siacs.conversations.ui.preview.JpegAccess.capture(activity) : null;
+        final okhttp3.HttpUrl externalUrl = previewEligible
+                ? eu.siacs.conversations.ui.preview.JpegPolicy.firstReadable(message, previewAccess) : null;
+
         final boolean revealResolvedProtectedText =
                 prepareProtectedTextRevealForBind(viewHolder, message);
         if (revealResolvedProtectedText) {
@@ -3790,7 +3809,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
             } else if (message.bodyIsOnlyEmojis() && message.getType() != Message.TYPE_PRIVATE) {
                 renderedEmoji = true;
                 displayEmojiMessage(viewHolder, message, message.getBody().trim(), bubbleColor);
-            } else if (message.treatAsDownloadable()) {
+            } else if (message.treatAsDownloadable() && externalUrl == null) {
                 final String downloadableMime = message.getMimeType();
                 if (downloadableMime != null && downloadableMime.startsWith("audio/")) {
                     displayDownloadableMessage(
@@ -3822,8 +3841,11 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                         bubbleColor,
                         type,
                         revealResolvedProtectedText);
+                boundPreview = externalUrl;
             }
         }
+
+        viewHolder.externalJpeg.bind(boundPreview, previewAccess);
 
         final Message mediaCaption = isOutgoingMediaPreparing ? null : getMediaCaption(message);
         if (!isOutgoingMediaPreparing) {
@@ -4443,6 +4465,7 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
         public ImageView edit_indicator;
         public RelativeLayout audioPlayer;
         protected LinearLayout message_box;
+        protected eu.siacs.conversations.ui.preview.JpegPreviewView externalJpeg;
         protected MaterialButton download_button;
         protected View fileCard;
         protected ImageView fileIcon;

@@ -1922,4 +1922,7 @@
     <string name="mam_action_server_error">Запрос архива завершился ошибкой или таймаутом. Проверьте доступ к архиву и повторите попытку.</string>
     <string name="mam_recovery_completed">Восстановление истории завершено.</string>
     <string name="mam_recovery_incomplete">История восстановлена не полностью. Последние сообщения могли загрузиться; повторите восстановление пропуска.</string>
+    <string name="external_jpeg">Изображения по ссылкам</string>
+    <string name="external_jpeg_enable">Показывать изображения в этом чате</string>
+    <string name="external_jpeg_privacy">Изображения загружаются с внешних серверов, которые могут видеть ваш IP-адрес и факт запроса. Используется только HTTPS. Если защищённое соединение недоступно, изображение останется обычной ссылкой.</string>
 </resources>
