@@ -1239,6 +1239,9 @@ public class XmppConnection implements Runnable {
                 Config.LOGTAG,
                 account.getJid().asBareJid() + ": online with resource " + account.getResource());
         changeStatus(Account.State.ONLINE);
+        if (account.isOnlineAndConnected()) {
+            mXmppConnectionService.getPushManagementService().onBound(account);
+        }
     }
 
     private void processFailed(final Failed failed, final boolean sendBindRequest)

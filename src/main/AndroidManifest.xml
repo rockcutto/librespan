@@ -77,6 +77,9 @@
         <intent>
             <action android:name="org.unifiedpush.android.connector.MESSAGE" />
         </intent>
+        <intent>
+            <action android:name="org.unifiedpush.android.distributor.REGISTER" />
+        </intent>
     </queries>
 
 

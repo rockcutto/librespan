@@ -71,6 +71,11 @@
         android:key="notification_category"
         android:title="@string/pref_notification_settings">
 
+        <Preference
+            android:key="foss_push_client"
+            android:title="@string/foss_push_title"
+            android:summary="@string/foss_push_summary" />
+
         <intent
             android:action="android.intent.action.VIEW"
             android:targetClass="eu.siacs.conversations.ui.SettingsActivity"

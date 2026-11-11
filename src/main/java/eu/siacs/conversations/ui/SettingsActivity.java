@@ -14,6 +14,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -29,10 +30,13 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ArrayAdapter;
+import android.widget.EditText;
 import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -260,11 +264,117 @@ public class SettingsActivity extends XmppActivity implements OnSharedPreference
         final Preference accountPreference =
                 mSettingsFragment.findPreference(UnifiedPushDistributor.PREFERENCE_ACCOUNT);
         reconfigureUpAccountPreference(accountPreference);
+        configureFossPushPreference();
         refreshBackgroundDeliveryPreference();
         configureNeoContAccountPreferences();
         configureLocalAccountDataCleanup();
         refreshLocalStorageUsage();
         continuePendingOmemoIdentityAction();
+    }
+
+    private void configureFossPushPreference() {
+        final Preference preference = mSettingsFragment.findPreference("foss_push_client");
+        if (preference == null || xmppConnectionService == null) return;
+        preference.setOnPreferenceClickListener(clicked -> {
+            final List<Account> accounts = new ArrayList<>();
+            for (final Account account : xmppConnectionService.getAccounts()) {
+                if (account.isEnabled()) accounts.add(account);
+            }
+            if (accounts.isEmpty()) {
+                Toast.makeText(this, R.string.foss_push_account, Toast.LENGTH_LONG).show();
+                return true;
+            }
+            final String[] labels = new String[accounts.size()];
+            for (int i = 0; i < accounts.size(); i++) {
+                labels[i] = accounts.get(i).getJid().asBareJid().toString();
+            }
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.foss_push_account)
+                    .setItems(labels, (dialog, index) -> showFossPushOptions(accounts.get(index)))
+                    .show();
+            return true;
+        });
+    }
+
+    private void showFossPushOptions(final Account account) {
+        final var push = xmppConnectionService.getPushManagementService();
+        final String state = push.status(account);
+        final int status = switch (state) {
+            case "connected" -> R.string.foss_push_connected;
+            case "error" -> R.string.foss_push_error;
+            case "cancelling" -> R.string.foss_push_cancelling;
+            case "NETWORK" -> R.string.foss_push_network;
+            case "ACTION_REQUIRED" -> R.string.foss_push_action;
+            case "VAPID_REQUIRED" -> R.string.foss_push_vapid_required;
+            case "UNREGISTERED" -> R.string.foss_push_unregistered;
+            case "off" -> R.string.foss_push_off;
+            default -> R.string.foss_push_connecting;
+        };
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(account.getJid().asBareJid().toString())
+                .setMessage(getString(status))
+                .setPositiveButton(R.string.connect, (dialog, which) -> showFossPushForm(account))
+                .setNeutralButton(R.string.foss_push_check, (dialog, which) -> {
+                    push.retry(account);
+                    showFossPushOptions(account);
+                })
+                .setNegativeButton(R.string.foss_push_disconnect, (dialog, which) -> {
+                    push.disconnect(account);
+                }).show();
+    }
+
+    private void showFossPushForm(final Account account) {
+        final List<String> packages = new ArrayList<>();
+        final List<String> labels = new ArrayList<>();
+        packages.add("");
+        labels.add(getString(R.string.foss_push_google));
+        final java.util.LinkedHashSet<String> installed = new java.util.LinkedHashSet<>();
+        for (final ResolveInfo info : getPackageManager().queryBroadcastReceivers(
+                new Intent("org.unifiedpush.android.distributor.REGISTER"), 0)) {
+            if (info.activityInfo != null && info.activityInfo.exported
+                    && !getPackageName().equals(info.activityInfo.packageName)) {
+                installed.add(info.activityInfo.packageName);
+            }
+        }
+        for (final String name : installed) {
+            packages.add(name);
+            labels.add(getString(R.string.foss_push_external, name));
+        }
+        final LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        final int inset = (int) (20 * getResources().getDisplayMetrics().density);
+        form.setPadding(inset, inset / 2, inset, 0);
+        final Spinner delivery = new Spinner(this);
+        delivery.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, labels));
+        form.addView(delivery);
+        final EditText serviceJid = new EditText(this);
+        serviceJid.setSingleLine(true);
+        serviceJid.setHint(R.string.foss_push_service);
+        form.addView(serviceJid);
+        final EditText vapid = new EditText(this);
+        vapid.setSingleLine(true);
+        vapid.setHint(R.string.foss_push_vapid);
+        form.addView(vapid);
+        final TextView notice = new TextView(this);
+        notice.setText(R.string.foss_push_google_notice);
+        notice.setPadding(0, inset / 2, 0, 0);
+        form.addView(notice);
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.foss_push_title)
+                .setView(form)
+                .setPositiveButton(R.string.connect, (dialog, which) -> {
+                    final int index = delivery.getSelectedItemPosition();
+                    final boolean embedded = index == 0;
+                    final boolean accepted = xmppConnectionService.getPushManagementService().connect(
+                            account, embedded ? "embedded" : "external",
+                            serviceJid.getText().toString().trim(),
+                            vapid.getText().toString().trim(), packages.get(index));
+                    if (!accepted) Toast.makeText(this, R.string.foss_push_invalid,
+                            Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void configureNeoContNavigation() {

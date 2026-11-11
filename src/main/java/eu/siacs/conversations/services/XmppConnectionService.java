@@ -255,6 +255,14 @@ public class XmppConnectionService extends Service {
     public static final String ACTION_SECURE_CONTENT_UNLOCKED = "secure_content_unlocked";
     public static final String ACTION_FCM_TOKEN_REFRESH = "fcm_token_refresh";
     public static final String ACTION_FCM_MESSAGE_RECEIVED = "fcm_message_received";
+    public static final String ACTION_FOSS_PUSH_ENDPOINT = "foss_push_endpoint";
+    public static final String ACTION_FOSS_PUSH_FAILED = "foss_push_failed";
+    public static final String ACTION_FOSS_PUSH_DRAIN = "foss_push_drain";
+    public static final String ACTION_FOSS_PUSH_RENEW = "foss_push_renew";
+    public static final String ACTION_FOSS_PUSH_UNREGISTERED = "foss_push_unregistered";
+    public static final String ACTION_FOSS_PUSH_REVOKED = "foss_push_revoked";
+    public static final String ACTION_FOSS_PUSH_UNAVAILABLE = "foss_push_unavailable";
+    public static final String ACTION_FOSS_PUSH_WAKE = "foss_push_wake";
     public static final String ACTION_DISMISS_CALL = "dismiss_call";
     public static final String ACTION_END_CALL = "end_call";
     public static final String ACTION_PROVISION_ACCOUNT = "provision_account";
@@ -426,7 +434,7 @@ public class XmppConnectionService extends Service {
     private final MucMembershipAdmission mucMembershipAdmission = new MucMembershipAdmission(this);
     private final MucBootstrapCoordinator mucBootstrapCoordinator = new MucBootstrapCoordinator(this);
     private final MessageArchiveService mMessageArchiveService = new MessageArchiveService(this);
-    private final PushManagementService mPushManagementService = new PushManagementService(this);
+    private PushManagementService mPushManagementService;
     private final QuickConversationsService mQuickConversationsService =
             new QuickConversationsService(this);
     private final ConversationsFileObserver fileObserver =
@@ -1947,6 +1955,33 @@ public class XmppConnectionService extends Service {
             case ACTION_FCM_MESSAGE_RECEIVED:
                 Log.d(Config.LOGTAG, "push message arrived in service. account");
                 break;
+            case ACTION_FOSS_PUSH_ENDPOINT:
+                if (intent != null) {
+                    mPushManagementService.onEndpoint(
+                            intent.getStringExtra("token"), intent.getStringExtra("endpoint"));
+                }
+                break;
+            case ACTION_FOSS_PUSH_FAILED:
+                if (intent != null) mPushManagementService.onFailed(
+                        intent.getStringExtra("token"), intent.getStringExtra("reason"));
+                break;
+            case ACTION_FOSS_PUSH_RENEW:
+                if (intent != null) mPushManagementService.onRenewal(
+                        intent.getStringExtra("push_account_uuid"), intent.getStringExtra("generation"));
+                break;
+            case ACTION_FOSS_PUSH_REVOKED:
+                if (intent != null) mPushManagementService.onActiveUnregistered(
+                        intent.getStringExtra("token"));
+                break;
+            case ACTION_FOSS_PUSH_UNAVAILABLE:
+                if (intent != null) mPushManagementService.onUnavailable(
+                        intent.getStringExtra("token"));
+                break;
+            case ACTION_FOSS_PUSH_UNREGISTERED:
+                if (intent != null) {
+                    mPushManagementService.onDistributorUnregistered(intent.getStringExtra("token"));
+                }
+                break;
             case ACTION_QUICK_LOG:
                 final String message = intent == null ? null : intent.getStringExtra("message");
                 if (message != null && Config.QUICK_LOG) {
@@ -2019,7 +2054,10 @@ public class XmppConnectionService extends Service {
                 }
             }
         }
+        mPushManagementService.drainControlEvents();
         final String pushedAccountHash = extras == null ? null : extras.getString("account");
+        final String fossPushAccountUuid = ACTION_FOSS_PUSH_WAKE.equals(action) && extras != null
+                ? extras.getString("push_account_uuid") : null;
         final boolean interactive = java.util.Objects.equals(ACTION_TRY_AGAIN, action);
         WakeLockHelper.acquire(wakeLock);
         boolean pingNow =
@@ -2034,8 +2072,13 @@ public class XmppConnectionService extends Service {
                 continue;
             }
             try {
+                final boolean deferredFossWake = mPushManagementService.consumePendingWake(account)
+                        && hasInternetConnection();
                 final boolean pushWasMeantForThisAccount =
-                        androidId != null
+                        (fossPushAccountUuid != null
+                                && fossPushAccountUuid.equals(account.getUuid()))
+                        || deferredFossWake
+                        || androidId != null
                                 && CryptoHelper.getAccountFingerprint(account, androidId)
                                         .equals(pushedAccountHash);
                 pingNow |=
@@ -2045,6 +2088,7 @@ public class XmppConnectionService extends Service {
                                 "ui".equals(action),
                                 pushWasMeantForThisAccount,
                                 pingCandidates);
+                mPushManagementService.confirmPendingWake(account);
             } catch (final RuntimeException | AssertionError e) {
                 Log.e(
                         Config.LOGTAG,
@@ -2786,6 +2830,7 @@ public class XmppConnectionService extends Service {
     @SuppressLint("TrulyRandom")
     @Override
     public void onCreate() {
+        mPushManagementService = new PushManagementService(this);
         final android.app.Application application = getApplication();
         if (application instanceof Conversations) {
             ((Conversations) application).addUiStateListener(mUiStateListener);
@@ -6382,6 +6427,7 @@ public class XmppConnectionService extends Service {
             completeAccountRemoval(callback, AccountRemovalResult.FAILED);
             return;
         }
+        mPushManagementService.disconnect(account);
         if (requiresSecureContentRetirementForAccountRemoval(account)) {
             deleteAccountWithSecureRetirement(account, callback);
         } else {

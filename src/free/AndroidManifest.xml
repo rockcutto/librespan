@@ -1,5 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <receiver android:name="org.unifiedpush.android.embedded_fcm_distributor.impl.UnifiedPushReceiver"
+            tools:node="remove" />
+        <receiver android:name=".services.FossEmbeddedDistributor"
+            android:enabled="true" android:exported="false" />
+        <service android:name=".services.FossPushForegroundBridge"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.RAISE_TO_FOREGROUND" />
+            </intent-filter>
+        </service>
+        <receiver android:name=".services.FossPushConnectorReceiver$Embedded"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT" />
+                <action android:name="org.unifiedpush.android.connector.MESSAGE" />
+                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED" />
+                <action android:name="org.unifiedpush.android.connector.UNREGISTERED" />
+                <action android:name="org.unifiedpush.android.connector.TEMP_UNAVAILABLE" />
+            </intent-filter>
+        </receiver>
+        <receiver android:name=".services.FossPushConnectorReceiver$External"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT" />
+                <action android:name="org.unifiedpush.android.connector.MESSAGE" />
+                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED" />
+                <action android:name="org.unifiedpush.android.connector.UNREGISTERED" />
+                <action android:name="org.unifiedpush.android.connector.TEMP_UNAVAILABLE" />
+            </intent-filter>
+        </receiver>
+    </application>
 
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.READ_PROFILE" />

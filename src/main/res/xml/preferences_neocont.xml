@@ -214,6 +214,12 @@
                 android:layout="@layout/preference_subnavigation_row"
                 android:summary="@string/neocont_delivery_reliability_summary"
                 android:title="@string/neocont_delivery_reliability" />
+            <Preference
+                android:key="foss_push_client"
+                android:layout="@layout/preference_subnavigation_row"
+                android:title="@string/foss_push_title"
+                android:summary="@string/foss_push_summary" />
+
             <PreferenceScreen
                 android:key="neocont_push_settings"
                 android:layout="@layout/preference_subnavigation_row"

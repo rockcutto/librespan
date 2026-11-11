@@ -15,6 +15,8 @@
         <exclude domain="sharedpref" path="account_secret_vault_v1.xml" />
         <exclude domain="sharedpref" path="account_secret_migration_v1.xml" />
         <exclude domain="sharedpref" path="database_master_key_v1.xml" />
+        <exclude domain="sharedpref" path="foss_push_client_v1.xml" />
+        <exclude domain="sharedpref" path="foss_push_events_v1.xml" />
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" />
@@ -31,5 +33,7 @@
         <exclude domain="sharedpref" path="account_secret_vault_v1.xml" />
         <exclude domain="sharedpref" path="account_secret_migration_v1.xml" />
         <exclude domain="sharedpref" path="database_master_key_v1.xml" />
+        <exclude domain="sharedpref" path="foss_push_client_v1.xml" />
+        <exclude domain="sharedpref" path="foss_push_events_v1.xml" />
     </device-transfer>
 </data-extraction-rules>
