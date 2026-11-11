@@ -6,9 +6,11 @@ buildscript {
         maven { url "https://www.jitpack.io" }
     }
     dependencies {
+        // Kotlin 2.3 requires D8/R8 8.13.19+
+        classpath 'com.android.tools:r8:8.13.19'
         classpath 'com.android.tools.build:gradle:8.5.2'
         classpath "com.diffplug.spotless:spotless-plugin-gradle:6.25.0"
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0"
     }
 }
 
@@ -33,7 +35,7 @@ configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configu
 }
 
 spotless {
-    ratchetFrom 'cb32e1669afb622a5c5a4540676fc1a11b86a277'
+    // ratchetFrom 'cb32e1669afb622a5c5a4540676fc1a11b86a277' // disabled for git worktree
     java {
         target '**/*.java'
         googleJavaFormat().aosp().reflowLongStrings()
@@ -65,6 +67,9 @@ dependencies {
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
     implementation 'com.google.android.material:material:1.13.0-alpha11'
     implementation 'androidx.work:work-runtime:2.9.1'
+
+    // FOSS embedded FCM experiment
+    implementation 'org.unifiedpush.android:embedded-fcm-distributor:3.1.0'
 
     implementation "androidx.emoji2:emoji2:1.5.0"
     freeImplementation "androidx.emoji2:emoji2-bundled:1.5.0"
