@@ -217,7 +217,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
         } else {
             acceptedAutomatically = false;
             deferToManual();
-            service.getNotificationService().push(secureMessage);
+            service.getNotificationService().refreshMediaNotification(secureMessage);
         }
     }
 
@@ -321,7 +321,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
             catch (HttpDownloadRequestGate.Deferred deferred) { deferToManual(); return; }
             deferToManual();
             if (interactive) showToastForException(failure);
-            else service.getNotificationService().push(secureMessage);
+            else service.getNotificationService().refreshMediaNotification(secureMessage);
         }, STATUS_CHECKING);
     }
 
@@ -482,7 +482,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
         final boolean notify = acceptedAutomatically && !secureMessage.isRead();
         manager.updateConversationUi(true);
         if (notify) {
-            service.getNotificationService().push(secureMessage);
+            service.getNotificationService().refreshMediaNotification(secureMessage);
         }
     }
 
@@ -518,7 +518,7 @@ final class SecureHttpDownloadConnection extends HttpDownloadConnection {
                 if (interactive) {
                     showToastForException(e);
                 } else {
-                    service.getNotificationService().push(secureMessage);
+                    service.getNotificationService().refreshMediaNotification(secureMessage);
                 }
             }
         }

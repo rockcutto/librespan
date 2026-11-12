@@ -133,13 +133,252 @@ public class NotificationService {
     public static final int ONGOING_VIDEO_TRANSCODING_NOTIFICATION_ID =
             NOTIFICATION_ID_MULTIPLIER * 14;
     private final XmppConnectionService mXmppConnectionService;
-    private final LinkedHashMap<String, ArrayList<Message>> notifications = new LinkedHashMap<>();
-    private final HashMap<Conversation, AtomicInteger> mBacklogMessageCounter = new HashMap<>();
+    // A detached generation is no longer an authority for presentation. No plaintext is queued.
+    private static final java.util.concurrent.atomic.AtomicLong NEXT_PRESENTATION =
+            new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.Executor MESSAGE_PRESENTATION_EXECUTOR =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+    private static final java.util.concurrent.atomic.AtomicLong NEXT_MESSAGE_POST =
+            new java.util.concurrent.atomic.AtomicLong();
+    private static final class PostedMessageOwner {
+        final long generation;
+        final long revision = NEXT_MESSAGE_POST.incrementAndGet();
+        PostedMessageOwner(long generation) { this.generation = generation; }
+    }
+    private static final java.util.concurrent.ConcurrentHashMap<String, PostedMessageOwner> POSTED_MESSAGE_OWNERS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final class MessagePresentation {
+        final long generation = NEXT_PRESENTATION.incrementAndGet();
+        final LinkedHashMap<String, ArrayList<Message>> messages = new LinkedHashMap<>();
+        final java.util.Map<String, Long> mediaEpochs = new java.util.HashMap<>();
+        final HashMap<Conversation, AtomicInteger> backlog = new HashMap<>();
+        final java.util.Set<String> presentedMessages = new java.util.HashSet<>();
+    }
+    private final Object notificationLock = new Object();
+    private final Object backlogLock = new Object();
+    private final java.util.concurrent.atomic.AtomicReference<MessagePresentation> messagePresentation =
+            new java.util.concurrent.atomic.AtomicReference<>(new MessagePresentation());
+    private final ThreadLocal<MessagePresentation> scopedPresentation = new ThreadLocal<>();
+    private volatile boolean disposed;
+    private final Runnable retireNotificationPresentation = this::retireNotificationPresentation;
+
+    private MessagePresentation presentation() {
+        final MessagePresentation scoped = scopedPresentation.get();
+        return scoped == null ? messagePresentation.get() : scoped;
+    }
+
+    long notificationGeneration() { return messagePresentation.get().generation; }
+
+    private boolean currentPresentation() {
+        return !disposed && presentation() == messagePresentation.get();
+    }
+
+    private void inPresentation(final long generation, final Runnable operation) {
+        final MessagePresentation state = messagePresentation.get();
+        if (disposed || state.generation != generation) return;
+        final MessagePresentation previous = scopedPresentation.get();
+        scopedPresentation.set(state);
+        try { operation.run(); }
+        finally {
+            if (previous == null) scopedPresentation.remove();
+            else scopedPresentation.set(previous);
+        }
+    }
+
+    private static String notificationKey(final Message message) {
+        return message.getConversationUuid() + "/" + message.getUuid();
+    }
+
+    // Crypto monitor callback: one atomic swap and metadata-only enqueue. No lock, state query,
+    // Binder, file/network access or UI wait. Existing in-flight scopes retain a revoked object.
+    private void retireNotificationPresentation() {
+        final long retired = messagePresentation.getAndSet(new MessagePresentation()).generation;
+        scheduleRetiredNotificationCancellation(retired);
+    }
+
+    void executeMessagePublication(final Runnable work) { MESSAGE_PRESENTATION_EXECUTOR.execute(work); }
+
+    void scheduleRetiredNotificationCancellation(final long generation) {
+        MESSAGE_PRESENTATION_EXECUTOR.execute(() -> cancelRetiredNotifications(generation));
+    }
+
+    void cancelRetiredNotifications(final long generation) {
+        // Same serial lane as message posts. Unknown entries belong to the previous process;
+        // a newer completed post is registered in this serial lane and is never cancelled here.
+        final NotificationManager manager = mXmppConnectionService.getSystemService(NotificationManager.class);
+        if (manager == null) return;
+        try {
+            for (android.service.notification.StatusBarNotification active : manager.getActiveNotifications()) {
+                if (active.getId() != NOTIFICATION_ID) continue;
+                final String key = active.getTag() == null ? "" : active.getTag();
+                final PostedMessageOwner owner = POSTED_MESSAGE_OWNERS.get(key);
+                if (owner == null || (owner.generation == generation && POSTED_MESSAGE_OWNERS.remove(key, owner)))
+                    cancelMessageInAndroid(active.getTag());
+            }
+        } catch (RuntimeException e) { Log.d(Config.LOGTAG, "unable to retire message notifications", e); }
+        POSTED_MESSAGE_OWNERS.entrySet().removeIf(entry -> entry.getValue().generation == generation);
+    }
+
+    void cancelMessageInAndroid(final String tag) {
+        final NotificationManager manager = mXmppConnectionService.getSystemService(NotificationManager.class);
+        if (manager == null) return;
+        try { manager.cancel(tag, NOTIFICATION_ID); }
+        catch (RuntimeException e) { Log.d(Config.LOGTAG, "unable to cancel retired notification", e); }
+    }
+
+    void dispose() {
+        disposed = true;
+        eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
+                .removePresentationInvalidationListener(retireNotificationPresentation);
+        retireNotificationPresentation();
+    }
+
+    long notificationCryptoEpoch() {
+        return eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
+                .snapshot(mXmppConnectionService.getApplicationContext()).getEpoch();
+    }
+
+    boolean notificationAccessAllowed() {
+        return !eu.siacs.conversations.security.cryptolock.InactiveDevicePrivacyRuntimeV1
+                        .evaluateForService(mXmppConnectionService.getApplicationContext())
+                && !eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
+                        .requiresAuthentication(mXmppConnectionService.getApplicationContext());
+    }
+
+    /** Parser-only publication, after checked persistence, duplicate and crypto validation. */
+    public void pushPersistedIncoming(
+            final Message message, final boolean freshLive) {
+        final long generation = notificationGeneration();
+        final long epoch = notificationCryptoEpoch();
+        if (!notificationAccessAllowed()) return;
+        inPresentation(generation, () -> {
+            // Lock order is CATCHUP -> notifications; crypto calls above never hold either lock.
+            synchronized (CATCHUP_LOCK) {
+                synchronized (notificationLock) {
+                    if (generation != notificationGeneration() || !currentPresentation() || message.isRead()
+                            || message.isModerated() || message.isRetracted()) return;
+                    if (freshLive) {
+                        // Parser already checked durable identity and historical-delivery markers.
+                        // Do not register this event with SM/MAM's completion counters.
+                        pushNow(message);
+                    } else {
+                        push(message);
+                    }
+                    final ArrayList<Message> stack = presentation().messages.get(message.getConversationUuid());
+                    final XmppConnection connection = message.getConversation().getAccount().getXmppConnection();
+                    if ((freshLive || connection == null || !connection.isWaitingForSmCatchup())
+                            && stack != null && stack.stream().anyMatch(
+                            row -> notificationKey(row).equals(notificationKey(message)))) {
+                        presentation().mediaEpochs.put(notificationKey(message), epoch);
+                    }
+                }
+            }
+        });
+    }
+
+    android.service.notification.StatusBarNotification postedMessage(final String conversationUuid) {
+        final NotificationManager manager = mXmppConnectionService.getSystemService(NotificationManager.class);
+        if (manager == null) return null;
+        try {
+            for (android.service.notification.StatusBarNotification active : manager.getActiveNotifications()) {
+                if (active.getId() == NOTIFICATION_ID
+                        && (conversationUuid.equals(active.getTag())
+                                || (Build.VERSION.SDK_INT < Build.VERSION_CODES.N
+                                        && active.getTag() == null && presentation().messages.size() == 1))) {
+                    return active;
+                }
+            }
+        } catch (RuntimeException e) { /* Unknown state never authorizes a new notification. */ }
+        return null;
+    }
+
+    boolean isMessageNotificationPosted(final String conversationUuid) {
+        return postedMessage(conversationUuid) != null;
+    }
+
+    /** HTTP completion/error only replaces an already admitted row; the queue carries IDs only. */
+    public void refreshMediaNotification(final Message message) {
+        final long generation = notificationGeneration();
+        final long epoch = notificationCryptoEpoch();
+        if (!notificationAccessAllowed()) return;
+        inPresentation(generation, () -> {
+            synchronized (notificationLock) {
+                final Long expectedEpoch = presentation().mediaEpochs.get(notificationKey(message));
+                if (!currentPresentation() || expectedEpoch == null || expectedEpoch != epoch
+                        || message.isRead() || message.isModerated() || message.isRetracted()
+                        || !notifyMessage(message)) return;
+                final ArrayList<Message> stack = presentation().messages.get(message.getConversationUuid());
+                if (stack == null) return;
+                for (int i = 0; i < stack.size(); ++i) {
+                    final Message current = stack.get(i);
+                    if (notificationKey(current).equals(notificationKey(message))) {
+                        if (current.isRead() || current.isModerated() || current.isRetracted()) return;
+                        stack.set(i, message);
+                        final String conversation = message.getConversationUuid();
+                        final String uuid = message.getUuid();
+                        executeMessagePublication(() -> refreshPostedMedia(generation, epoch, conversation, uuid));
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    void refreshPostedMedia(final long generation, final long epoch,
+            final String conversationUuid, final String messageUuid) {
+        // Crypto/privacy is checked outside notificationLock and rechecked by generation at post.
+        if (disposed || notificationGeneration() != generation || notificationCryptoEpoch() != epoch
+                || !notificationAccessAllowed()) return;
+        inPresentation(generation, () -> {
+            synchronized (notificationLock) {
+                if (!currentPresentation()) return;
+                final ArrayList<Message> stack = presentation().messages.get(conversationUuid);
+                if (stack == null) return;
+                Message target = null;
+                for (Message row : stack) if (row.getUuid().equals(messageUuid)) target = row;
+                if (target == null || target.isRead() || target.isModerated() || target.isRetracted()
+                        || !notifyMessage(target)) return;
+                // Do not rebuild unrelated conversations or the summary: media changes neither
+                // group membership nor unread counts. Re-read Android after any queued work.
+                final android.service.notification.StatusBarNotification active = postedMessage(conversationUuid);
+                if (active == null) return;
+                final Notification previous = active.getNotification();
+                final String channel = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? previous.getChannelId() : MESSAGES_NOTIFICATION_CHANNEL;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && channel == null) return;
+                final NotificationManager manager = mXmppConnectionService.getSystemService(NotificationManager.class);
+                if (manager == null || !androidx.core.app.NotificationManagerCompat.from(mXmppConnectionService)
+                        .areNotificationsEnabled()) return;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    final NotificationChannel existing = manager.getNotificationChannel(channel);
+                    if (existing == null || existing.getImportance() == NotificationManager.IMPORTANCE_NONE) return;
+                }
+                final Builder builder = buildMediaRefreshContent(stack, channel);
+                builder.setOnlyAlertOnce(true).setSilent(true)
+                        .setSound(null).setVibrate(null).setTicker(null).setWhen(previous.when)
+                        .setVisibility(previous.visibility).setPublicVersion(previous.publicVersion)
+                        .setCategory(previous.category).setColor(previous.color).setPriority(previous.priority)
+                        .setLocalOnly((previous.flags & Notification.FLAG_LOCAL_ONLY) != 0)
+                        .setDefaults(0).setLights(0, 0, 0)
+                        .setGroup(previous.getGroup())
+                        .setGroupSummary((previous.flags & Notification.FLAG_GROUP_SUMMARY) != 0)
+                        .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY);
+                if (!currentPresentation()) return;
+                if (active.getTag() == null) notify(NOTIFICATION_ID, builder.build());
+                else notify(active.getTag(), NOTIFICATION_ID, builder.build());
+            }
+        });
+    }
+
+    Builder buildMediaRefreshContent(final ArrayList<Message> messages, final String channel) {
+        return buildSingleConversations(messages, false, channel);
+    }
+
     private final LinkedHashMap<Conversational, MissedCallsInfo> mMissedCalls =
             new LinkedHashMap<>();
     private Conversation mOpenConversation;
     private boolean mIsInForeground;
-    private long mLastNotification;
+    private volatile long mLastNotification;
 
     private static final String INCOMING_CALLS_NOTIFICATION_CHANNEL = "incoming_calls_channel";
     private static final String INCOMING_CALLS_NOTIFICATION_CHANNEL_PREFIX =
@@ -150,6 +389,8 @@ public class NotificationService {
 
     NotificationService(final XmppConnectionService service) {
         this.mXmppConnectionService = service;
+        eu.siacs.conversations.security.cryptolock.SecureContentCryptoSessionRuntimeV1
+                .addPresentationInvalidationListener(retireNotificationPresentation);
     }
 
     private boolean allowLegacyNotificationMedia(final Message ignored) {
@@ -446,11 +687,16 @@ public class NotificationService {
     }
 
     public void pushFromBacklog(final Message message) {
+        inPresentation(presentation().generation, () -> pushFromBacklogInternal(message));
+    }
+
+    private void pushFromBacklogInternal(final Message message) {
         if (notifyMessage(message)) {
-            synchronized (notifications) {
-                getBacklogMessageCounter((Conversation) message.getConversation())
-                        .incrementAndGet();
-                pushToStack(message);
+            synchronized (notificationLock) {
+                if (pushToStack(message)) {
+                    getBacklogMessageCounter((Conversation) message.getConversation())
+                            .incrementAndGet();
+                }
             }
         } else if (notifyMissedCall(message)) {
             synchronized (mMissedCalls) {
@@ -460,30 +706,98 @@ public class NotificationService {
     }
 
     private AtomicInteger getBacklogMessageCounter(Conversation conversation) {
-        synchronized (mBacklogMessageCounter) {
-            if (!mBacklogMessageCounter.containsKey(conversation)) {
-                mBacklogMessageCounter.put(conversation, new AtomicInteger(0));
+        synchronized (backlogLock) {
+            if (!presentation().backlog.containsKey(conversation)) {
+                presentation().backlog.put(conversation, new AtomicInteger(0));
             }
-            return mBacklogMessageCounter.get(conversation);
+            return presentation().backlog.get(conversation);
         }
     }
 
     void pushFromDirectReply(final Message message) {
-        synchronized (notifications) {
+        inPresentation(presentation().generation, () -> pushFromDirectReplyInternal(message));
+    }
+
+    private void pushFromDirectReplyInternal(final Message message) {
+        synchronized (notificationLock) {
             pushToStack(message);
             updateNotification(false);
         }
     }
 
+    /** Only checked terminal MAM completion calls this; pending IDs carry no plaintext. */
+    public void publishMamNotifications(
+            final java.util.Map<String, java.util.LinkedHashSet<String>> candidates,
+            final boolean allowAlert, final long generation) {
+        if (generation != notificationGeneration() || !notificationAccessAllowed()) return;
+        final long epoch = notificationCryptoEpoch();
+        // Resolve and verify durability outside notificationLock: protected hydration may acquire
+        // the crypto monitor. Rows read/dismissed while recovery was in progress are never staged.
+        final List<Message> accepted = new ArrayList<>();
+        for (java.util.Map.Entry<String, java.util.LinkedHashSet<String>> entry : candidates.entrySet()) {
+            final Conversation conversation = mXmppConnectionService.findConversationByUuid(entry.getKey());
+            if (conversation == null) continue;
+            for (String uuid : entry.getValue()) {
+                final Message row = conversation.findResidentMessageWithUuid(uuid);
+                if (row != null && !row.isRead() && !row.isModerated() && !row.isRetracted()
+                        && mXmppConnectionService.isMamMessagePersisted(row)) accepted.add(row);
+            }
+        }
+        inPresentation(generation, () -> {
+            synchronized (notificationLock) {
+                if (!currentPresentation()) return;
+                final List<String> conversations = new ArrayList<>();
+                boolean alert = false;
+                final boolean locked = mXmppConnectionService.isScreenLocked();
+                for (Message row : accepted) {
+                    final Conversation conversation = (Conversation) row.getConversation();
+                    if (row.isRead() || row.isModerated() || row.isRetracted() || !notifyMessage(row)
+                            || (mIsInForeground && !locked && mOpenConversation == conversation)) continue;
+                    if (!pushToStack(row)) continue;
+                    presentation().mediaEpochs.put(notificationKey(row), epoch);
+                    if (!conversations.contains(conversation.getUuid())) conversations.add(conversation.getUuid());
+                    final Account account = conversation.getAccount();
+                    if (allowAlert && (!(mIsInForeground && mOpenConversation == null) || locked)
+                            && !account.inGracePeriod() && !inMiniGracePeriod(account)
+                            && !shouldNotificationSoundBeThrottled(conversation.getUuid())) alert = true;
+                }
+                if (conversations.isEmpty()) return;
+                mXmppConnectionService.updateUnreadCountBadge();
+                updateNotification(alert, conversations);
+                if (alert) markLastNotification();
+                for (String conversation : conversations) ensureLastNotificationTimeByConversation()
+                        .edit().putLong(conversation, System.currentTimeMillis()).apply();
+            }
+        });
+    }
+
+    /** Archive completion must not flush SM/restored-history counters as new user events. */
+    public void finishArchiveBacklog(final Account account) {
+        mXmppConnectionService.updateUnreadCountBadge();
+        synchronized (mMissedCalls) {
+            updateMissedCallNotifications(mMissedCalls.keySet());
+        }
+    }
+
     public void finishBacklog(boolean notify, Account account) {
-        synchronized (notifications) {
+        inPresentation(presentation().generation, () -> finishBacklogInternal(notify, account));
+    }
+
+    private void finishBacklogInternal(boolean notify, Account account) {
+        synchronized (notificationLock) {
             mXmppConnectionService.updateUnreadCountBadge();
             if (account == null || !notify) {
+                // Restored unread rows were published silently; they cannot later acquire a
+                // sound merely because an unrelated SM batch finishes.
+                synchronized (backlogLock) {
+                    if (account == null) presentation().backlog.clear();
+                    else getBacklogMessageCount(account);
+                }
                 updateNotification(notify);
             } else {
                 final int count;
                 final List<String> conversations;
-                synchronized (this.mBacklogMessageCounter) {
+                synchronized (backlogLock) {
                     conversations = getBacklogConversations(account);
                     count = getBacklogMessageCount(account);
                 }
@@ -514,7 +828,7 @@ public class NotificationService {
 
     private List<String> getBacklogConversations(Account account) {
         final List<String> conversations = new ArrayList<>();
-        for (Map.Entry<Conversation, AtomicInteger> entry : mBacklogMessageCounter.entrySet()) {
+        for (Map.Entry<Conversation, AtomicInteger> entry : presentation().backlog.entrySet()) {
             if (entry.getKey().getAccount() == account) {
                 conversations.add(entry.getKey().getUuid());
             }
@@ -525,7 +839,7 @@ public class NotificationService {
     private int getBacklogMessageCount(Account account) {
         int count = 0;
         for (Iterator<Map.Entry<Conversation, AtomicInteger>> it =
-             mBacklogMessageCounter.entrySet().iterator();
+             presentation().backlog.entrySet().iterator();
              it.hasNext(); ) {
             Map.Entry<Conversation, AtomicInteger> entry = it.next();
             if (entry.getKey().getAccount() == account) {
@@ -541,18 +855,30 @@ public class NotificationService {
         finishBacklog(false, null);
     }
 
-    private void pushToStack(final Message message) {
+    private boolean pushToStack(final Message message) {
+        if (!currentPresentation()) return false;
         final String conversationUuid = message.getConversationUuid();
-        if (notifications.containsKey(conversationUuid)) {
-            notifications.get(conversationUuid).add(message);
+        final ArrayList<Message> existing = presentation().messages.get(conversationUuid);
+        if (existing != null) {
+            for (Message row : existing) {
+                if (notificationKey(row).equals(notificationKey(message))) return false;
+            }
+        }
+        if (presentation().messages.containsKey(conversationUuid)) {
+            presentation().messages.get(conversationUuid).add(message);
         } else {
             final ArrayList<Message> mList = new ArrayList<>();
             mList.add(message);
-            notifications.put(conversationUuid, mList);
+            presentation().messages.put(conversationUuid, mList);
         }
+        return true;
     }
 
     public void push(final Message message) {
+        inPresentation(presentation().generation, () -> pushInternal(message));
+    }
+
+    private void pushInternal(final Message message) {
         synchronized (CATCHUP_LOCK) {
             final XmppConnection connection =
                     message.getConversation().getAccount().getXmppConnection();
@@ -831,8 +1157,8 @@ public class NotificationService {
                             + ": suppressing notification because conversation is open");
             return;
         }
-        synchronized (notifications) {
-            pushToStack(message);
+        synchronized (notificationLock) {
+            if (!pushToStack(message)) return;
             final Conversational conversation = message.getConversation();
             final Account account = conversation.getAccount();
             final boolean doNotify =
@@ -842,6 +1168,7 @@ public class NotificationService {
                             !shouldNotificationSoundBeThrottled(conversation.getUuid());
 
             updateNotification(doNotify, Collections.singletonList(conversation.getUuid()));
+            if (doNotify) markLastNotification(); // Reserve grace before another producer can enqueue.
 
             ensureLastNotificationTimeByConversation()
                     .edit().putLong(conversation.getUuid(), System.currentTimeMillis()).apply();
@@ -871,25 +1198,41 @@ public class NotificationService {
     }
 
     public void clearMessages() {
-        synchronized (notifications) {
-            for (ArrayList<Message> messages : notifications.values()) {
+        inPresentation(presentation().generation, () -> clearAllMessagesInternal());
+    }
+
+    private void clearAllMessagesInternal() {
+        synchronized (notificationLock) {
+            for (ArrayList<Message> messages : presentation().messages.values()) {
                 markAsReadIfHasDirectReply(messages);
             }
-            notifications.clear();
+            presentation().messages.clear();
+            presentation().mediaEpochs.clear();
+            presentation().presentedMessages.clear();
+            synchronized (backlogLock) { presentation().backlog.clear(); }
             updateNotification(false);
         }
     }
 
     public void clearMessages(final Conversation conversation) {
-        synchronized (this.mBacklogMessageCounter) {
-            this.mBacklogMessageCounter.remove(conversation);
+        inPresentation(presentation().generation, () -> clearConversationMessagesInternal(conversation));
+    }
+
+    private void clearConversationMessagesInternal(final Conversation conversation) {
+        synchronized (backlogLock) {
+            this.presentation().backlog.remove(conversation);
         }
-        synchronized (notifications) {
+        synchronized (notificationLock) {
             markAsReadIfHasDirectReply(conversation);
-            if (notifications.remove(conversation.getUuid()) != null) {
-                cancel(conversation.getUuid(), NOTIFICATION_ID);
-                updateNotification(false, null, true);
-            }
+            presentation().mediaEpochs.keySet().removeIf(
+                    key -> key.startsWith(conversation.getUuid() + "/"));
+            presentation().presentedMessages.removeIf(
+                    key -> key.startsWith(conversation.getUuid() + "/"));
+            final boolean removed = presentation().messages.remove(conversation.getUuid()) != null;
+            // A read/delete intent can arrive before unread rows have been rehydrated after
+            // process death. Retire the Android child even when the resident stack is empty.
+            cancel(conversation.getUuid(), NOTIFICATION_ID);
+            if (removed) updateNotification(false, null, true);
         }
     }
 
@@ -937,7 +1280,7 @@ public class NotificationService {
     }
 
     private void markAsReadIfHasDirectReply(final Conversation conversation) {
-        markAsReadIfHasDirectReply(notifications.get(conversation.getUuid()));
+        markAsReadIfHasDirectReply(presentation().messages.get(conversation.getUuid()));
     }
 
     private void markAsReadIfHasDirectReply(final ArrayList<Message> messages) {
@@ -957,7 +1300,7 @@ public class NotificationService {
     }
 
     public void updateNotification() {
-        synchronized (notifications) {
+        synchronized (notificationLock) {
             updateNotification(false);
         }
     }
@@ -970,7 +1313,33 @@ public class NotificationService {
         updateNotification(notify, conversations, false);
     }
 
-    private void updateNotification(
+    void updateNotification(
+            final boolean notify, final List<String> conversations, final boolean summaryOnly) {
+        final long generation = presentation().generation;
+        final List<String> targets = conversations == null ? null : new ArrayList<>(conversations);
+        final java.util.Set<String> scheduledMessages = new java.util.HashSet<>();
+        for (java.util.Map.Entry<String, ArrayList<Message>> entry : presentation().messages.entrySet()) {
+            if (targets == null || targets.contains(entry.getKey()))
+                for (Message row : entry.getValue()) scheduledMessages.add(notificationKey(row));
+        }
+        executeMessagePublication(() -> inPresentation(generation, () -> {
+            synchronized (notificationLock) {
+                if (!currentPresentation()) return;
+                boolean hasUnpresented = false;
+                for (ArrayList<Message> rows : presentation().messages.values()) {
+                    for (Message row : rows) {
+                        final String key = notificationKey(row);
+                        if (scheduledMessages.contains(key) && !row.isRead()
+                                && !presentation().presentedMessages.contains(key)) hasUnpresented = true;
+                    }
+                }
+                renderMessageNotifications(notify && hasUnpresented, targets, summaryOnly);
+                if (!summaryOnly) presentation().presentedMessages.addAll(scheduledMessages);
+            }
+        }));
+    }
+
+    void renderMessageNotifications(
             final boolean notify, final List<String> conversations, final boolean summaryOnly) {
         final SharedPreferences preferences =
                 PreferenceManager.getDefaultSharedPreferences(mXmppConnectionService);
@@ -982,17 +1351,17 @@ public class NotificationService {
                         == 1; // if this check is changed to > 0 catchup messages will
         // create one notification per conversation
 
-        if (notifications.isEmpty()) {
+        if (presentation().messages.isEmpty()) {
             cancel(NOTIFICATION_ID);
         } else {
             if (notify) {
                 this.markLastNotification();
             }
             final Builder mBuilder;
-            if (notifications.size() == 1 && Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            if (presentation().messages.size() == 1 && Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
                 mBuilder =
                         buildSingleConversations(
-                                notifications.values().iterator().next(), notify);
+                                presentation().messages.values().iterator().next(), notify);
                 modifyForSoundVibrationAndLight(mBuilder, notify, preferences);
                 notify(NOTIFICATION_ID, mBuilder.build());
             } else {
@@ -1002,7 +1371,7 @@ public class NotificationService {
                 }
                 modifyForSoundVibrationAndLight(mBuilder, notify, preferences);
                 if (!summaryOnly) {
-                    for (Map.Entry<String, ArrayList<Message>> entry : notifications.entrySet()) {
+                    for (Map.Entry<String, ArrayList<Message>> entry : presentation().messages.entrySet()) {
                         String uuid = entry.getKey();
                         final boolean notifyThis =
                                 notifyOnlyOneChild ? conversations.contains(uuid) : notify;
@@ -1290,11 +1659,11 @@ public class NotificationService {
                         .getResources()
                         .getQuantityString(
                                 R.plurals.x_unread_conversations,
-                                notifications.size(),
-                                notifications.size()));
+                                presentation().messages.size(),
+                                presentation().messages.size()));
         final List<String> names = new ArrayList<>();
         Conversation conversation = null;
-        for (final ArrayList<Message> messages : notifications.values()) {
+        for (final ArrayList<Message> messages : presentation().messages.values()) {
             if (messages.isEmpty()) {
                 continue;
             }
@@ -1331,8 +1700,8 @@ public class NotificationService {
                         .getResources()
                         .getQuantityString(
                                 R.plurals.x_unread_conversations,
-                                notifications.size(),
-                                notifications.size());
+                                presentation().messages.size(),
+                                presentation().messages.size());
         mBuilder.setContentTitle(contentTitle);
         mBuilder.setTicker(contentTitle);
         mBuilder.setContentText(Joiner.on(", ").join(names));
@@ -1349,7 +1718,12 @@ public class NotificationService {
 
     private Builder buildSingleConversations(
             final ArrayList<Message> messages, final boolean notify) {
-        final var channel = notify ? MESSAGES_NOTIFICATION_CHANNEL : "silent_messages";
+        return buildSingleConversations(messages, notify,
+                notify ? MESSAGES_NOTIFICATION_CHANNEL : "silent_messages");
+    }
+
+    private Builder buildSingleConversations(
+            final ArrayList<Message> messages, final boolean notify, final String channel) {
         final Builder notificationBuilder =
                 new NotificationCompat.Builder(mXmppConnectionService, channel);
         if (messages.isEmpty()) {
@@ -2161,7 +2535,9 @@ public class NotificationService {
         return videoTranscoding(-1, null);
     }
 
-    private void notify(final String tag, final int id, final Notification notification) {
+    void notify(final String tag, final int id, final Notification notification) {
+        final long postingGeneration = presentation().generation;
+        if (id == NOTIFICATION_ID && !currentPresentation()) return;
         if (ActivityCompat.checkSelfPermission(
                         mXmppConnectionService, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -2171,12 +2547,15 @@ public class NotificationService {
                 mXmppConnectionService.getSystemService(NotificationManager.class);
         try {
             notificationManager.notify(tag, id, notification);
+            if (id == NOTIFICATION_ID) POSTED_MESSAGE_OWNERS.put(tag == null ? "" : tag, new PostedMessageOwner(postingGeneration));
         } catch (final RuntimeException e) {
             Log.d(Config.LOGTAG, "unable to make notification", e);
         }
     }
 
     public void notify(final int id, final Notification notification) {
+        final long postingGeneration = presentation().generation;
+        if (id == NOTIFICATION_ID && !currentPresentation()) return;
         if (ActivityCompat.checkSelfPermission(
                         mXmppConnectionService, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -2186,12 +2565,36 @@ public class NotificationService {
                 mXmppConnectionService.getSystemService(NotificationManager.class);
         try {
             notificationManager.notify(id, notification);
+            if (id == NOTIFICATION_ID) POSTED_MESSAGE_OWNERS.put("", new PostedMessageOwner(postingGeneration));
         } catch (final RuntimeException e) {
             Log.d(Config.LOGTAG, "unable to make notification", e);
         }
     }
 
+    private void cancelMessageNotification(final String tag) {
+        final long generation = presentation().generation;
+        final String key = tag == null ? "" : tag;
+        final PostedMessageOwner expected = POSTED_MESSAGE_OWNERS.get(key);
+        executeMessagePublication(() -> {
+            final PostedMessageOwner owner = POSTED_MESSAGE_OWNERS.get(key);
+            if (expected == null) {
+                // Android may retain this tag/id across process death; the in-memory lease map
+                // cannot prove absence. A new post in this lane registers an owner before the
+                // next task runs, and a retired generation cannot cancel an unowned replacement.
+                if (owner == null && !disposed && notificationGeneration() == generation)
+                    cancelMessageInAndroid(tag);
+            } else if (owner != null && owner.generation == generation
+                    && owner.revision == expected.revision && POSTED_MESSAGE_OWNERS.remove(key, owner)) {
+                cancelMessageInAndroid(tag);
+            }
+        });
+    }
+
     public void cancel(final int id) {
+        if (id == NOTIFICATION_ID) {
+            cancelMessageNotification(null);
+            return;
+        }
         final NotificationManagerCompat notificationManager =
                 NotificationManagerCompat.from(mXmppConnectionService);
         try {
@@ -2202,6 +2605,10 @@ public class NotificationService {
     }
 
     private void cancel(String tag, int id) {
+        if (id == NOTIFICATION_ID) {
+            cancelMessageNotification(tag);
+            return;
+        }
         final NotificationManagerCompat notificationManager =
                 NotificationManagerCompat.from(mXmppConnectionService);
         try {

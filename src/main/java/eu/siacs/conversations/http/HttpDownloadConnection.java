@@ -185,7 +185,7 @@ public class HttpDownloadConnection implements Transferable {
         } else {
             acceptedAutomatically = false;
             changeStatus(STATUS_OFFER);
-            mXmppConnectionService.getNotificationService().push(message);
+            mXmppConnectionService.getNotificationService().refreshMediaNotification(message);
         }
     }
 
@@ -280,7 +280,7 @@ public class HttpDownloadConnection implements Transferable {
         if (!SecureIncomingMediaCompletionPolicy.shouldScanLegacyMedia(
                 Config.SECURE_CONTENT_MEDIA_ROLLOUT)) {
             if (notify) {
-                mXmppConnectionService.getNotificationService().push(message);
+                mXmppConnectionService.getNotificationService().refreshMediaNotification(message);
             }
             return;
         }
@@ -288,13 +288,13 @@ public class HttpDownloadConnection implements Transferable {
         final DownloadableFile file = mXmppConnectionService.getFileBackend().getFile(message, true);
         if (mXmppConnectionService.getFileBackend().isAppPrivateMediaFile(file)) {
             if (notify) {
-                mXmppConnectionService.getNotificationService().push(message);
+                mXmppConnectionService.getNotificationService().refreshMediaNotification(message);
             }
             return;
         }
         mXmppConnectionService.getFileBackend().updateMediaScanner(file, () -> {
             if (notify) {
-                mXmppConnectionService.getNotificationService().push(message);
+                mXmppConnectionService.getNotificationService().refreshMediaNotification(message);
             }
         });
     }
@@ -492,7 +492,7 @@ public class HttpDownloadConnection implements Transferable {
             if (interactive) {
                 showToastForException(e);
             } else {
-                HttpDownloadConnection.this.mXmppConnectionService.getNotificationService().push(message);
+                HttpDownloadConnection.this.mXmppConnectionService.getNotificationService().refreshMediaNotification(message);
             }
         }
 
@@ -744,7 +744,7 @@ public class HttpDownloadConnection implements Transferable {
             } else {
                 HttpDownloadConnection.this.mXmppConnectionService
                         .getNotificationService()
-                        .push(message);
+                        .refreshMediaNotification(message);
             }
         }
 

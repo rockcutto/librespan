@@ -172,6 +172,7 @@ final class MamTestHarness {
         final List<Message> localHistoryPage = new ArrayList<>();
         boolean throwWrite, realScsFailure, failConversationWrite, dropProtectedMetadata;
         ContentValues saved;
+        NotificationService notificationOverride;
         Consumer<Consumer<Iq>> duringMamSend;
         final List<Runnable> mamFinTimeouts = new ArrayList<>();
         @Override java.util.concurrent.ScheduledFuture<?> scheduleMamFinTimeout(Runnable timeout) {
@@ -219,8 +220,10 @@ final class MamTestHarness {
             if (duringMamSend != null) duringMamSend.accept(callback);
         }
         @Override public NotificationService getNotificationService() {
+            if (notificationOverride != null) return notificationOverride;
             return new NotificationService(this) {
                 @Override void updateErrorNotification() {}
+                @Override public void pushPersistedIncoming(Message m, boolean freshLive) {}
                 @Override public void push(Message m) {}
                 @Override public void pushFromBacklog(Message m) {}
                 @Override public void finishBacklog(boolean notify, Account a) {}

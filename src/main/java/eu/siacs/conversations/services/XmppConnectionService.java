@@ -976,8 +976,13 @@ public class XmppConnectionService extends Service {
      */
     public boolean persistIncomingMessage(final Message message) {
         if (!isProtectedTextCandidate(message)) {
-            databaseBackend.createMessage(message);
-            return true;
+            // A void insert cannot authorize visible publication after an SQLite failure.
+            try {
+                return databaseBackend.createMessageForMam(message);
+            } catch (RuntimeException e) {
+                Log.w(Config.LOGTAG, "unable to persist incoming message", e);
+                return false;
+            }
         }
         if (!isSecureContentAccountAvailableForMutation(message)) {
             return false;
@@ -3054,6 +3059,7 @@ public class XmppConnectionService extends Service {
     @Override
     public void onDestroy() {
         destroyed = true;
+        mNotificationService.dispose();
         synchronized (interruptedMucJoins) {
             interruptedMucJoins.clear();
         }

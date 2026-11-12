@@ -63,11 +63,14 @@ public class MucRecoverySystemTest {
         audio.setType(Message.TYPE_FILE); f.room.add(audio);
     }
     private im.conversations.android.xmpp.model.stanza.Message live(Fixture f, int n) {
+        return live(f, n, true);
+    }
+    private im.conversations.android.xmpp.model.stanza.Message live(Fixture f, int n, boolean delayed) {
         var m = new im.conversations.android.xmpp.model.stanza.Message();
         m.setFrom(Jid.of("room@conference.example/peer")); m.setTo(f.account.getJid());
         m.setAttribute("type", "groupchat"); m.setId("m"+n); m.setBody("received "+n);
         m.addChild("stanza-id", "urn:xmpp:sid:0").setAttribute("by", f.room.getJid().asBareJid().toString()).setAttribute("id", "r"+n);
-        m.addChild("delay", "urn:xmpp:delay").setAttribute("stamp", stamp(n));
+        if (delayed) m.addChild("delay", "urn:xmpp:delay").setAttribute("stamp", stamp(n));
         return m;
     }
     private void archive(Fixture f, MessageParser parser, String queryId, int n) {
@@ -104,12 +107,13 @@ public class MucRecoverySystemTest {
         assertEquals(2,s.mamRequests.size());
         String q = s.mamRequests.get(1).findChild("query","urn:xmpp:mam:2").getAttribute("queryid");
         MessageParser parser = new MessageParser(s,f.account);
-        for (int i=11;i<=20;i++) parser.accept(live(f,i));
+        for (int i=11;i<=20;i++) parser.accept(live(f,i,false));
         for (int i=1;i<=15;i++) archive(f,parser,q,i);
         Iq fin = new Iq(Iq.Type.RESULT); fin.addChild("fin","urn:xmpp:mam:2").setAttribute("complete","true");
         s.mamCallbacks.get(1).accept(fin);
         assertEquals(20,s.persisted.size());
-        assertEquals(20,s.liveNotifications+s.backlogNotifications);
+        assertEquals(10,s.liveNotifications); // Only ten fresh live events; archive replay is silent.
+        assertEquals(0,s.backlogNotifications);
         Set<String> ids = new HashSet<>(); long previous = 0;
         for (Message m : f.room.snapshotMessages()) {
             if (m.getStatus()!=Message.STATUS_RECEIVED || "seed".equals(m.getRoomStanzaId())) continue;
@@ -123,9 +127,10 @@ public class MucRecoverySystemTest {
         queue(f); f.join(); assertTrue(service.outgoing.isEmpty());
         f.selfPresence(); f.service.runCatchups();
         assertEquals(3,service.outgoing.size()); assertTrue(service.mamRequests.isEmpty());
-        new MessageParser(service,f.account).accept(live(f,1));
+        new MessageParser(service,f.account).accept(live(f,1,false));
         assertEquals(1,service.persisted.size());
-        assertEquals(1,service.liveNotifications+service.backlogNotifications);
+        assertEquals(1,service.liveNotifications);
+        assertEquals(0,service.backlogNotifications);
     }
 
     @Test public void finiteDiscoRecoveryStopsAtPasswordRejection() throws Exception {
@@ -611,6 +616,10 @@ public class MucRecoverySystemTest {
             return new NotificationService(this) {
                 @Override void updateErrorNotification() {}
                 @Override public void push(Message m) { liveNotifications++; }
+                @Override public void pushPersistedIncoming(Message m, boolean freshLive) {
+                    if (freshLive) liveNotifications++;
+                    else backlogNotifications++;
+                }
                 @Override public void pushFromBacklog(Message m) { backlogNotifications++; }
                 @Override public void finishBacklog(boolean notify,Account account) {}
             };

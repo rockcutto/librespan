@@ -1693,7 +1693,10 @@ public class MessageParser extends AbstractParser
             }
 
             boolean checkForDuplicates =
-                    (isTypeGroupChat
+                    query != null
+                            || message.getRemoteMsgId() != null
+                            || account.getXmppConnection().isWaitingForSmCatchup()
+                            || (isTypeGroupChat
                                     && (packet.hasChild("delay", "urn:xmpp:delay")
                                             || message.getRemoteMsgId() != null
                                             || message.getServerMsgId() != null))
@@ -1714,11 +1717,13 @@ public class MessageParser extends AbstractParser
                 final long mamDuplicateStarted = query == null ? 0 : query.diagnostics.begin();
                 try {
                 Message duplicate = conversation.findDuplicateMessage(message);
-                final boolean historicalMucReplay =
-                        isTypeGroupChat
-                                && (query != null
-                                        || packet.hasChild("delay", "urn:xmpp:delay"));
-                if (duplicate == null && historicalMucReplay) {
+                // A resident miss is insufficient during SM replay or live/MAM overlap. Check
+                // durable, conversation-owned identifiers before assigning a new local UUID.
+                final boolean needsDurableIdentityCheck =
+                        query != null || message.getServerMsgId() != null
+                                || message.getRemoteMsgId() != null
+                                || account.getXmppConnection().isWaitingForSmCatchup();
+                if (duplicate == null && needsDurableIdentityCheck) {
                     if (message.getServerMsgId() != null) {
                         duplicate =
                                 mXmppConnectionService.databaseBackend.getMessageWithServerMsgId(
@@ -1907,6 +1912,23 @@ public class MessageParser extends AbstractParser
                     remoteFileParams != null
                             && remoteFileParams.url != null
                             && remoteFileParams.size != null;
+            // Explicit historical-delivery markers, never phone/server clock comparisons.
+            // An archive query (including every MUC purpose) cannot establish novelty. Even an
+            // unseen archive row may be years old after restart, deletion or partial recovery.
+            final boolean delayedDelivery = packet.hasChild("delay", "urn:xmpp:delay")
+                    || original.hasChild("delay", "urn:xmpp:delay")
+                    || packet.hasChild("x", "jabber:x:delay")
+                    || original.hasChild("x", "jabber:x:delay");
+            final boolean freshLive = query == null && !isForwarded && !delayedDelivery
+                    && (message.getServerMsgId() != null || message.getRemoteMsgId() != null);
+            if (notify && query != null) {
+                // The automatic account catch-up owner, not isCatchup() alone, decides whether
+                // a first successful result belongs to a forward notification range.
+                query.stageNotification(message);
+            } else if (notify && !(isTypeGroupChat && delayedDelivery)) {
+                mXmppConnectionService.getNotificationService().pushPersistedIncoming(
+                        message, freshLive);
+            }
             if (!message.isModerated()
                     && (message.trusted()
                             || (conversationMultiMode
@@ -1919,12 +1941,6 @@ public class MessageParser extends AbstractParser
                 // same metadata/size policy even when an earlier pass already rewrote the body to
                 // the canonical "url|size" form and treatAsDownloadable() no longer sees a bare URL.
                 manager.createNewDownloadConnection(message);
-            } else if (notify) {
-                if (query != null && query.isCatchup()) {
-                    mXmppConnectionService.getNotificationService().pushFromBacklog(message);
-                } else {
-                    mXmppConnectionService.getNotificationService().push(message);
-                }
             }
         } else if (!packet.hasChild("body")) { // no body
             // Pure receipt, chat-state, subject, key transport and roster stanzas do not own a

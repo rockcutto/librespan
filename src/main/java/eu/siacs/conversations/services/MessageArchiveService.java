@@ -113,16 +113,18 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
 
     private void catchup(final Account account) {
         cancelQueriesForReconnect(account);
+        final MamReference durableReceived = mXmppConnectionService.databaseBackend.getLastMessageReceived(account);
         MamReference mamReference = MamReference.max(
-                mXmppConnectionService.databaseBackend.getLastMessageReceived(account),
+                durableReceived,
                 mXmppConnectionService.databaseBackend.getLastClearDate(account)
         );
         mamReference = MamReference.max(mamReference, mXmppConnectionService.getAutomaticMessageDeletionDate());
         long endCatchup = account.getXmppConnection().getLastSessionEstablished();
+        final boolean longHistoryRecovery = endCatchup - mamReference.getTimestamp() >= Config.MAM_MAX_CATCHUP;
         final Query query;
         if (mamReference.getTimestamp() == 0) {
             return;
-        } else if (endCatchup - mamReference.getTimestamp() >= Config.MAM_MAX_CATCHUP) {
+        } else if (longHistoryRecovery) {
             long startCatchup = endCatchup - Config.MAM_MAX_CATCHUP;
             List<Conversation> conversations = mXmppConnectionService.getConversations();
             for (Conversation conversation : conversations) {
@@ -134,6 +136,17 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         } else {
             query = new Query(account, mamReference, 0);
         }
+        // Only the automatic account reconnect owner can admit unseen forward results. MUC
+        // bootstrap/manual/missing-range queries never opt into this notification contract.
+        final boolean exactDurableCursor = durableReceived != null && mamReference.getReference() != null
+                && !mamReference.getReference().isEmpty()
+                && mamReference.getReference().equals(durableReceived.getReference())
+                && query.getReference() != null
+                && query.getReference().equals(mamReference.getReference());
+        query.notificationDelivery = longHistoryRecovery ? MamNotificationDelivery.NONE
+                : exactDurableCursor ? MamNotificationDelivery.FORWARD_UNSEEN
+                : MamNotificationDelivery.SILENT_UNSEEN;
+        query.notificationGeneration = mXmppConnectionService.getNotificationService().notificationGeneration();
         synchronized (this.queries) {
             this.queries.add(query);
         }
@@ -410,10 +423,16 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             publishQuery(query, done && locallyDurable);
         } finally {
             query.diagnostics.end(query.diagnosticReason);
+            final var notificationBatch = query.takeNotificationCandidates();
+            if (complete && locallyDurable && query.diagnosticReason == MamDiagnostics.Reason.COMPLETE) {
+                mXmppConnectionService.getNotificationService().publishMamNotifications(
+                        notificationBatch, query.notificationDelivery == MamNotificationDelivery.FORWARD_UNSEEN,
+                        query.notificationGeneration);
+            }
             if (query.isCatchup() && query.getActualMessageCount() > 0) {
                 mXmppConnectionService
                         .getNotificationService()
-                        .finishBacklog(true, query.getAccount());
+                        .finishArchiveBacklog(query.getAccount());
             }
             final CatchupCompletion completed = query.mucCatchupCompleted;
             query.mucCatchupCompleted = null;
@@ -776,7 +795,33 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         }
     }
 
+    enum MamNotificationDelivery { NONE, SILENT_UNSEEN, FORWARD_UNSEEN }
+
     public class Query {
+        private MamNotificationDelivery notificationDelivery = MamNotificationDelivery.NONE;
+        private long notificationGeneration = -1;
+        private java.util.Map<String, java.util.LinkedHashSet<String>> notificationCandidates =
+                new java.util.LinkedHashMap<>();
+
+        public void stageNotification(final eu.siacs.conversations.entities.Message message) {
+            if (notificationDelivery == MamNotificationDelivery.NONE) return;
+            if (message.getServerMsgId() == null || message.getServerMsgId().isEmpty())
+                notificationDelivery = MamNotificationDelivery.SILENT_UNSEEN;
+            synchronized (notificationCandidates) {
+                notificationCandidates.computeIfAbsent(message.getConversationUuid(),
+                        ignored -> new java.util.LinkedHashSet<>()).add(message.getUuid());
+            }
+        }
+
+        private java.util.Map<String, java.util.LinkedHashSet<String>> takeNotificationCandidates() {
+            final java.util.Map<String, java.util.LinkedHashSet<String>> batch = new java.util.LinkedHashMap<>();
+            synchronized (notificationCandidates) {
+                notificationCandidates.forEach((conversation, uuids) ->
+                        batch.put(conversation, new java.util.LinkedHashSet<>(uuids)));
+                notificationCandidates.clear();
+            }
+            return batch;
+        }
         public MamPersistenceBarrier persistence = new MamPersistenceBarrier();
         public MamDiagnostics.Page diagnostics = MamDiagnostics.page();
         private MamDiagnostics.Reason diagnosticReason = MamDiagnostics.Reason.ERROR;
@@ -846,6 +891,9 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             query.membershipGeneration = membershipGeneration;
             query.mucHistoryPurpose = mucHistoryPurpose;
             query.persistence = persistence.nextPage();
+            query.notificationDelivery = notificationDelivery;
+            query.notificationGeneration = notificationGeneration;
+            query.notificationCandidates = notificationCandidates;
             query.totalCount = totalCount;
             query.actualCount = actualCount;
             query.pendingReceiptRequests = pendingReceiptRequests;
@@ -872,12 +920,17 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             query.membershipGeneration = membershipGeneration;
             query.mucHistoryPurpose = mucHistoryPurpose;
             query.persistence = persistence.nextPage();
+            query.notificationDelivery = notificationDelivery;
+            query.notificationGeneration = notificationGeneration;
+            query.notificationCandidates = notificationCandidates;
             query.pagingOrder = pagingOrder;
             query.actualCount = actualCount;
             query.pendingReceiptRequests = pendingReceiptRequests;
             query.receiptRequests = receiptRequests;
             query.callback = callback;
             query.catchup = catchup;
+            if (query.notificationDelivery == MamNotificationDelivery.FORWARD_UNSEEN)
+                query.notificationDelivery = MamNotificationDelivery.SILENT_UNSEEN;
             query.cursorFallbackAttempted = true;
             query.cursorFallbackEnd = cursorFallbackEnd;
             return query;
