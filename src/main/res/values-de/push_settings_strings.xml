@@ -56,8 +56,8 @@
     <string name="ps_gateway_address">Adresse des Push-Gateways</string>
     <string name="ps_gateway_vapid">Öffentlicher Schlüssel des Push-Gateways (VAPID)</string>
     <string name="ps_settings_summary">Hintergrundbenachrichtigungen für neue Nachrichten einrichten</string>
-    <string name="ps_up_for_others_title">UnifiedPush für andere Apps</string>
-    <string name="ps_up_for_others_summary">Benachrichtigungszustellung für andere Apps einrichten</string>
+    <string name="ps_up_for_others_title">UnifiedPush-Verteiler</string>
+    <string name="ps_up_for_others_summary">Benachrichtigungen an andere Apps über XMPP zustellen</string>
     <string name="ps_diag_delivery">Zustellungsweg: %1$s</string>
     <string name="ps_diag_gateway">Push-Gateway: %1$s</string>
     <string name="ps_diag_status">Status: %1$s</string>

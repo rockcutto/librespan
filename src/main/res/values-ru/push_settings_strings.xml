@@ -56,8 +56,8 @@
     <string name="ps_gateway_address">Адрес Push-сервиса</string>
     <string name="ps_gateway_vapid">Публичный ключ Push-сервиса (VAPID)</string>
     <string name="ps_settings_summary">Настройка доставки новых сообщений в фоне</string>
-    <string name="ps_up_for_others_title">UnifiedPush для других приложений</string>
-    <string name="ps_up_for_others_summary">Настройки доставки уведомлений другим приложениям</string>
+    <string name="ps_up_for_others_title">Распределитель UnifiedPush</string>
+    <string name="ps_up_for_others_summary">Доставка уведомлений другим приложениям через XMPP</string>
     <string name="ps_diag_delivery">Способ доставки: %1$s</string>
     <string name="ps_diag_gateway">Push-шлюз: %1$s</string>
     <string name="ps_diag_status">Состояние: %1$s</string>

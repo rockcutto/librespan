@@ -56,8 +56,8 @@
     <string name="ps_gateway_address">Push gateway address</string>
     <string name="ps_gateway_vapid">Push gateway public key (VAPID)</string>
     <string name="ps_settings_summary">Configure background notifications for new messages</string>
-    <string name="ps_up_for_others_title">UnifiedPush for other apps</string>
-    <string name="ps_up_for_others_summary">Configure delivery of notifications to other apps</string>
+    <string name="ps_up_for_others_title">UnifiedPush Distributor</string>
+    <string name="ps_up_for_others_summary">Deliver notifications to other apps via XMPP</string>
     <string name="ps_diag_delivery">Delivery method: %1$s</string>
     <string name="ps_diag_gateway">Push gateway: %1$s</string>
     <string name="ps_diag_status">Status: %1$s</string>
