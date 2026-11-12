@@ -218,13 +218,13 @@
                 android:key="foss_push_client"
                 android:layout="@layout/preference_subnavigation_row"
                 android:title="@string/foss_push_title"
-                android:summary="@string/foss_push_summary" />
+                android:summary="@string/ps_settings_summary" />
 
             <PreferenceScreen
                 android:key="neocont_push_settings"
                 android:layout="@layout/preference_subnavigation_row"
-                android:summary="@string/neocont_push_settings_summary"
-                android:title="@string/neocont_push_settings">
+                android:summary="@string/ps_up_for_others_summary"
+                android:title="@string/ps_up_for_others_title">
                 <intent
                     android:action="android.intent.action.VIEW"
                     android:targetClass="eu.siacs.conversations.ui.SettingsActivity"

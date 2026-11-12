@@ -74,7 +74,7 @@
         <Preference
             android:key="foss_push_client"
             android:title="@string/foss_push_title"
-            android:summary="@string/foss_push_summary" />
+            android:summary="@string/ps_settings_summary" />
 
         <intent
             android:action="android.intent.action.VIEW"

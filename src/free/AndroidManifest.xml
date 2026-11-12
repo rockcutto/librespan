@@ -2,7 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <queries>
+        <package android:name="com.google.android.gms" />
+        <intent><action android:name="org.unifiedpush.android.distributor.REGISTER" /></intent>
+    </queries>
     <application>
+        <activity android:name=".ui.PushSettingsActivity" android:exported="false" />
         <receiver android:name="org.unifiedpush.android.embedded_fcm_distributor.impl.UnifiedPushReceiver"
             tools:node="remove" />
         <receiver android:name=".services.FossEmbeddedDistributor"
