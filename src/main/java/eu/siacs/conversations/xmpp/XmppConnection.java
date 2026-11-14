@@ -189,6 +189,10 @@ public class XmppConnection implements Runnable {
     private long lastPacketReceived = 0;
     private long lastPingSent = 0;
     private long lastConnectionStarted = 0;
+    private long connectionAttemptStarted = 0;
+    private volatile long connectionAttemptGeneration = 0;
+    private volatile boolean connectionAttemptTerminated = true;
+    private Socket connectingSocket;
     private long lastSessionStarted = 0;
     private long lastDiscoStarted = 0;
     private boolean isMamPreferenceAlways = false;
@@ -216,6 +220,7 @@ public class XmppConnection implements Runnable {
     private volatile Thread mThread;
     private final ThreadLocal<Boolean> mConnectionThread =
             ThreadLocal.withInitial(() -> Boolean.FALSE);
+    private final ThreadLocal<Long> runningAttemptGeneration = new ThreadLocal<>();
     private CountDownLatch mStreamCountDownLatch;
     private final AppSettings appSettings;
     private static ScheduledExecutorService SCHEDULER = Executors.newScheduledThreadPool(1);
@@ -255,7 +260,7 @@ public class XmppConnection implements Runnable {
         synchronized (this) {
             final boolean staleConnectionThread =
                     Boolean.TRUE.equals(mConnectionThread.get())
-                            && this.mThread != Thread.currentThread();
+                            && !ownsCurrentAttempt();
             if (Thread.currentThread().isInterrupted() || staleConnectionThread) {
                 Log.d(
                         Config.LOGTAG,
@@ -276,6 +281,13 @@ public class XmppConnection implements Runnable {
                 if (nextStatus == Account.State.ONLINE) {
                     this.attempt = 0;
                 }
+                // Error statuses are terminal for this connection thread. Publish termination
+                // together with the status, before notifying listeners that may block or retry.
+                if (Boolean.TRUE.equals(mConnectionThread.get()) && ownsCurrentAttempt()
+                        && nextStatus != Account.State.CONNECTING
+                        && nextStatus != Account.State.ONLINE) {
+                    connectionAttemptTerminated = true;
+                }
                 account.setStatus(nextStatus);
             } else {
                 return;
@@ -293,12 +305,39 @@ public class XmppConnection implements Runnable {
     }
 
     public void prepareNewConnection() {
-        this.lastConnectionStarted = SystemClock.elapsedRealtime();
+        synchronized (this) {
+            connectionAttemptGeneration++;
+            connectionAttemptTerminated = false;
+            connectionAttemptStarted = SystemClock.elapsedRealtime();
+            this.lastConnectionStarted = connectionAttemptStarted;
+        }
         this.lastPingSent = SystemClock.elapsedRealtime();
         this.lastDiscoStarted = Long.MAX_VALUE;
         this.mWaitingForSmCatchup.set(false);
         resetClientStateIndication();
         this.changeStatus(Account.State.CONNECTING);
+    }
+
+    public synchronized long getConnectionAttemptGeneration() {
+        return connectionAttemptGeneration;
+    }
+
+    public synchronized long getConnectionDeadlineRemaining() {
+        return connectionAttemptStarted + Config.CONNECT_TIMEOUT * 1000L
+                - SystemClock.elapsedRealtime();
+    }
+
+    private void trackConnectingSocket(final Socket candidate) throws InterruptedException {
+        final boolean rejected;
+        synchronized (this) {
+            rejected = connectionAttemptTerminated || !ownsCurrentAttempt()
+                    || Thread.currentThread().isInterrupted();
+            if (!rejected) connectingSocket = candidate;
+        }
+        if (rejected) {
+            FileBackend.close(candidate);
+            throw new InterruptedException();
+        }
     }
 
     public boolean isWaitingForSmCatchup() {
@@ -356,10 +395,18 @@ public class XmppConnection implements Runnable {
                 localSocket =
                         SocksSocketFactory.createSocketOverTor(
                                 viaTor.asDestination(), viaTor.getPort());
-
-                if (viaTor.isDirectTls()) {
-                    localSocket = upgradeSocketToTls(localSocket);
-                    features.encryptionEnabled = true;
+                try {
+                    trackConnectingSocket(localSocket);
+                    if (viaTor.isDirectTls()) {
+                        localSocket = upgradeSocketToTls(localSocket);
+                        trackConnectingSocket(localSocket);
+                        features.encryptionEnabled = true;
+                    }
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    Log.d(Config.LOGTAG, account.getJid().asBareJid()
+                            + ": thread was interrupted before beginning stream");
+                    return;
                 }
 
                 try {
@@ -475,10 +522,12 @@ public class XmppConnection implements Runnable {
                         }
 
                         localSocket = new Socket();
+                        trackConnectingSocket(localSocket);
                         localSocket.connect(addr, Config.SOCKET_TIMEOUT * 1000);
                         localSocket.setSoTimeout(Config.SOCKET_TIMEOUT * 1000);
                         if (features.encryptionEnabled) {
                             localSocket = upgradeSocketToTls(localSocket);
+                            trackConnectingSocket(localSocket);
                         }
                         if (startXmpp(localSocket)) {
                             // reset to 0; once the connection is established we don't want this
@@ -534,15 +583,8 @@ public class XmppConnection implements Runnable {
         } catch (final IOException | XmlPullParserException e) {
             Log.d(Config.LOGTAG, account.getJid().asBareJid().toString() + ": " + e.getMessage());
             this.changeStatus(Account.State.OFFLINE);
-            this.attempt = Math.max(0, this.attempt - 1);
-        } finally {
-            if (this.mThread == Thread.currentThread() && !Thread.currentThread().isInterrupted()) {
-                forceCloseSocket();
-            } else {
-                Log.d(
-                        Config.LOGTAG,
-                        account.getJid().asBareJid()
-                                + ": not force closing socket from interrupted/superseded thread");
+            synchronized (this) {
+                if (ownsCurrentAttempt()) this.attempt = Math.max(0, this.attempt - 1);
             }
         }
     }
@@ -556,17 +598,37 @@ public class XmppConnection implements Runnable {
         if (Thread.currentThread().isInterrupted()) {
             throw new InterruptedException();
         }
-        // this means we have at least found a socket to connect to. give the connection another 90s
-        this.lastConnectionStarted = SystemClock.elapsedRealtime();
-        this.socket = socket;
-        this.tagReader = new XmlReader();
-        if (tagWriter != null) {
-            tagWriter.forceClose();
+        final XmlReader reader = new XmlReader();
+        final TagWriter writer = new TagWriter();
+        try {
+            writer.setOutputStream(socket.getOutputStream());
+            reader.setInputStream(socket.getInputStream());
+            writer.beginDocument();
+        } catch (final Exception e) {
+            writer.forceClose();
+            throw e;
         }
-        this.tagWriter = new TagWriter();
-        this.tagWriter.setOutputStream(socket.getOutputStream());
-        this.tagReader.setInputStream(socket.getInputStream());
-        this.tagWriter.beginDocument();
+        final TagWriter previousWriter;
+        final boolean rejected;
+        synchronized (this) {
+            rejected = connectionAttemptTerminated || !ownsCurrentAttempt()
+                    || Thread.currentThread().isInterrupted();
+            if (rejected) {
+                previousWriter = null;
+            } else {
+                previousWriter = this.tagWriter;
+                this.socket = socket;
+                this.connectingSocket = null;
+                this.tagReader = reader;
+                this.tagWriter = writer;
+            }
+        }
+        if (rejected) {
+            writer.forceClose();
+            throw new InterruptedException();
+        }
+        if (previousWriter != null) previousWriter.forceClose();
+        if (!ownsCurrentAttempt() || connectionAttemptTerminated) throw new InterruptedException();
         final boolean quickStart;
         if (socket instanceof SSLSocket sslSocket) {
             SSLSockets.log(account, sslSocket);
@@ -574,8 +636,12 @@ public class XmppConnection implements Runnable {
         } else {
             quickStart = establishStream(SSLSockets.Version.NONE);
         }
-        final Tag tag = tagReader.readTag();
-        if (Thread.currentThread().isInterrupted()) {
+        if (!ownsCurrentAttempt() || connectionAttemptTerminated) {
+            throw new InterruptedException();
+        }
+        final Tag tag = reader.readTag();
+        if (Thread.currentThread().isInterrupted() || !ownsCurrentAttempt()
+                || connectionAttemptTerminated) {
             throw new InterruptedException();
         }
         if (tag == null) {
@@ -623,7 +689,15 @@ public class XmppConnection implements Runnable {
             if (previousThread != null) {
                 previousThread.interrupt();
             }
-            final Thread thread = new Thread(this);
+            final long generation = connectionAttemptGeneration;
+            final Thread thread = new Thread(() -> {
+                runningAttemptGeneration.set(generation);
+                try {
+                    run();
+                } finally {
+                    runningAttemptGeneration.remove();
+                }
+            });
             this.mThread = thread;
             return thread;
         }
@@ -633,8 +707,9 @@ public class XmppConnection implements Runnable {
     public void run() {
         mConnectionThread.set(Boolean.TRUE);
         try {
+            final TransportToClose previous;
             synchronized (this) {
-                if (this.mThread != Thread.currentThread()
+                if (!ownsCurrentAttempt()
                         || Thread.currentThread().isInterrupted()) {
                     Log.d(
                             Config.LOGTAG,
@@ -642,25 +717,66 @@ public class XmppConnection implements Runnable {
                                     + ": aborting superseded or interrupted connection thread");
                     return;
                 }
-                forceCloseSocket();
+                previous = detachTransportLocked();
             }
-            connect();
+            closeTransport(previous);
+            if (ownsCurrentAttempt() && !connectionAttemptTerminated
+                    && !Thread.currentThread().isInterrupted()) connect();
         } finally {
+            finishConnectionAttempt();
             mConnectionThread.remove();
         }
     }
 
+    private void finishConnectionAttempt() {
+        final boolean notifyOffline;
+        final long generation;
+        final TransportToClose transport;
+        synchronized (this) {
+            generation = connectionAttemptGeneration;
+            if (!ownsCurrentAttempt() || Thread.currentThread().isInterrupted()) {
+                return;
+            }
+            connectionAttemptTerminated = true;
+            transport = detachTransportLocked();
+            final Account.State status = account.getStatus();
+            notifyOffline = account.getXmppConnection() == this
+                    && (status == Account.State.CONNECTING || status == Account.State.ONLINE);
+            if (notifyOffline) {
+                account.setStatus(Account.State.OFFLINE);
+            }
+        }
+        try {
+            if (notifyOffline && generation == getConnectionAttemptGeneration()
+                    && statusListener != null) {
+                statusListener.onStatusChanged(account);
+            }
+        } finally {
+            closeTransport(transport);
+        }
+    }
+
     private void processStream() throws XmlPullParserException, IOException {
+        final XmlReader reader;
         final CountDownLatch streamCountDownLatch = new CountDownLatch(1);
-        this.mStreamCountDownLatch = streamCountDownLatch;
-        Tag nextTag = tagReader.readTag();
+        synchronized (this) {
+            if (!ownsCurrentAttempt() || connectionAttemptTerminated) return;
+            reader = this.tagReader;
+            this.mStreamCountDownLatch = streamCountDownLatch;
+        }
+        if (reader == null) return;
+        Tag nextTag = reader.readTag();
         while (nextTag != null && !nextTag.isEnd("stream")) {
+            if (!ownsCurrentAttempt() || connectionAttemptTerminated
+                    || Thread.currentThread().isInterrupted()) {
+                return;
+            }
             if (nextTag.isStart("error", Namespace.STREAMS)) {
-                processStreamError(tagReader.readElement(nextTag, StreamError.class));
+                processStreamError(reader.readElement(nextTag, StreamError.class));
             } else if (nextTag.isStart("features", Namespace.STREAMS)) {
                 processStreamFeatures(nextTag);
             } else if (nextTag.isStart("proceed", Namespace.TLS)) {
-                switchOverToTls(nextTag);
+                switchOverToTls(nextTag, reader);
             } else if (nextTag.isStart("failure", Namespace.TLS)) {
                 throw new StateChangingException(Account.State.TLS_ERROR);
             } else if (!isSecure()) {
@@ -671,34 +787,34 @@ public class XmppConnection implements Runnable {
             } else if (this.loginInfo == null) {
                 throw new StateChangingException(Account.State.INCOMPATIBLE_SERVER);
             } else if (nextTag.isStart("success", Namespace.SASL)) {
-                processSuccess(tagReader.readElement(nextTag, Success.class));
+                processSuccess(reader.readElement(nextTag, Success.class));
                 break;
             } else if (nextTag.isStart("success", Namespace.SASL_2)) {
                 processSuccess(
-                        tagReader.readElement(
+                        reader.readElement(
                                 nextTag, im.conversations.android.xmpp.model.sasl2.Success.class));
             } else if (nextTag.isStart("failure", Namespace.SASL)) {
-                final var failure = tagReader.readElement(nextTag, Failure.class);
+                final var failure = reader.readElement(nextTag, Failure.class);
                 processFailure(failure);
             } else if (nextTag.isStart("failure", Namespace.SASL_2)) {
                 final var failure =
-                        tagReader.readElement(
+                        reader.readElement(
                                 nextTag, im.conversations.android.xmpp.model.sasl2.Failure.class);
                 processFailure(failure);
             } else if (nextTag.isStart("continue", Namespace.SASL_2)) {
                 // two step sasl2 - we don’t support this yet
                 throw new StateChangingException(Account.State.INCOMPATIBLE_CLIENT);
             } else if (nextTag.isStart("challenge")) {
-                final Element challenge = tagReader.readElement(nextTag);
+                final Element challenge = reader.readElement(nextTag);
                 processChallenge(challenge);
             } else if (!LoginInfo.isSuccess(this.loginInfo)) {
                 throw new StateChangingException(Account.State.INCOMPATIBLE_SERVER);
             } else if (this.streamId != null
                     && nextTag.isStart("resumed", Namespace.STREAM_MANAGEMENT)) {
-                final Resumed resumed = tagReader.readElement(nextTag, Resumed.class);
+                final Resumed resumed = reader.readElement(nextTag, Resumed.class);
                 processResumed(resumed);
             } else if (nextTag.isStart("failed", Namespace.STREAM_MANAGEMENT)) {
-                final Failed failed = tagReader.readElement(nextTag, Failed.class);
+                final Failed failed = reader.readElement(nextTag, Failed.class);
                 processFailed(failed, true);
             } else if (nextTag.isStart("iq", Namespace.JABBER_CLIENT)) {
                 processIq(nextTag);
@@ -714,10 +830,10 @@ public class XmppConnection implements Runnable {
             } else if (nextTag.isStart("presence", Namespace.JABBER_CLIENT)) {
                 processPresence(nextTag);
             } else if (nextTag.isStart("enabled", Namespace.STREAM_MANAGEMENT)) {
-                final var enabled = tagReader.readElement(nextTag, Enabled.class);
+                final var enabled = reader.readElement(nextTag, Enabled.class);
                 processEnabled(enabled);
             } else if (nextTag.isStart("r", Namespace.STREAM_MANAGEMENT)) {
-                tagReader.readElement(nextTag);
+                reader.readElement(nextTag);
                 if (Config.EXTENDED_SM_LOGGING) {
                     Log.d(
                             Config.LOGTAG,
@@ -752,7 +868,7 @@ public class XmppConnection implements Runnable {
                 if (accountUiNeedsRefresh) {
                     mXmppConnectionService.updateAccountUi();
                 }
-                final var ack = tagReader.readElement(nextTag, Ack.class);
+                final var ack = reader.readElement(nextTag, Ack.class);
                 lastPacketReceived = SystemClock.elapsedRealtime();
                 final boolean acknowledgedMessages;
                 synchronized (this.mStanzaQueue) {
@@ -778,11 +894,34 @@ public class XmppConnection implements Runnable {
                                 + nextTag.identifier());
                 throw new StateChangingException(Account.State.INCOMPATIBLE_SERVER);
             }
-            nextTag = tagReader.readTag();
+            nextTag = reader.readTag();
         }
         if (nextTag != null && nextTag.isEnd("stream")) {
             streamCountDownLatch.countDown();
         }
+        // SASL success deliberately breaks out of this loop to restart the stream. EOF or a
+        // closing tag ends this attempt even if nested TLS cleanup subsequently blocks.
+        if (nextTag == null || nextTag.isEnd("stream")) {
+            finishStreamState(reader);
+        }
+    }
+
+    private void finishStreamState(final XmlReader reader) {
+        final boolean notifyOffline;
+        final long generation;
+        synchronized (this) {
+            if (!ownsCurrentAttempt() || connectionAttemptTerminated || this.tagReader != reader) {
+                return;
+            }
+            generation = connectionAttemptGeneration;
+            connectionAttemptTerminated = true;
+            final Account.State status = account.getStatus();
+            notifyOffline = account.getXmppConnection() == this
+                    && (status == Account.State.CONNECTING || status == Account.State.ONLINE);
+            if (notifyOffline) account.setStatus(Account.State.OFFLINE);
+        }
+        if (notifyOffline && generation == getConnectionAttemptGeneration()
+                && statusListener != null) statusListener.onStatusChanged(account);
     }
 
     private void processChallenge(final Element challenge) throws IOException {
@@ -1235,11 +1374,34 @@ public class XmppConnection implements Runnable {
     }
 
     private void changeStatusToOnline() {
+        changeStatusToOnline(getConnectionAttemptGeneration());
+    }
+
+    private void changeStatusToOnline(final long expectedGeneration) {
+        final boolean notifyOnline;
+        final long generation;
+        synchronized (this) {
+            if (expectedGeneration != connectionAttemptGeneration
+                    || account.getXmppConnection() != this || !isCurrentTransportAlive()
+                    || (account.getStatus() != Account.State.CONNECTING
+                            && account.getStatus() != Account.State.ONLINE)) {
+                return;
+            }
+            generation = connectionAttemptGeneration;
+            notifyOnline = account.getStatus() != Account.State.ONLINE;
+            if (notifyOnline) {
+                attempt = 0;
+                account.setStatus(Account.State.ONLINE);
+            }
+        }
+        if (notifyOnline && generation == getConnectionAttemptGeneration()
+                && statusListener != null) {
+            statusListener.onStatusChanged(account);
+        }
         Log.d(
                 Config.LOGTAG,
                 account.getJid().asBareJid() + ": online with resource " + account.getResource());
-        changeStatus(Account.State.ONLINE);
-        if (account.isOnlineAndConnected()) {
+        if (generation == getConnectionAttemptGeneration() && account.isOnlineAndConnected()) {
             mXmppConnectionService.getPushManagementService().onBound(account);
         }
     }
@@ -1494,13 +1656,47 @@ public class XmppConnection implements Runnable {
         tagWriter.writeElement(new StartTls());
     }
 
-    private void switchOverToTls(final Tag currentTag) throws XmlPullParserException, IOException {
-        tagReader.readElement(currentTag, Proceed.class);
-        final Socket socket = this.socket;
+    private void switchOverToTls(final Tag currentTag, final XmlReader expectedReader)
+            throws XmlPullParserException, IOException {
+        final XmlReader reader;
+        final TagWriter writer;
+        final Socket socket;
+        synchronized (this) {
+            if (!ownsCurrentAttempt() || connectionAttemptTerminated
+                    || this.tagReader != expectedReader || Thread.currentThread().isInterrupted()) {
+                throw new IOException("TLS attempt was superseded");
+            }
+            reader = this.tagReader;
+            writer = this.tagWriter;
+            socket = this.socket;
+        }
+        if (reader == null || writer == null || socket == null) {
+            throw new IOException("TLS transport was unavailable");
+        }
+        reader.readElement(currentTag, Proceed.class);
+        if (!ownsCurrentAttempt() || connectionAttemptTerminated) {
+            throw new IOException("TLS attempt was superseded");
+        }
         final SSLSocket sslSocket = upgradeSocketToTls(socket);
-        this.socket = sslSocket;
-        this.tagReader.setInputStream(sslSocket.getInputStream());
-        this.tagWriter.setOutputStream(sslSocket.getOutputStream());
+        // Both objects are owned by this attempt. Socket streams and XML parsing can block.
+        if (!ownsCurrentAttempt() || connectionAttemptTerminated) {
+            FileBackend.close(sslSocket);
+            throw new IOException("TLS attempt was superseded");
+        }
+        reader.setInputStream(sslSocket.getInputStream());
+        writer.setOutputStream(sslSocket.getOutputStream());
+        final boolean rejected;
+        synchronized (this) {
+            rejected = !ownsCurrentAttempt() || connectionAttemptTerminated
+                    || Thread.currentThread().isInterrupted()
+                    || this.tagReader != reader || this.tagWriter != writer
+                    || this.socket != socket;
+            if (!rejected) this.socket = sslSocket;
+        }
+        if (rejected) {
+            FileBackend.close(sslSocket);
+            throw new IOException("TLS attempt was superseded");
+        }
         Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": TLS connection established");
         final boolean quickStart;
         try {
@@ -1513,7 +1709,10 @@ public class XmppConnection implements Runnable {
             this.quickStartInProgress = true;
         }
         features.encryptionEnabled = true;
-        final Tag tag = tagReader.readTag();
+        final Tag tag = reader.readTag();
+        if (!ownsCurrentAttempt() || connectionAttemptTerminated) {
+            throw new IOException("TLS attempt was superseded");
+        }
         if (tag != null && tag.isStart("stream", Namespace.STREAMS)) {
             SSLSockets.log(account, sslSocket);
             processStream();
@@ -2206,11 +2405,18 @@ public class XmppConnection implements Runnable {
     }
 
     public void sendDiscoTimeout() {
-        if (mWaitForDisco.compareAndSet(true, false)) {
+        final long generation = getConnectionAttemptGeneration();
+        final boolean shouldFinalize;
+        synchronized (this) {
+            shouldFinalize = isCurrentDiscoAttempt(generation)
+                    && account.getStatus() == Account.State.CONNECTING
+                    && mWaitForDisco.compareAndSet(true, false);
+        }
+        if (shouldFinalize) {
             Log.d(
                     Config.LOGTAG,
                     account.getJid().asBareJid() + ": finalizing bind after disco timeout");
-            finalizeBind();
+            finalizeBind(generation);
         }
     }
 
@@ -2250,6 +2456,7 @@ public class XmppConnection implements Runnable {
 
     private void sendPostBindInitialization(
             final boolean waitForDisco, final boolean carbonsEnabled) {
+        final long generation = getConnectionAttemptGeneration();
         features.carbonsEnabled = carbonsEnabled;
         features.blockListRequested = false;
         synchronized (this.disco) {
@@ -2272,10 +2479,10 @@ public class XmppConnection implements Runnable {
         final boolean requestDiscoItemsFirst =
                 !account.isOptionSet(Account.OPTION_LOGGED_IN_SUCCESSFULLY);
         if (requestDiscoItemsFirst) {
-            sendServiceDiscoveryItems(account.getDomain());
+            sendServiceDiscoveryItems(account.getDomain(), generation);
         }
         if (discoveryResult == null) {
-            sendServiceDiscoveryInfo(account.getDomain());
+            sendServiceDiscoveryInfo(account.getDomain(), generation);
         } else {
             Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": server caps came from cache");
             disco.put(account.getDomain(), discoveryResult);
@@ -2284,41 +2491,45 @@ public class XmppConnection implements Runnable {
         if (!features.bind2()) {
             discoverMamPreferences();
         }
-        sendServiceDiscoveryInfo(account.getJid().asBareJid());
+        sendServiceDiscoveryInfo(account.getJid().asBareJid(), generation);
         if (!requestDiscoItemsFirst) {
-            sendServiceDiscoveryItems(account.getDomain());
+            sendServiceDiscoveryItems(account.getDomain(), generation);
         }
 
         if (!mWaitForDisco.get()) {
-            finalizeBind();
+            finalizeBind(generation);
         }
         this.lastSessionStarted = SystemClock.elapsedRealtime();
     }
 
-    private void sendServiceDiscoveryInfo(final Jid jid) {
-        mPendingServiceDiscoveries.incrementAndGet();
+    private void sendServiceDiscoveryInfo(final Jid jid, final long generation) {
+        if (!beginDiscoRequest(generation)) return;
         final Iq iq = new Iq(Iq.Type.GET);
         iq.setTo(jid);
         iq.query("http://jabber.org/protocol/disco#info");
         this.sendIqPacket(
                 iq,
                 (packet) -> {
+                    if (!isCurrentDiscoAttempt(generation)) return;
                     if (packet.getType() == Iq.Type.RESULT) {
                         boolean advancedStreamFeaturesLoaded;
-                        synchronized (XmppConnection.this.disco) {
-                            ServiceDiscoveryResult result = new ServiceDiscoveryResult(packet);
-                            if (jid.equals(account.getDomain())) {
-                                mXmppConnectionService.databaseBackend.insertDiscoveryResult(
-                                        result);
+                        final ServiceDiscoveryResult result = new ServiceDiscoveryResult(packet);
+                        if (jid.equals(account.getDomain())) {
+                            mXmppConnectionService.databaseBackend.insertDiscoveryResult(result);
+                        }
+                        synchronized (XmppConnection.this) {
+                            if (!isCurrentDiscoAttempt(generation)) return;
+                            synchronized (XmppConnection.this.disco) {
+                                disco.put(jid, result);
+                                advancedStreamFeaturesLoaded =
+                                        disco.containsKey(account.getDomain())
+                                                && disco.containsKey(account.getJid().asBareJid());
                             }
-                            disco.put(jid, result);
-                            advancedStreamFeaturesLoaded =
-                                    disco.containsKey(account.getDomain())
-                                            && disco.containsKey(account.getJid().asBareJid());
                         }
                         if (advancedStreamFeaturesLoaded
                                 && (jid.equals(account.getDomain())
-                                        || jid.equals(account.getJid().asBareJid()))) {
+                                        || jid.equals(account.getJid().asBareJid()))
+                                && isCurrentDiscoAttempt(generation)) {
                             enableAdvancedStreamFeatures();
                         }
                     } else if (packet.getType() == Iq.Type.ERROR) {
@@ -2332,23 +2543,26 @@ public class XmppConnection implements Runnable {
                                         || jid.equals(account.getJid().asBareJid());
                         final boolean advancedStreamFeaturesLoaded;
                         if (serverOrAccount) {
-                            synchronized (XmppConnection.this.disco) {
-                                disco.put(jid, ServiceDiscoveryResult.empty());
-                                advancedStreamFeaturesLoaded =
-                                        disco.containsKey(account.getDomain())
-                                                && disco.containsKey(account.getJid().asBareJid());
+                            final ServiceDiscoveryResult empty = ServiceDiscoveryResult.empty();
+                            synchronized (XmppConnection.this) {
+                                if (!isCurrentDiscoAttempt(generation)) return;
+                                synchronized (XmppConnection.this.disco) {
+                                    disco.put(jid, empty);
+                                    advancedStreamFeaturesLoaded =
+                                            disco.containsKey(account.getDomain())
+                                                    && disco.containsKey(account.getJid().asBareJid());
+                                }
                             }
                         } else {
                             advancedStreamFeaturesLoaded = false;
                         }
-                        if (advancedStreamFeaturesLoaded) {
+                        if (advancedStreamFeaturesLoaded && isCurrentDiscoAttempt(generation)) {
                             enableAdvancedStreamFeatures();
                         }
                     }
                     if (packet.getType() != Iq.Type.TIMEOUT) {
-                        if (mPendingServiceDiscoveries.decrementAndGet() == 0
-                                && mWaitForDisco.compareAndSet(true, false)) {
-                            finalizeBind();
+                        if (completeDiscoCallback(generation)) {
+                            finalizeBind(generation);
                         }
                     }
                 });
@@ -2408,10 +2622,43 @@ public class XmppConnection implements Runnable {
         return isMamPreferenceAlways;
     }
 
-    private void finalizeBind() {
-        this.offlineMessagesRetrieved = false;
+    private boolean isCurrentDiscoAttempt(final long generation) {
+        synchronized (this) {
+            return generation == connectionAttemptGeneration
+                    && account.getXmppConnection() == this && isCurrentTransportAlive()
+                    // Late disco results after a timeout may still update features while ONLINE.
+                    && (account.getStatus() == Account.State.CONNECTING
+                            || account.getStatus() == Account.State.ONLINE);
+        }
+    }
+
+    private boolean beginDiscoRequest(final long generation) {
+        synchronized (this) {
+            if (!isCurrentDiscoAttempt(generation)) return false;
+            mPendingServiceDiscoveries.incrementAndGet();
+            return true;
+        }
+    }
+
+    private boolean completeDiscoCallback(final long generation) {
+        synchronized (this) {
+            if (!isCurrentDiscoAttempt(generation)) return false;
+            return mPendingServiceDiscoveries.decrementAndGet() == 0
+                    && account.getStatus() == Account.State.CONNECTING
+                    && mWaitForDisco.compareAndSet(true, false);
+        }
+    }
+
+    private void finalizeBind(final long generation) {
+        synchronized (this) {
+            if (!isCurrentDiscoAttempt(generation)
+                    || account.getStatus() != Account.State.CONNECTING) return;
+            this.offlineMessagesRetrieved = false;
+        }
+        if (!isCurrentDiscoAttempt(generation)
+                || account.getStatus() != Account.State.CONNECTING) return;
         this.bindListener.run();
-        this.changeStatusToOnline();
+        this.changeStatusToOnline(generation);
     }
 
     private void enableAdvancedStreamFeatures() {
@@ -2431,14 +2678,15 @@ public class XmppConnection implements Runnable {
         }
     }
 
-    private void sendServiceDiscoveryItems(final Jid server) {
-        mPendingServiceDiscoveries.incrementAndGet();
+    private void sendServiceDiscoveryItems(final Jid server, final long generation) {
+        if (!beginDiscoRequest(generation)) return;
         final Iq iq = new Iq(Iq.Type.GET);
         iq.setTo(server.getDomain());
         iq.query("http://jabber.org/protocol/disco#items");
         this.sendIqPacket(
                 iq,
                 (packet) -> {
+                    if (!isCurrentDiscoAttempt(generation)) return;
                     if (packet.getType() == Iq.Type.RESULT) {
                         final HashSet<Jid> items = new HashSet<>();
                         final List<Element> elements = packet.query().getChildren();
@@ -2453,7 +2701,7 @@ public class XmppConnection implements Runnable {
                             }
                         }
                         for (Jid jid : items) {
-                            sendServiceDiscoveryInfo(jid);
+                            sendServiceDiscoveryInfo(jid, generation);
                         }
                     } else {
                         Log.d(
@@ -2463,9 +2711,8 @@ public class XmppConnection implements Runnable {
                                         + server);
                     }
                     if (packet.getType() != Iq.Type.TIMEOUT) {
-                        if (mPendingServiceDiscoveries.decrementAndGet() == 0
-                                && mWaitForDisco.compareAndSet(true, false)) {
-                            finalizeBind();
+                        if (completeDiscoCallback(generation)) {
+                            finalizeBind(generation);
                         }
                     }
                 });
@@ -2751,9 +2998,45 @@ public class XmppConnection implements Runnable {
         this.advancedStreamFeaturesLoadedListeners.add(listener);
     }
 
-    private void forceCloseSocket() {
-        FileBackend.close(this.socket);
-        FileBackend.close(this.tagReader);
+    private static final class TransportToClose {
+        final Socket socket;
+        final Socket connectingSocket;
+        final XmlReader reader;
+
+        TransportToClose(final Socket socket, final Socket connectingSocket,
+                final XmlReader reader) {
+            this.socket = socket;
+            this.connectingSocket = connectingSocket;
+            this.reader = reader;
+        }
+    }
+
+    /** The caller holds this monitor. Never perform I/O while detaching a transport. */
+    private TransportToClose detachTransportLocked() {
+        final TransportToClose transport =
+                new TransportToClose(socket, connectingSocket, tagReader);
+        socket = null;
+        connectingSocket = null;
+        tagReader = null;
+        return transport;
+    }
+
+    private static void closeTransport(final TransportToClose transport) {
+        FileBackend.close(transport.socket);
+        if (transport.connectingSocket != transport.socket) {
+            FileBackend.close(transport.connectingSocket);
+        }
+        FileBackend.close(transport.reader);
+    }
+
+    private static void closeTransportAfterTimeout(final TransportToClose transport) {
+        if (transport.socket == null && transport.connectingSocket == null
+                && transport.reader == null) return;
+        // A socket implementation may block in close(). Do not stall the one-thread deadline
+        // scheduler or prevent the next attempt from acquiring the ownership monitor.
+        final Thread closer = new Thread(() -> closeTransport(transport), "xmpp-transport-close");
+        closer.setDaemon(true);
+        closer.start();
     }
 
     public void interrupt() {
@@ -2763,50 +3046,52 @@ public class XmppConnection implements Runnable {
     }
 
     public void disconnect(final boolean force) {
-        interrupt();
+        final TransportToClose transport;
+        final TagWriter currentTagWriter;
+        final CountDownLatch streamCountDownLatch;
+        synchronized (this) {
+            connectionAttemptTerminated = true;
+            interrupt();
+            transport = detachTransportLocked();
+            currentTagWriter = this.tagWriter;
+            streamCountDownLatch = this.mStreamCountDownLatch;
+        }
         Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": disconnecting force=" + force);
-        if (force) {
-            forceCloseSocket();
-        } else {
-            final TagWriter currentTagWriter = this.tagWriter;
-            if (currentTagWriter.isActive()) {
-                currentTagWriter.finish();
-                final Socket currentSocket = this.socket;
-                final CountDownLatch streamCountDownLatch = this.mStreamCountDownLatch;
-                try {
-                    currentTagWriter.await(1, TimeUnit.SECONDS);
-                    Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": closing stream");
-                    currentTagWriter.writeTag(Tag.end("stream:stream"));
-                    if (streamCountDownLatch != null) {
-                        if (streamCountDownLatch.await(1, TimeUnit.SECONDS)) {
-                            Log.d(
-                                    Config.LOGTAG,
-                                    account.getJid().asBareJid() + ": remote ended stream");
-                        } else {
-                            Log.d(
-                                    Config.LOGTAG,
-                                    account.getJid().asBareJid()
-                                            + ": remote has not closed socket. force closing");
-                        }
+        if (!force && currentTagWriter.isActive()) {
+            currentTagWriter.finish();
+            try {
+                currentTagWriter.await(1, TimeUnit.SECONDS);
+                Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": closing stream");
+                currentTagWriter.writeTag(Tag.end("stream:stream"));
+                if (streamCountDownLatch != null) {
+                    if (streamCountDownLatch.await(1, TimeUnit.SECONDS)) {
+                        Log.d(
+                                Config.LOGTAG,
+                                account.getJid().asBareJid() + ": remote ended stream");
+                    } else {
+                        Log.d(
+                                Config.LOGTAG,
+                                account.getJid().asBareJid()
+                                        + ": remote has not closed socket. force closing");
                     }
-                } catch (InterruptedException e) {
-                    Log.d(
-                            Config.LOGTAG,
-                            account.getJid().asBareJid()
-                                    + ": interrupted while gracefully closing stream");
-                } catch (final IOException e) {
-                    Log.d(
-                            Config.LOGTAG,
-                            account.getJid().asBareJid()
-                                    + ": io exception during disconnect ("
-                                    + e.getMessage()
-                                    + ")");
-                } finally {
-                    FileBackend.close(currentSocket);
                 }
-            } else {
-                forceCloseSocket();
+            } catch (InterruptedException e) {
+                Log.d(
+                        Config.LOGTAG,
+                        account.getJid().asBareJid()
+                                + ": interrupted while gracefully closing stream");
+            } catch (final IOException e) {
+                Log.d(
+                        Config.LOGTAG,
+                        account.getJid().asBareJid()
+                                + ": io exception during disconnect ("
+                                + e.getMessage()
+                                + ")");
+            } finally {
+                closeTransport(transport);
             }
+        } else {
+            closeTransport(transport);
         }
     }
 
@@ -2987,19 +3272,47 @@ public class XmppConnection implements Runnable {
     }
 
     public void triggerConnectionTimeout() {
-        final var duration = getConnectionDuration();
-        Log.d(
-                Config.LOGTAG,
-                account.getJid().asBareJid() + ": connection timeout after " + duration + "ms");
+        triggerConnectionTimeout(getConnectionAttemptGeneration());
+    }
 
-        // last connection time gets reset so time to next attempt is calculated correctly
-        this.lastConnectionStarted = SystemClock.elapsedRealtime();
+    public boolean triggerConnectionTimeout(final long generation) {
+        final TransportToClose transport;
+        synchronized (this) {
+            if (generation != connectionAttemptGeneration || connectionAttemptTerminated
+                    || account.getXmppConnection() != this
+                    || account.getStatus() != Account.State.CONNECTING
+                    || getConnectionDeadlineRemaining() > 0) {
+                return false;
+            }
+            connectionAttemptTerminated = true;
+            Log.d(Config.LOGTAG, account.getJid().asBareJid() + ": connection timeout after "
+                    + (SystemClock.elapsedRealtime() - connectionAttemptStarted) + "ms");
+            // The connection thread may be blocked in DNS, TCP, TLS, SASL or the stream reader.
+            interrupt();
+            transport = detachTransportLocked();
+            this.lastConnectionStarted = SystemClock.elapsedRealtime();
+            account.setStatus(Account.State.CONNECTION_TIMEOUT);
+        }
+        try {
+            if (generation == getConnectionAttemptGeneration() && statusListener != null) {
+                statusListener.onStatusChanged(account);
+            }
+        } finally {
+            closeTransportAfterTimeout(transport);
+        }
+        return true;
+    }
 
-        // interrupt needs to be called before status change; otherwise we interrupt the newly
-        // created thread
-        this.interrupt();
-        this.forceCloseSocket();
-        this.changeStatus(Account.State.CONNECTION_TIMEOUT);
+    private boolean isCurrentTransportAlive() {
+        return !connectionAttemptTerminated && mThread != null && mThread.isAlive()
+                && socket != null && !socket.isClosed()
+                && (!Boolean.TRUE.equals(mConnectionThread.get()) || ownsCurrentAttempt());
+    }
+
+    private boolean ownsCurrentAttempt() {
+        final Long generation = runningAttemptGeneration.get();
+        return mThread == Thread.currentThread() && generation != null
+                && generation == connectionAttemptGeneration;
     }
 
     private class MyKeyManager implements X509KeyManager {

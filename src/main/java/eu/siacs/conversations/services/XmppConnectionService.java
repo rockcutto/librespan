@@ -2418,11 +2418,10 @@ public class XmppConnectionService extends Service {
                 reconnectAccount(account, true, interactive);
             } else if (account.getStatus() == Account.State.CONNECTING) {
                 final var connection = account.getXmppConnection();
-                final var connectionDuration = connection.getConnectionDuration();
+                final var connectionTimeout = connection.getConnectionDeadlineRemaining();
                 final var discoDuration = connection.getDiscoDuration();
-                final var connectionTimeout = Config.CONNECT_TIMEOUT * 1000L - connectionDuration;
                 final var discoTimeout = Config.CONNECT_DISCO_TIMEOUT * 1000L - discoDuration;
-                if (connectionTimeout < 0) {
+                if (connectionTimeout <= 0) {
                     connection.triggerConnectionTimeout();
                 } else if (discoTimeout < 0) {
                     connection.sendDiscoTimeout();
@@ -3323,6 +3322,24 @@ public class XmppConnectionService extends Service {
                     TimeUnit.SECONDS);
         } catch (final RejectedExecutionException e) {
             Log.d(Config.LOGTAG, "SM resume watchdog ignored while service is shutting down");
+        }
+    }
+
+    /** An in-process deadline for the current transport attempt; the normal alarm still wakes a
+     * suspended process, and every subsequent state pass checks the same monotonic deadline. */
+    protected void scheduleConnectionAttemptDeadline(
+            final Account account, final XmppConnection connection, final long generation) {
+        try {
+            internalPingExecutor.schedule(
+                    () -> {
+                        if (!destroyed && account.getXmppConnection() == connection) {
+                            connection.triggerConnectionTimeout(generation);
+                        }
+                    },
+                    Math.max(0L, connection.getConnectionDeadlineRemaining()),
+                    TimeUnit.MILLISECONDS);
+        } catch (final RejectedExecutionException e) {
+            Log.d(Config.LOGTAG, "connection deadline ignored while service is shutting down");
         }
     }
 
@@ -10511,7 +10528,9 @@ public class XmppConnectionService extends Service {
                 connection.setInteractive(interactive);
                 connection.prepareNewConnection();
                 final Thread thread = connection.prepareConnectionThread();
+                final long generation = connection.getConnectionAttemptGeneration();
                 thread.start();
+                scheduleConnectionAttemptDeadline(account, connection, generation);
                 scheduleWakeUpCall(Config.CONNECT_DISCO_TIMEOUT, account.getUuid().hashCode());
             } else {
                 disconnect(account, force || account.getTrueStatus().isError() || !hasInternet);
