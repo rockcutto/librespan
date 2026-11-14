@@ -420,7 +420,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         if (query.finTimeout != null) query.finTimeout.cancel(false);
         synchronized (this.pendingQueries) { this.pendingQueries.remove(query); }
         try {
-            publishQuery(query, done && locallyDurable);
+            publishQuery(query, done && locallyDurable, true);
         } finally {
             query.diagnostics.end(query.diagnosticReason);
             final var notificationBatch = query.takeNotificationCandidates();
@@ -484,7 +484,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         this.execute(retry);
     }
 
-    private void publishQuery(final Query query, final boolean done) {
+    private void publishQuery(final Query query, final boolean done, final boolean terminal) {
         final long publicationStarted = query.diagnostics.begin();
         try {
         final Conversation conversation = query.getConversation();
@@ -512,7 +512,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             }
         }
         if (query.hasCallback()) {
-            query.callback(done);
+            query.callback(done, terminal);
         } else {
             this.mXmppConnectionService.updateConversationUi();
         }
@@ -665,7 +665,7 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
             // Ownership transfers before callbacks/transport; no external call holds the registry
             // lock, and a reentrant response can never find an unregistered next page.
             try {
-                this.publishQuery(query, false);
+                this.publishQuery(query, false, false);
                 query.diagnostics.end(MamDiagnostics.Reason.NEXT);
             } finally {
                 this.execute(nextQuery);
@@ -1028,12 +1028,16 @@ public class MessageArchiveService implements OnAdvancedStreamFeaturesLoaded {
         }
 
         public void callback(boolean done) {
+            callback(done, true);
+        }
+
+        public void callback(boolean done, boolean terminal) {
             if (this.callback != null) {
                 if (actionResult != null) {
                     MamDiagnostics.action(actionResult);
                     this.callback.onHistoryActionResult(actionResult, conversation);
                 }
-                this.callback.onMoreMessagesLoaded(actualCount, conversation);
+                this.callback.onMoreMessagesLoaded(actualCount, conversation, terminal);
             }
         }
 

@@ -11972,6 +11972,13 @@ public class XmppConnectionService extends Service {
 
     public interface OnMoreMessagesLoaded {
         void onMoreMessagesLoaded(int count, Conversation conversation);
+
+        // terminal describes callback ownership, not archive exhaustion or query success.
+        // Keep the two-argument method abstract so existing implementations/lambdas still work.
+        default void onMoreMessagesLoaded(int count, Conversation conversation, boolean terminal) {
+            onMoreMessagesLoaded(count, conversation);
+        }
+
         default void onHistoryActionResult(HistoryActionResult result, Conversation conversation) {}
     }
 

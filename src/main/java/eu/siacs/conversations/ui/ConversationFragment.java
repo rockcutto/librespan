@@ -166,6 +166,7 @@ import eu.siacs.conversations.ui.util.ConversationMenuConfigurator;
 import eu.siacs.conversations.ui.util.DateSeparator;
 import eu.siacs.conversations.ui.util.EditMessageActionModeCallback;
 import eu.siacs.conversations.ui.util.EditMessageSelectionActionModeCallback;
+import eu.siacs.conversations.ui.util.HistoryPageRequest;
 import eu.siacs.conversations.ui.util.ImageAttachmentStaging;
 import eu.siacs.conversations.ui.util.MenuDoubleTabUtil;
 import eu.siacs.conversations.ui.util.MucDetailsContextMenuHelper;
@@ -300,7 +301,8 @@ public class ConversationFragment extends XmppFragment
     private boolean followLatestMessages = true;
     private boolean userScrollControlsFollowLatest;
     private boolean deferredTimelineRefreshWhileReading;
-    @Nullable private Runnable pendingHistoryPageUiPublish;
+    @Nullable private HistoryPageUiPublish pendingHistoryPageUiPublish;
+    @Nullable private Object historyPageUiSession;
     private boolean backwardHistoryPaginationArmed = true;
     private boolean suppressNextRefreshBottomFollow;
     private boolean bottomFollowTailInitialized;
@@ -791,7 +793,7 @@ public class ConversationFragment extends XmppFragment
                     if (!stickyDateScrolling && pendingHistoryPageUiPublish != null) {
                         final Runnable pendingPublish = pendingHistoryPageUiPublish;
                         pendingHistoryPageUiPublish = null;
-                        view.post(pendingPublish);
+                        new Handler(Looper.getMainLooper()).post(pendingPublish);
                     }
                     if (stickyDateScrolling) {
                         if (binding != null) {
@@ -851,65 +853,183 @@ public class ConversationFragment extends XmppFragment
 
     private void loadMoreMessages(
             boolean paginateBackward, boolean paginationForward, AbsListView view) {
+        final Conversation requestedConversation = conversation;
+        final ConversationsActivity requestActivity = activity;
+        final View requestView = getView();
+        if (requestedConversation == null
+                || requestActivity == null
+                || getActivity() != requestActivity
+                || !isAdded()
+                || requestView == null
+                || binding == null
+                || requestView != binding.getRoot()
+                || requestActivity.xmppConnectionService == null) {
+            return;
+        }
         if (paginateBackward && (conversation != null && !conversation.messagesLoaded.get())) {
             paginateBackward = false;
         }
 
-        if (conversation != null
-                && (paginateBackward || !messageList.isEmpty())
-                && ((paginateBackward && conversation.messagesLoaded.compareAndSet(true, false))
-                        || (paginationForward
-                                && conversation.historyPartLoadedForward.compareAndSet(
-                                        true, false)))) {
-            final long timestamp = eu.siacs.conversations.entities.HistoryPageBoundary.timestamp(
-                    conversation, !paginateBackward);
-
-            boolean finalPaginateBackward = paginateBackward;
-            final String selectionTargetUuid = pendingSelectionUuid;
-            activity.xmppConnectionService.loadMoreMessages(
-                    conversation,
+        if ((!paginateBackward && messageList.isEmpty())
+                || (!paginateBackward && !paginationForward)) {
+            return;
+        }
+        final HistoryPageRequest<ConversationFragment> request =
+                HistoryPageRequest.tryStart(
+                        paginateBackward
+                                ? requestedConversation.messagesLoaded
+                                : requestedConversation.historyPartLoadedForward,
+                        this,
+                        requestActivity,
+                        requestView,
+                        historyPageUiSession);
+        if (request == null) {
+            return;
+        }
+        try {
+            final long timestamp =
+                    eu.siacs.conversations.entities.HistoryPageBoundary.timestamp(
+                            requestedConversation, !paginateBackward);
+            requestActivity.xmppConnectionService.loadMoreMessages(
+                    requestedConversation,
                     timestamp,
                     !paginateBackward,
-                    new XmppConnectionService.OnMoreMessagesLoaded() {
-                        @Override
-                        public void onHistoryActionResult(
-                                XmppConnectionService.HistoryActionResult result, Conversation room) {
-                            runOnUiThread(() -> {
-                                if (ConversationFragment.this.conversation == room) showHistoryActionResult(result);
+                    new HistoryPageCallback(
+                            request,
+                            requestedConversation,
+                            paginateBackward,
+                            paginationForward,
+                            pendingSelectionUuid));
+        } catch (RuntimeException failure) {
+            request.finish();
+            throw failure;
+        }
+    }
+
+    // Static so neither the service callback nor its main-queue tasks capture the Fragment.
+    private static final class HistoryPageCallback
+            implements XmppConnectionService.OnMoreMessagesLoaded {
+        private final HistoryPageRequest<ConversationFragment> request;
+        private final Conversation conversation;
+        private final boolean paginateBackward;
+        private final boolean paginationForward;
+        @Nullable private final String selectionTargetUuid;
+        // Guarded by onMoreMessagesLoaded: progress can repeat; only the terminal event closes
+        // this callback. Posting under the same monitor preserves progress/terminal queue order.
+        private boolean terminalReceived;
+
+        private HistoryPageCallback(
+                HistoryPageRequest<ConversationFragment> request,
+                Conversation conversation,
+                boolean paginateBackward,
+                boolean paginationForward,
+                @Nullable String selectionTargetUuid) {
+            this.request = request;
+            this.conversation = conversation;
+            this.paginateBackward = paginateBackward;
+            this.paginationForward = paginationForward;
+            this.selectionTargetUuid = selectionTargetUuid;
+        }
+
+        @Nullable
+        private ConversationFragment target(final Conversation loadedConversation) {
+            final ConversationFragment fragment = request.target();
+            if (loadedConversation != conversation
+                    || fragment == null
+                    || fragment.conversation != conversation
+                    || !fragment.isAdded()
+                    || fragment.activity == null
+                    || fragment.getActivity() != fragment.activity
+                    || fragment.binding == null
+                    || fragment.getView() != fragment.binding.getRoot()
+                    || !request.matches(
+                            fragment,
+                            fragment.activity,
+                            fragment.getView(),
+                            fragment.historyPageUiSession)) {
+                return null;
+            }
+            return fragment;
+        }
+
+        @Override
+        public void onHistoryActionResult(
+                XmppConnectionService.HistoryActionResult result, Conversation room) {
+            new Handler(Looper.getMainLooper())
+                    .post(
+                            () -> {
+                                final ConversationFragment fragment = target(room);
+                                if (fragment != null) fragment.showHistoryActionResult(result);
                             });
-                        }
-                        @Override
-                        public void onMoreMessagesLoaded(
-                                final int c, final Conversation conversation) {
-                            if (ConversationFragment.this.conversation != conversation) {
-                                if (finalPaginateBackward) conversation.messagesLoaded.set(true);
-                                else conversation.historyPartLoadedForward.set(true);
-                                return;
-                            }
-                            runOnUiThread(
-                                    () -> {
-                                        final Runnable publishHistoryPage =
-                                                () ->
-                                                        publishLoadedHistoryPage(
-                                                                conversation,
-                                                                c,
-                                                                finalPaginateBackward,
-                                                                paginationForward,
-                                                                selectionTargetUuid);
-                                        if (finalPaginateBackward && stickyDateScrolling) {
-                                            // MAM can finish while the finger/fling still owns the
-                                            // ListView. Publishing a prepended page at that moment
-                                            // forces a full adapter rebind under the gesture and
-                                            // produces the visible "blink". Keep the model update
-                                            // in the background and publish only once scrolling is
-                                            // idle.
-                                            pendingHistoryPageUiPublish = publishHistoryPage;
-                                        } else {
-                                            publishHistoryPage.run();
-                                        }
-                                    });
-                        }
-                    });
+        }
+
+        @Override
+        public void onMoreMessagesLoaded(final int count, final Conversation room) {
+            // Local database results and existing two-argument producers are one-shot.
+            onMoreMessagesLoaded(count, room, true);
+        }
+
+        @Override
+        public synchronized void onMoreMessagesLoaded(
+                final int count, final Conversation room, final boolean terminal) {
+            if (terminalReceived) return;
+            terminalReceived = terminal;
+            // Unlike XmppFragment.runOnUiThread, this also delivers cleanup after detach.
+            new Handler(Looper.getMainLooper())
+                    .post(
+                            () -> {
+                                final ConversationFragment fragment = target(room);
+                                if (fragment == null) {
+                                    request.finishPublication(terminal);
+                                    return;
+                                }
+                                final HistoryPageUiPublish publish =
+                                        new HistoryPageUiPublish(this, count, terminal);
+                                if (paginateBackward && fragment.stickyDateScrolling) {
+                                    // Preserve the existing scroll-idle publication/anchor policy.
+                                    fragment.discardPendingHistoryPageUiPublish();
+                                    fragment.pendingHistoryPageUiPublish = publish;
+                                } else {
+                                    publish.run();
+                                }
+                            });
+        }
+    }
+
+    private static final class HistoryPageUiPublish implements Runnable {
+        private final HistoryPageCallback callback;
+        private final int count;
+        private final boolean terminal;
+
+        private HistoryPageUiPublish(HistoryPageCallback callback, int count, boolean terminal) {
+            this.callback = callback;
+            this.count = count;
+            this.terminal = terminal;
+        }
+
+        @Override
+        public void run() {
+            try {
+                final ConversationFragment fragment = callback.target(callback.conversation);
+                if (fragment != null) {
+                    fragment.publishLoadedHistoryPage(
+                            callback.conversation,
+                            count,
+                            callback.paginateBackward,
+                            callback.paginationForward,
+                            callback.selectionTargetUuid);
+                }
+            } finally {
+                callback.request.finishPublication(terminal);
+            }
+        }
+    }
+
+    private void discardPendingHistoryPageUiPublish() {
+        if (pendingHistoryPageUiPublish != null) {
+            pendingHistoryPageUiPublish.callback.request.finishPublication(
+                    pendingHistoryPageUiPublish.terminal);
+            pendingHistoryPageUiPublish = null;
         }
     }
 
@@ -942,11 +1062,15 @@ public class ConversationFragment extends XmppFragment
             final boolean paginateBackward,
             final boolean paginationForward,
             @Nullable final String selectionTargetUuid) {
-        if (binding == null
+        if (activity == null
+                || getActivity() != activity
+                || !isAdded()
+                || getView() == null
+                || activity.xmppConnectionService == null
+                || binding == null
+                || getView() != binding.getRoot()
                 || messageListAdapter == null
                 || ConversationFragment.this.conversation != loadedConversation) {
-            loadedConversation.messagesLoaded.set(true);
-            loadedConversation.historyPartLoadedForward.set(true);
             return;
         }
         if (loadedCount <= 0) {
@@ -958,11 +1082,6 @@ public class ConversationFragment extends XmppFragment
                     activity.xmppConnectionService.getConversationPresentationRevision();
             renderedTimelineConversationUuid = loadedConversation.getUuid();
             forceTimelineRebuild = false;
-            if (!paginateBackward) {
-                loadedConversation.historyPartLoadedForward.set(true);
-            } else {
-                loadedConversation.messagesLoaded.set(true);
-            }
             Log.d(Config.LOGTAG, "timeline-refresh: reason=mam-empty policy=NO_REBIND");
             binding.messagesView.post(this::toggleScrollDownButton);
             return;
@@ -1020,12 +1139,6 @@ public class ConversationFragment extends XmppFragment
                 binding.messagesView.post(() -> restoreVisualScrollAnchor(preservedScrollAnchor));
             } else {
                 binding.messagesView.post(this::toggleScrollDownButton);
-            }
-
-            if (!paginateBackward) {
-                loadedConversation.historyPartLoadedForward.set(true);
-            } else {
-                loadedConversation.messagesLoaded.set(true);
             }
         }
     }
@@ -3932,6 +4045,7 @@ public class ConversationFragment extends XmppFragment
     @Override
     public View onCreateView(
             final LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        historyPageUiSession = new Object();
         this.binding =
                 DataBindingUtil.inflate(inflater, R.layout.fragment_conversation, container, false);
         binding.getRoot().setOnClickListener(null); // TODO why the fuck did we do this?
@@ -4385,6 +4499,9 @@ public class ConversationFragment extends XmppFragment
 
     @Override
     public void onDestroyView() {
+        historyPageUiSession = null;
+        discardPendingHistoryPageUiPublish();
+        stickyDateScrolling = false;
         if (binding != null) {
             binding.getRoot().removeCallbacks(finishImeResizeRunnable);
             binding.messagesView.removeCallbacks(incomingMediaCoalescingRefreshRunnable);
@@ -4404,7 +4521,6 @@ public class ConversationFragment extends XmppFragment
         followLatestMessages = true;
         userScrollControlsFollowLatest = false;
         deferredTimelineRefreshWhileReading = false;
-        pendingHistoryPageUiPublish = null;
         backwardHistoryPaginationArmed = true;
         suppressNextRefreshBottomFollow = false;
         composerFormattingPressInProgress = false;
@@ -7526,6 +7642,8 @@ public class ConversationFragment extends XmppFragment
         final boolean conversationChanged = originalConversation != conversation;
         this.conversation = conversation;
         if (conversationChanged) {
+            if (historyPageUiSession != null) historyPageUiSession = new Object();
+            discardPendingHistoryPageUiPublish();
             forceTimelineRebuild = true;
             renderedTimelineRevision = Long.MIN_VALUE;
             renderedDynamicTimelineSignature = Long.MIN_VALUE;
@@ -7534,7 +7652,6 @@ public class ConversationFragment extends XmppFragment
             followLatestMessages = pendingScrollState.peek() == null;
             userScrollControlsFollowLatest = false;
             deferredTimelineRefreshWhileReading = false;
-            pendingHistoryPageUiPublish = null;
             backwardHistoryPaginationArmed = true;
             suppressNextRefreshBottomFollow = true;
             bottomFollowTailInitialized = false;
@@ -7601,7 +7718,7 @@ public class ConversationFragment extends XmppFragment
         messageListAdapter.updatePreferences();
         refresh(false);
         activity.invalidateOptionsMenu();
-        this.conversation.messagesLoaded.set(true);
+        HistoryPageRequest.resetIfIdle(this.conversation.messagesLoaded);
         activity.xmppConnectionService.scheduleProtectedTextRehydrateForConversation(
                 this.conversation);
         activity.xmppConnectionService.scheduleLegacyPlaintextMigrationForConversation(
