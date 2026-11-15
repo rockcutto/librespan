@@ -259,6 +259,7 @@ public class XmppConnectionService extends Service {
     public static final String ACTION_FOSS_PUSH_FAILED = "foss_push_failed";
     public static final String ACTION_FOSS_PUSH_DRAIN = "foss_push_drain";
     public static final String ACTION_FOSS_PUSH_RENEW = "foss_push_renew";
+    public static final String ACTION_FOSS_PUSH_AUTO_RETRY = "foss_push_auto_retry";
     public static final String ACTION_FOSS_PUSH_UNREGISTERED = "foss_push_unregistered";
     public static final String ACTION_FOSS_PUSH_REVOKED = "foss_push_revoked";
     public static final String ACTION_FOSS_PUSH_UNAVAILABLE = "foss_push_unavailable";
@@ -1973,6 +1974,10 @@ public class XmppConnectionService extends Service {
             case ACTION_FOSS_PUSH_RENEW:
                 if (intent != null) mPushManagementService.onRenewal(
                         intent.getStringExtra("push_account_uuid"), intent.getStringExtra("generation"));
+                break;
+            case ACTION_FOSS_PUSH_AUTO_RETRY:
+                if (intent != null) mPushManagementService.onAutoRetry(
+                        intent.getStringExtra("push_account_uuid"), intent.getStringExtra("push_retry_owner"));
                 break;
             case ACTION_FOSS_PUSH_REVOKED:
                 if (intent != null) mPushManagementService.onActiveUnregistered(

@@ -39,7 +39,7 @@ public final class PushSettingsActivity extends XmppActivity
     private Bundle drafts = new Bundle();
     private String selected;
     private SharedPreferences events;
-    private boolean editing, submitting, retryPrompt;
+    private boolean editing, submitting;
     private TextView transportHint, waitingHint, intro;
     private String editorSection="service";
     private final List<View> deliveryEditorViews=new ArrayList<>();
@@ -270,37 +270,14 @@ public final class PushSettingsActivity extends XmppActivity
     private String mode(){return provider().isEmpty()?"embedded":"external";}
     private void performPrimary() {
         if(submitting)return;
-        if("retry".equals(action)) {
-            requestRetry();
-        } else if("details".equals(action)){details=true;updateVisibility();}
+        if("none".equals(action))return;
+        if("details".equals(action)){details=true;updateVisibility();}
         else if("edit".equals(action)){capture();editing=true;
             Bundle draft=drafts.getBundle(selected);if(draft!=null)draft.putBoolean("editing",true);render();}
         else if("notifications".equals(action)) openNotificationSettings();
         else connect();
     }
-    private void requestRetry() {
-        Account target=account();if(target==null||retryPrompt||submitting)return;
-        final String uuid=target.getUuid();retryPrompt=true;
-        new MaterialAlertDialogBuilder(this).setTitle(R.string.ps_retry)
-            .setMessage(R.string.ps_retry_confirmation)
-            .setNegativeButton(android.R.string.cancel,null)
-            .setOnDismissListener(dialog->retryPrompt=false)
-            .setPositiveButton(R.string.ps_retry,(dialog,which)->{
-                if(!uuid.equals(selected)||xmppConnectionService==null)return;
-                Account current=account();if(current==null||!current.isEnabled())return;
-                try {
-                    PushSettingsConfiguration.Snapshot latest=PushSettingsConfiguration.read(this,uuid);
-                    if(!latest.enabled||latest.cancelling){refreshFacts();return;}
-                    submitting=true;primary.setEnabled(false);
-                    PushSettingsUiCommands.RetryResult result=commands.retry(
-                        ()->xmppConnectionService.getPushManagementService().retry(current),
-                        android.os.SystemClock.elapsedRealtime());
-                    refreshFacts();
-                    if(result==PushSettingsUiCommands.RetryResult.FAILED)status.setText(R.string.ps_retry_failed);
-                }catch(RuntimeException failure){status.setText(R.string.ps_retry_failed);}
-                finally{submitting=false;updateValidity();}
-            }).show();
-    }
+
     private void openNotificationSettings(){
         Intent intent=new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName());
@@ -351,9 +328,9 @@ public final class PushSettingsActivity extends XmppActivity
         if(connects && editing){
             try {
                 PushSettingsConfiguration.Snapshot saved=PushSettingsConfiguration.read(this,selected);
-                if(saved.cancelling){primary.setVisibility(View.GONE);return;}
+                if(saved.blocksConfiguration()){primary.setVisibility(View.GONE);return;}
                 boolean changed=!saved.matches(g(),k(),mode(),provider());
-                primary.setVisibility(!changed&&PushSettingsConfiguration.valid(saved.gateway,saved.vapid)?View.GONE:View.VISIBLE);
+                primary.setVisibility(!changed&&!saved.requiresAction()&&PushSettingsConfiguration.valid(saved.gateway,saved.vapid)?View.GONE:View.VISIBLE);
             }catch(RuntimeException unavailable){primary.setEnabled(false);return;}
         }
         boolean valid=PushSettingsConfiguration.valid(g(),k())&&availableProviders.contains(provider());
@@ -377,8 +354,8 @@ public final class PushSettingsActivity extends XmppActivity
                 m=savedValues?snapshot.mode:mode(),p=savedValues?snapshot.distributor:provider();
             if(!a.isEnabled()||!PushSettingsConfiguration.valid(address,key)){status.setText(R.string.foss_push_invalid);return;}
             if(!availableProviders.contains(p)){status.setText(p.isEmpty()?R.string.ps_no_google:R.string.ps_missing);return;}
-            if(snapshot.cancelling){status.setText(R.string.foss_push_cancelling);return;}
-            if(snapshot.enabled&&snapshot.matches(address,key,m,p)){
+            if(snapshot.blocksConfiguration()){status.setText(R.string.foss_push_cancelling);return;}
+            if(snapshot.enabled&&!snapshot.requiresAction()&&snapshot.matches(address,key,m,p)){
                 editing=false;drafts.remove(selected);render();return;
             }
             Runnable apply=()->{
@@ -415,6 +392,8 @@ public final class PushSettingsActivity extends XmppActivity
             PushSettingsConfiguration.Snapshot snapshot=PushSettingsConfiguration.read(this,selected);
             String state=xmppConnectionService.getPushManagementService().status(a);
             if(snapshot.isRevoked()) state="UNREGISTERED";
+            boolean autoRecovering=eu.siacs.conversations.services.FossPushPolicy.shouldAutoRetry(
+                snapshot.enabled, snapshot.phase, snapshot.lastFailure);
             int label=switch(state){
                 case "connected"->R.string.ps_on;
                 case "off"->R.string.foss_push_off;
@@ -429,14 +408,20 @@ public final class PushSettingsActivity extends XmppActivity
             boolean connecting="connecting".equals(state)||"enabling".equals(state)||snapshot.cancelling;
             boolean connected="connected".equals(state);
             boolean providerAvailable=availableProviders.contains(snapshot.distributor);
-            status.setText(!a.isEnabled()?R.string.ps_account_disabled:!configured?R.string.ps_setup:connected?R.string.ps_on:label);
+            autoRecovering=autoRecovering&&configured&&providerAvailable&&a.isEnabled();
+            status.setText(!a.isEnabled()?R.string.ps_account_disabled:!configured?R.string.ps_setup:
+                connected?R.string.ps_on:autoRecovering&&"error".equals(snapshot.phase)
+                    ?R.string.ps_auto_recovering:label);
             confirmation.setVisibility(connected?View.VISIBLE:View.GONE);
-            enabled.setVisibility(connected&&!editing?View.VISIBLE:View.GONE);
-            refreshToggle();enabled.setEnabled(a.isEnabled()&&!submitting);
+            // Consent remains visible while automatic recovery is running.
+            enabled.setVisibility(snapshot.enabled&&!editing?View.VISIBLE:View.GONE);
+            refreshToggle();enabled.setEnabled(!submitting);
             // The service exposes no start timestamp: do not invent elapsed progress or a timeout.
             progress.setVisibility(View.GONE);
-            waitingHint.setVisibility(connecting||"UNREGISTERED".equals(state)?View.VISIBLE:View.GONE);
-            waitingHint.setText(snapshot.cancelling?R.string.foss_push_cancelling:
+            waitingHint.setVisibility(connecting||autoRecovering||"UNREGISTERED".equals(state)?View.VISIBLE:View.GONE);
+            waitingHint.setText(snapshot.isRevoked()?R.string.ps_revoked_explanation:
+                snapshot.cancelling?R.string.foss_push_cancelling:
+                autoRecovering&&configured?R.string.ps_auto_recovery_hint:
                 "UNREGISTERED".equals(state)?R.string.ps_revoked_explanation:R.string.ps_waiting_confirmation);
             intro.setVisibility(!configured?View.VISIBLE:View.GONE);
             serviceSummary.setVisibility(configured&&!(editing&&"service".equals(editorSection))?View.VISIBLE:View.GONE);
@@ -461,16 +446,19 @@ public final class PushSettingsActivity extends XmppActivity
                 }
             }
             boolean notificationAction=connected&&!editing&&(!notificationsAllowed||blockedChannels>0);
-            primary.setVisibility(snapshot.cancelling||connected&&!editing&&!notificationAction?View.GONE:View.VISIBLE);
-            if(connecting&&!snapshot.cancelling){action="retry";primary.setText(R.string.ps_retry);}
+            // Recoverable failures are repaired by WorkManager, not a manual retry button.
+            boolean hideForRecovery=autoRecovering&&configured&&!editing;
+            primary.setVisibility(snapshot.blocksConfiguration()||hideForRecovery
+                ||connected&&!editing&&!notificationAction?View.GONE:View.VISIBLE);
+            if(hideForRecovery){action="none";}
             else if(notificationAction){action="notifications";primary.setText(R.string.ps_notification_settings);}
             else if(showEditor){action="connect";primary.setText(configured?R.string.ps_apply_changes:R.string.ps_connect);}
             else if("UNREGISTERED".equals(state)&&configured&&providerAvailable){action="connect";primary.setText(R.string.ps_connect_again);}
+            else if("ACTION_REQUIRED".equals(state)&&configured&&providerAvailable){action="connect";primary.setText(R.string.ps_connect_again);}
             else if("off".equals(state)){action="connect";primary.setText(R.string.ps_enable);}
             else if(!providerAvailable||"VAPID_REQUIRED".equals(state)||"ACTION_REQUIRED".equals(state)) {
                 action="edit";primary.setText(R.string.ps_edit);
-            } else if("NETWORK".equals(state)&&snapshot.enabled){action="retry";primary.setText(R.string.ps_retry);}
-            else {action="details";primary.setText(R.string.ps_details);}
+            } else {action="details";primary.setText(R.string.ps_details);}
             if(!providerAvailable&&configured)status.setText(snapshot.distributor.isEmpty()?R.string.ps_no_google:R.string.ps_missing);
             if(connected&&!editing&&!notificationsAllowed){
                 status.setText(R.string.ps_android_blocked);confirmation.setText(R.string.ps_allow_notifications);
@@ -486,6 +474,8 @@ public final class PushSettingsActivity extends XmppActivity
                 info+="\n"+getString(R.string.ps_diag_delivery,labelFor(snapshot.distributor));
                 info+="\n"+getString(R.string.ps_diag_gateway,
                     snapshot.gateway.isEmpty()?getString(R.string.ps_not_specified):snapshot.gateway);
+                if(!connected&&!snapshot.lastFailure.isEmpty())
+                    info+="\n"+getString(R.string.ps_diag_last_failure,snapshot.lastFailure);
                 if(connected)info+="\n\n"+getString(R.string.ps_confirmed);
                 if(Build.VERSION.SDK_INT>=26)info+="\n"+getString(R.string.ps_channels,blockedChannels);
                 diagnostics.setText(info);

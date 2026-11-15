@@ -20,9 +20,13 @@ public final class PushSettingsConfiguration {
             lastFailure = r == null ? "" : r.failureReason;
             phase = r == null ? "off" : r.phase;
             enabled = r != null && r.enabled;
-            cancelling = r != null && (r.pendingDisable || r.pendingUnregister || r.pendingDistributor);
+            cancelling = r != null && (r.pendingDisable || r.pendingUnregister
+                    || (r.pendingDistributor && !r.enabled));
         }
         public boolean isRevoked(){return "error".equals(phase)&&"UNREGISTERED".equals(lastFailure);}
+        public boolean canReconnectAfterRevocation(){return !enabled&&isRevoked();}
+        public boolean blocksConfiguration(){return cancelling&&!canReconnectAfterRevocation();}
+        public boolean requiresAction(){return "error".equals(phase)&&"ACTION_REQUIRED".equals(lastFailure);}
         public boolean matches(String g, String v, String m, String d) {
             return gateway.equals(g) && vapid.equals(v) && mode.equals(m) && distributor.equals(d);
         }

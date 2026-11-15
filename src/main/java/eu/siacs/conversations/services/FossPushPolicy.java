@@ -17,6 +17,16 @@ public final class FossPushPolicy {
         return "INTERNAL_ERROR";
     }
 
+    /** Only recoverable subscription phases are retried; user consent remains authoritative. */
+    public static boolean shouldAutoRetry(final boolean enabled, final String phase,
+            final String reason) {
+        return enabled && ("error".equals(phase) || "connecting".equals(phase)
+                || "enabling".equals(phase))
+                && !"ACTION_REQUIRED".equals(reason)
+                && !"VAPID_REQUIRED".equals(reason)
+                && !"UNREGISTERED".equals(reason);
+    }
+
     public static boolean acceptRegistrationFailure(final boolean enabled,
             final String endpoint, final boolean knownToken) {
         return enabled && knownToken && (endpoint == null || endpoint.isEmpty());

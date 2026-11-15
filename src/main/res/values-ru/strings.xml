@@ -213,8 +213,11 @@
     <string name="foss_push_connecting">Подключение</string>
     <string name="foss_push_connected">Подключено</string>
     <string name="foss_push_error">Ошибка подключения</string>
+    <string name="ps_auto_recovering">Восстановление Push</string>
+    <string name="ps_auto_recovery_hint">Повторим подключение автоматически, когда это возможно.</string>
+    <string name="ps_diag_last_failure">Последняя ошибка: %1$s</string>
     <string name="foss_push_cancelling">Ожидается отмена; подключите учётную запись и проверьте снова</string>
-    <string name="foss_push_network">Сеть дистрибьютора недоступна; повторите при подключении</string>
+    <string name="foss_push_network">Сеть дистрибьютора недоступна; повторим автоматически</string>
     <string name="foss_push_vapid_required">Дистрибьютор отклонил VAPID-ключ; проверьте ключ сервиса</string>
     <string name="foss_push_unregistered">Дистрибьютор удалил подписку; подключите её вручную</string>
     <string name="foss_push_action">Требуется действие</string>

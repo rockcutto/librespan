@@ -74,7 +74,9 @@ public final class PushManagementService {
             if (r.enabled && "error".equals(r.phase) && !r.failureReason.isEmpty()) {
                 return r.failureReason;
             }
-            return r.pendingDisable || r.pendingUnregister || r.pendingDistributor
+            // Old token cleanup does not block the user's active subscription.
+            return r.pendingDisable || r.pendingUnregister
+                    || (r.pendingDistributor && !r.enabled)
                     ? "cancelling" : r.phase;
         } catch (final RuntimeException e) { return "error"; }
     }
@@ -94,7 +96,9 @@ public final class PushManagementService {
                 previous = store.read(account.getUuid());
             }
             final long activeRevision = previous == null ? 0 : previous.revision;
-            if (previous != null && (previous.pendingDisable || previous.pendingUnregister
+            final boolean reconnectingRevoked = previous != null && !previous.enabled
+                    && "UNREGISTERED".equals(previous.failureReason);
+            if (!reconnectingRevoked && previous != null && (previous.pendingDisable || previous.pendingUnregister
                     || previous.pendingDistributor)) {
                 // Persist the old cancellation under its own generation before replacing the active record.
                 previous.accountUuid = account.getUuid() + "~" + previous.generation;
@@ -104,6 +108,20 @@ public final class PushManagementService {
             final FossPushStore.Record r = new FossPushStore.Record();
             r.accountUuid = account.getUuid();
             r.revision = activeRevision;
+            if (reconnectingRevoked) {
+                // Keep remote cleanup in front of the new gateway registration. The new consent
+                // owns its durable retry chain; callbacks from the revoked generation are stale.
+                r.previousService = previous.previousService;
+                r.previousNode = previous.previousNode;
+                r.previousEndpoint = previous.previousEndpoint;
+                r.previousToken = previous.previousToken;
+                r.previousMode = previous.previousMode;
+                r.previousDistributor = previous.previousDistributor;
+                r.pendingDisable = previous.pendingDisable;
+                r.pendingUnregister = previous.pendingUnregister;
+                r.pendingDistributor = previous.pendingDistributor;
+                r.pendingTokens.addAll(previous.pendingTokens);
+            }
             r.service = serviceInput;
             r.mode = mode;
             r.distributor = EXTERNAL.equals(mode) ? distributor : "";
@@ -116,12 +134,20 @@ public final class PushManagementService {
             r.phase = "connecting";
             r.generation = UUID.randomUUID().toString();
             store.write(r); // Consent and keys are durable before contacting Google or a distributor.
+            // A revoked subscription may already have old distributor tokens awaiting cancellation.
+            // Retry those on their original distributor without mixing them with the new token.
+            for (final String pending : r.pendingTokens) sendDistributor(r, true, pending);
             Arrays.fill(keys.privateKeyPkcs8, (byte) 0);
             Arrays.fill(keys.auth, (byte) 0);
-            if (sendDistributor(r, false)) return true;
-            r.phase = "error";
-            store.write(r);
-            return false;
+            final boolean sent = sendDistributor(r, false);
+            if (!sent) {
+                r.phase = "error";
+                r.failureReason = "INTERNAL_ERROR";
+                store.write(r);
+            }
+            // One durable retry chain per explicit subscription; a later failure must not reset backoff.
+            FossPushAutoRetryWorker.schedule(service, r, true);
+            return sent;
         } catch (final RuntimeException | GeneralSecurityException e) { return false; }
     }
 
@@ -169,6 +195,10 @@ public final class PushManagementService {
         }
         final FossPushStore.Record r = safeRead(account.getUuid());
         if (r == null || !account.isEnabled()) return;
+        for (final String pending : r.pendingTokens) sendDistributor(r, true, pending);
+        if (FossPushPolicy.shouldAutoRetry(r.enabled, r.phase, r.failureReason)) {
+            FossPushAutoRetryWorker.schedule(service, r, false);
+        }
         if (r.enabled && r.renewConfirmedAt > 0)
             FossPushRenewWorker.schedule(service, r.accountUuid, r.generation, r.expiresAtMillis);
         if (r.pendingDisable || r.pendingUnregister) revoke(account, r);
@@ -177,7 +207,8 @@ public final class PushManagementService {
             if (!sendDistributor(r, false)) renewedThisProcess.remove(r.accountUuid);
         }
         else if (r.enabled && !r.endpoint.isEmpty() && !"connected".equals(r.phase)) {
-            registerGateway(account, r);
+            // A temporary distributor outage needs endpoint re-registration first.
+            if (!"NETWORK".equals(r.failureReason)) registerGateway(account, r);
         }
     }
 
@@ -186,6 +217,13 @@ public final class PushManagementService {
         if (r == null || !r.enabled || endpoint == null || !endpoint.startsWith("https://")
                 || endpoint.length() > 1000) return;
         if (endpoint.equals(r.endpoint)) {
+            if ("error".equals(r.phase) || "NETWORK".equals(r.failureReason)) {
+                r.phase = "connecting";
+                r.failureReason = "";
+                r.attempts = 0;
+                store.write(r);
+                FossPushAutoRetryWorker.schedule(service, r, false);
+            }
             final Account account = service.findAccountByUuid(r.accountUuid);
             if (account != null && account.isOnlineAndConnected()
                     && !r.pendingDisable && !r.pendingUnregister) registerGateway(account, r);
@@ -198,11 +236,13 @@ public final class PushManagementService {
         }
         r.endpoint = endpoint;
         r.phase = "connecting";
+        r.failureReason = "";
         r.generation = UUID.randomUUID().toString();
         inFlight.remove(r.accountUuid);
         renewedThisProcess.remove(r.accountUuid);
         r.attempts = 0;
         store.write(r);
+        FossPushAutoRetryWorker.schedule(service, r, false);
         final Account account = service.findAccountByUuid(r.accountUuid);
         if (account != null && account.isOnlineAndConnected()) onBound(account);
     }
@@ -218,13 +258,14 @@ public final class PushManagementService {
         r.phase = "error";
         r.generation = UUID.randomUUID().toString();
         inFlight.remove(r.accountUuid);
-        r.previousMode = r.mode;
-        r.previousDistributor = r.distributor;
-        r.previousToken = oldToken;
-        FossPushPolicy.queueCancellation(r.pendingTokens, oldToken);
-        r.pendingDistributor = true;
+        final FossPushStore.Record cancellation = queueDistributorCancellation(r, oldToken);
         store.write(r);
-        sendDistributor(r, true);
+        sendDistributor(cancellation, true, oldToken);
+        if (FossPushPolicy.shouldAutoRetry(r.enabled, r.phase, r.failureReason)) {
+            FossPushAutoRetryWorker.schedule(service, r, false);
+        } else {
+            FossPushAutoRetryWorker.cancel(service, r.accountUuid);
+        }
     }
 
     public synchronized void onUnavailable(final String token) {
@@ -232,7 +273,11 @@ public final class PushManagementService {
         if (r != null && r.enabled) {
             r.phase = "error";
             r.failureReason = "NETWORK";
+            // A late IQ must not confirm a distributor that has just become unavailable.
+            r.generation = UUID.randomUUID().toString();
+            inFlight.remove(r.accountUuid);
             store.write(r);
+            FossPushAutoRetryWorker.schedule(service, r, false);
         }
     }
 
@@ -249,12 +294,14 @@ public final class PushManagementService {
         r.pendingDistributor = !r.pendingTokens.isEmpty();
         r.token = r.endpoint = r.node = r.secret = "";
         store.write(r);
+        FossPushAutoRetryWorker.cancel(service, r.accountUuid);
         final Account account = service.findAccountByUuid(r.accountUuid);
         if (account != null && account.isOnlineAndConnected()) revoke(account, r);
     }
 
     public synchronized void disconnect(final Account account) {
         FossPushRenewWorker.cancel(service, account.getUuid());
+        FossPushAutoRetryWorker.cancel(service, account.getUuid());
         final FossPushStore.Record r = safeRead(account.getUuid());
         if (r == null) return;
         r.enabled = false;
@@ -263,17 +310,53 @@ public final class PushManagementService {
         r.generation = UUID.randomUUID().toString();
         inFlight.remove(r.accountUuid);
         r.attempts = 0;
-        if (!r.pendingDisable && !r.pendingUnregister) savePrevious(r);
+        if (!r.pendingDisable && !r.pendingUnregister) {
+            // Keep gateway cleanup separate from distributor-token routing.
+            r.previousService = r.service;
+            r.previousNode = r.node;
+            r.previousEndpoint = r.endpoint;
+            r.pendingDisable = !r.node.isEmpty();
+            r.pendingUnregister = !r.endpoint.isEmpty();
+        }
         renewedThisProcess.remove(r.accountUuid);
-        FossPushPolicy.queueCancellation(r.pendingTokens, r.previousToken);
-        r.pendingDistributor = !r.pendingTokens.isEmpty();
+        final String token = r.token;
+        final FossPushStore.Record cancellation = queueDistributorCancellation(r, token);
         r.node = "";
         r.secret = "";
         r.token = "";
         r.endpoint = "";
         store.write(r); // Close local channel before asynchronous remote cancellation.
         for (final String pending : r.pendingTokens) sendDistributor(r, true, pending);
+        if (cancellation != null && cancellation != r) sendDistributor(cancellation, true, token);
         if (account.isOnlineAndConnected()) revoke(account, r);
+    }
+
+    /** Route a token to its original distributor, never to a replacement provider. */
+    private FossPushStore.Record queueDistributorCancellation(
+            final FossPushStore.Record r, final String token) {
+        if (token == null || token.isEmpty()) return null;
+        if (!r.pendingTokens.isEmpty()
+                && (!r.mode.equals(r.previousMode)
+                        || !r.distributor.equals(r.previousDistributor))) {
+            // Existing pending tokens belong to a different distributor. An isolated
+            // cancellation record keeps both routes durable without altering the gateway barrier.
+            final FossPushStore.Record old = new FossPushStore.Record();
+            old.accountUuid = r.accountUuid + "~" + UUID.randomUUID();
+            old.generation = UUID.randomUUID().toString();
+            old.previousToken = token;
+            old.previousMode = r.mode;
+            old.previousDistributor = r.distributor;
+            old.pendingTokens.add(token);
+            old.pendingDistributor = true;
+            store.write(old);
+            return old;
+        }
+        r.previousToken = token;
+        r.previousMode = r.mode;
+        r.previousDistributor = r.distributor;
+        FossPushPolicy.queueCancellation(r.pendingTokens, token);
+        r.pendingDistributor = true;
+        return r;
     }
 
     private static void savePrevious(final FossPushStore.Record r) {
@@ -320,8 +403,17 @@ public final class PushManagementService {
     }
 
     private void fail(final FossPushStore.Record r) {
+        finish(r.accountUuid, r.generation);
         r.phase = "error";
+        // A failed local broadcast must not bypass the distributor recovery barrier.
+        if (!"NETWORK".equals(r.failureReason)
+                && !(!r.enabled && "UNREGISTERED".equals(r.failureReason))) {
+            r.failureReason = "INTERNAL_ERROR";
+        }
         store.write(r);
+        if (FossPushPolicy.shouldAutoRetry(r.enabled, r.phase, r.failureReason)) {
+            FossPushAutoRetryWorker.schedule(service, r, false);
+        }
     }
 
     private static boolean accepted(final Iq response, final Iq request) {
@@ -381,6 +473,7 @@ public final class PushManagementService {
 
     private synchronized void registerGateway(final Account account, final FossPushStore.Record r) {
         if (!r.enabled || !account.isOnlineAndConnected() || r.endpoint.isEmpty()
+                || "NETWORK".equals(r.failureReason)
                 || r.pendingDisable || r.pendingUnregister || r.attempts >= 3
                 || busy(r)) return;
         mark(r);
@@ -433,7 +526,12 @@ public final class PushManagementService {
                 final FossPushStore.Record active = current(r.accountUuid, generation);
                 if (active == null || !active.enabled) {
                     // A late success is never allowed to re-enable push.
-                    if (confirmed != null && account.isOnlineAndConnected()) {
+                    final FossPushStore.Record latest = safeRead(r.accountUuid);
+                    final boolean sameSubscription = latest != null && latest.enabled
+                            && latest.publicKey.equals(r.publicKey)
+                            && latest.endpoint.equals(r.endpoint)
+                            && latest.service.equals(r.service);
+                    if (confirmed != null && account.isOnlineAndConnected() && !sameSubscription) {
                         // Pending endpoint cancellation was persisted before this callback.
                         final Iq undo = PushGatewayProtocol.unregister(
                                 gateway, service.getPackageName(), confirmed.node);
@@ -461,7 +559,9 @@ public final class PushManagementService {
                             current.attempts = 0;
                             current.renewPending = false;
                             current.renewConfirmedAt = System.currentTimeMillis();
+                            current.failureReason = "";
                             store.write(current);
+                            FossPushAutoRetryWorker.cancel(service, current.accountUuid);
                             FossPushRenewWorker.schedule(service, current.accountUuid,
                                     current.generation, current.expiresAtMillis);
                         } else fail(current);
@@ -474,14 +574,35 @@ public final class PushManagementService {
     public synchronized void retry(final Account account) {
         final FossPushStore.Record r = safeRead(account.getUuid());
         if (r == null) return;
+        // Preserve explicit cancellation retries, including disabled push records.
+        if (!r.pendingDisable && !r.pendingUnregister
+                && (!account.isEnabled() || !FossPushPolicy.shouldAutoRetry(
+                        r.enabled, r.phase, r.failureReason))) return;
+        final boolean distributorUnavailable = "NETWORK".equals(r.failureReason);
         r.attempts = 0;
         r.generation = UUID.randomUUID().toString();
         inFlight.remove(r.accountUuid);
         store.write(r);
         for (final String pending : r.pendingTokens) sendDistributor(r, true, pending);
         if (r.pendingDisable || r.pendingUnregister) revoke(account, r);
-        else if (r.enabled && !r.endpoint.isEmpty()) registerGateway(account, r);
-        else if (r.enabled) sendDistributor(r, false);
+        else if (r.endpoint.isEmpty() || distributorUnavailable) {
+            r.phase = "connecting";
+            store.write(r);
+            if (!sendDistributor(r, false)) fail(r);
+        } else if (account.isOnlineAndConnected()) registerGateway(account, r);
+    }
+
+    public synchronized void onAutoRetry(final String uuid, final String owner) {
+        if (uuid == null || owner == null) return;
+        final FossPushStore.Record r = safeRead(uuid);
+        if (r == null || !owner.equals(r.publicKey)
+                || !FossPushPolicy.shouldAutoRetry(r.enabled, r.phase, r.failureReason)) return;
+        final Account account = service.findAccountByUuid(uuid);
+        if (account == null || !account.isEnabled()) {
+            FossPushAutoRetryWorker.cancel(service, uuid);
+            return; // onBound schedules recovery again after the account is enabled.
+        }
+        if (!busy(r)) retry(account);
     }
 
     public synchronized void onRenewal(final String uuid, final String generation) {

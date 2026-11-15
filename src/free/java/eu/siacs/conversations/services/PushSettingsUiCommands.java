@@ -25,9 +25,10 @@ public final class PushSettingsUiCommands {
         running=true;
         try {
             PushSettingsConfiguration.Snapshot current=operations.read();
-            if(current.cancelling)return false;
-            if(current.enabled&&current.matches(gateway,vapid,mode,provider))return true;
-            if(!current.enabled&&!operations.save(gateway,vapid,mode,provider))return false;
+            if(current.blocksConfiguration())return false;
+            if(current.enabled&&!current.requiresAction()&&current.matches(gateway,vapid,mode,provider))return true;
+            if(!current.enabled&&!current.canReconnectAfterRevocation()
+                    &&!operations.save(gateway,vapid,mode,provider))return false;
             return operations.connect(gateway,vapid,mode,provider);
         } finally {running=false;}
     }

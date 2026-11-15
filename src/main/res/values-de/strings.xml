@@ -190,8 +190,11 @@
     <string name="foss_push_connecting">Verbindung wird hergestellt</string>
     <string name="foss_push_connected">Verbunden</string>
     <string name="foss_push_error">Verbindungsfehler</string>
+    <string name="ps_auto_recovering">Push wird wiederhergestellt</string>
+    <string name="ps_auto_recovery_hint">Die Verbindung wird wenn möglich automatisch erneut versucht.</string>
+    <string name="ps_diag_last_failure">Letzter Fehler: %1$s</string>
     <string name="foss_push_cancelling">Abmeldung ausstehend; Konto verbinden und erneut prüfen</string>
-    <string name="foss_push_network">Distributor-Netzwerk nicht erreichbar; später erneut versuchen</string>
+    <string name="foss_push_network">Distributor-Netzwerk nicht erreichbar; automatischer Versuch geplant</string>
     <string name="foss_push_vapid_required">VAPID-Schlüssel abgelehnt; Serverschlüssel prüfen</string>
     <string name="foss_push_unregistered">Distributor hat das Abonnement gelöscht; manuell neu verbinden</string>
     <string name="foss_push_action">Aktion erforderlich</string>
