@@ -26,6 +26,46 @@ import java.lang.reflect.Modifier;
 @LooperMode(LooperMode.Mode.PAUSED)
 public class ConversationFragmentHistoryPageLifecycleTest {
     @Test
+    public void normalHistoryOutcomesAreSilentEvenWhenUserInitiated() {
+        for (XmppConnectionService.HistoryActionResult result :
+                new XmppConnectionService.HistoryActionResult[] {
+                    XmppConnectionService.HistoryActionResult.STARTED,
+                    XmppConnectionService.HistoryActionResult.RECOVERY_COMPLETED,
+                    XmppConnectionService.HistoryActionResult.HISTORY_EXHAUSTED,
+                    XmppConnectionService.HistoryActionResult.LOCAL_HISTORY_ONLY
+                }) {
+            assertFalse(ConversationFragment.shouldShowHistoryActionResult(result, false));
+            assertFalse(ConversationFragment.shouldShowHistoryActionResult(result, true));
+        }
+    }
+
+    @Test
+    public void busyPaginationIsSilentButBusyManualRetryShowsExplanation() {
+        assertFalse(ConversationFragment.shouldShowHistoryActionResult(
+                XmppConnectionService.HistoryActionResult.QUERY_IN_PROGRESS, false));
+        assertTrue(ConversationFragment.shouldShowHistoryActionResult(
+                XmppConnectionService.HistoryActionResult.QUERY_IN_PROGRESS, true));
+    }
+
+    @Test
+    public void actionableHistoryFailuresRemainVisible() {
+        for (XmppConnectionService.HistoryActionResult result :
+                new XmppConnectionService.HistoryActionResult[] {
+                    XmppConnectionService.HistoryActionResult.RECOVERY_INCOMPLETE,
+                    XmppConnectionService.HistoryActionResult.NO_ANCHOR,
+                    XmppConnectionService.HistoryActionResult.MUC_NOT_JOINED,
+                    XmppConnectionService.HistoryActionResult.MAM_UNSUPPORTED,
+                    XmppConnectionService.HistoryActionResult.NO_LOCAL_BOUNDARY,
+                    XmppConnectionService.HistoryActionResult.PERSISTENCE_FAILURE,
+                    XmppConnectionService.HistoryActionResult.OFFLINE,
+                    XmppConnectionService.HistoryActionResult.SERVER_ERROR
+                }) {
+            assertTrue(ConversationFragment.shouldShowHistoryActionResult(result, false));
+            assertTrue(ConversationFragment.shouldShowHistoryActionResult(result, true));
+        }
+    }
+
+    @Test
     public void emptyCallbackAfterDetachReleasesOnlyBackwardGate() throws Exception {
         assertDetachedCompletion(true, 0);
     }

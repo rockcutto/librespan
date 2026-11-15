@@ -959,7 +959,7 @@ public class ConversationFragment extends XmppFragment
                     .post(
                             () -> {
                                 final ConversationFragment fragment = target(room);
-                                if (fragment != null) fragment.showHistoryActionResult(result);
+                                if (fragment != null) fragment.showHistoryActionResult(result, false);
                             });
         }
 
@@ -1034,8 +1034,30 @@ public class ConversationFragment extends XmppFragment
     }
 
     private void showHistoryActionResult(final XmppConnectionService.HistoryActionResult result) {
-        if (activity == null || !isAdded()) return;
+        showHistoryActionResult(result, true);
+    }
+
+    private void showHistoryActionResult(
+            final XmppConnectionService.HistoryActionResult result, final boolean userInitiated) {
+        if (activity == null || !isAdded() || !shouldShowHistoryActionResult(result, userInitiated)) return;
         Toast.makeText(activity, historyActionText(result), Toast.LENGTH_LONG).show();
+    }
+
+    // Normal archive completion is silent. A concurrent automatic page is also silent,
+    // but a rejected explicit retry must still explain why nothing started.
+    public static boolean shouldShowHistoryActionResult(
+            final XmppConnectionService.HistoryActionResult result, final boolean userInitiated) {
+        switch (result) {
+            case STARTED:
+            case RECOVERY_COMPLETED:
+            case HISTORY_EXHAUSTED:
+            case LOCAL_HISTORY_ONLY:
+                return false;
+            case QUERY_IN_PROGRESS:
+                return userInitiated;
+            default:
+                return true;
+        }
     }
 
     public static int historyActionText(final XmppConnectionService.HistoryActionResult result) {

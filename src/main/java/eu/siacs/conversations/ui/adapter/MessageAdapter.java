@@ -3417,9 +3417,12 @@ public class MessageAdapter extends ArrayAdapter<Message> implements DraggableLi
                         @Override public void onHistoryActionResult(
                                 eu.siacs.conversations.services.XmppConnectionService.HistoryActionResult result,
                                 Conversation room) {
-                            activity.runOnUiThread(() -> android.widget.Toast.makeText(activity,
-                                    eu.siacs.conversations.ui.ConversationFragment.historyActionText(result),
-                                    android.widget.Toast.LENGTH_LONG).show());
+                            if (eu.siacs.conversations.ui.ConversationFragment
+                                    .shouldShowHistoryActionResult(result, true)) {
+                                activity.runOnUiThread(() -> android.widget.Toast.makeText(activity,
+                                        eu.siacs.conversations.ui.ConversationFragment.historyActionText(result),
+                                        android.widget.Toast.LENGTH_LONG).show());
+                            }
                         }
                     });
             return;
