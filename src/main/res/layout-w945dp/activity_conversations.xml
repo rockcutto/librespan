@@ -25,6 +25,13 @@
 
         </LinearLayout>
 
+        <View
+            android:id="@+id/status_bar_protection"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_alignParentTop="true"
+            android:importantForAccessibility="no" />
+
         <FrameLayout
             android:id="@+id/toolbar_matte_zone"
             android:layout_width="match_parent"
@@ -36,6 +43,7 @@
             android:paddingBottom="0dp">
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/conversation_header_island"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
@@ -50,6 +58,14 @@
                     layout="@layout/toolbar_conversations" />
             </com.google.android.material.card.MaterialCardView>
         </FrameLayout>
+
+        <View
+            android:id="@+id/overview_header_protection"
+            android:layout_width="match_parent"
+            android:layout_height="28dp"
+            android:layout_below="@id/toolbar_matte_zone"
+            android:importantForAccessibility="no"
+            android:visibility="gone" />
 
         <com.google.android.material.bottomnavigation.BottomNavigationView
             android:id="@+id/bottom_navigation"
